@@ -1,2 +1,13 @@
 # Machine-local Claude permission grants — never commit (public repo).
 .claude/settings.local.json
+
+# Secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+
+# Paintings archive (local data, grows unbounded — see PLAN.md risks)
+data/

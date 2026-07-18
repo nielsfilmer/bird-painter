@@ -47,9 +47,10 @@ Every task ends with a pull request. Do **not** push directly to `main`.
      long-running app itself** (interpreters and `npm run`-style commands are
      denied non-interactively in the subagent sandbox), so a QA agent told to
      "run the app" boots nothing. *Before* spawning it, the orchestrating agent
-     **hosts a running instance** (build it first if needed; how to run this
-     app is TBD until the app skeleton lands — record it here when it does —
-     on an off-port with throwaway data if it's a server), captures
+     **hosts a running instance** (build it first if needed; run this app with
+     `.venv/bin/python -m bird_painter <port>` after `.venv/bin/pip install -e .`
+     — for QA use an off-port and a throwaway archive dir via
+     `BP_ARCHIVE_DIR=/tmp/bp-qa-archive`), captures
      a screenshot, and hands the QA agent **both the live URL and the screenshot
      path** (capture the screenshot before spawning — this harness has no
      "message a running agent" tool, so it's a single launch). The QA agent then
@@ -240,6 +241,16 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 ## File map
 
 - `README.md` — project stub.
+- `pyproject.toml` — Python package + deps (FastAPI/uvicorn/dotenv).
+- `.env.example` — env template (FAL_KEY + knob overrides); copy to `.env`.
+- `bird_painter/` — the one local service:
+  - `config.py` — knobs (defaults = PLAN.md v0 table, env-overridable).
+  - `store.py` — permanent archive (files + `meta.jsonl`) + ephemeral live
+    view + per-species `last_painted_at` (the cooldown key).
+  - `placeholder.py` — SVG placeholder plates (until the slice-2 brush).
+  - `web.py` — FastAPI app: wall page, `/api/live`, `/images/*`, `/dev/paint/*`.
+  - `static/index.html` — the wall (polling, fade in/out).
+  - `__main__.py` — `python -m bird_painter [port]` (default 8321).
 - `.gitignore` — excludes `.claude/settings.local.json` (machine-local
   permission grants; public repo).
 - `CLAUDE.md` — this file: per-repo workflow + context.
