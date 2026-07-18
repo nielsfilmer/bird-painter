@@ -262,7 +262,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `runner.py` — `PaintRunner`: detections → gate → brush → store; the
     callback the mic feeds. Only a successful paint consumes a cap slot.
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
-  - `web.py` — FastAPI app: wall page, `/api/live`, `/images/*`, `/dev/paint/*`.
+  - `web.py` — FastAPI app via `create_app(config)` factory (no import-time
+    side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
+    `/images/*`, `/dev/paint/*`.
   - `static/index.html` — the wall (polling, fade in/out).
   - `__main__.py` — `python -m bird_painter [port]` (port: CLI arg → `BP_PORT`
     → default 8537; `--list-devices` lists mics; sets up INFO logging so the
