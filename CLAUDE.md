@@ -253,6 +253,10 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     `detect_samples` → `Detection`s above the confidence floor.
   - `detect_cli.py` — `python -m bird_painter.detect_cli <clip> [floor]`,
     prints detections (demo/verify the ears).
+  - `capture.py` — `MicListener`: records rolling 48 kHz mono windows from
+    the mic and feeds each to the ears; soft-failure loop.
+  - `listen_cli.py` — `python -m bird_painter.listen_cli`, live mic →
+    printed detections (ears + mic end-to-end; painting is slice 5).
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
   - `web.py` — FastAPI app: wall page, `/api/live`, `/images/*`, `/dev/paint/*`.
   - `static/index.html` — the wall (polling, fade in/out).
