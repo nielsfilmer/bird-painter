@@ -8,6 +8,10 @@ dependencies = [
     "uvicorn>=0.29",
     "python-dotenv>=1.0",
     "httpx>=0.27",
+    # The ears: BirdNET via birdnetlib. Pulls tensorflow + librosa (heavy).
+    "birdnetlib>=0.18",
+    "librosa>=0.10",
+    "tensorflow>=2.16",
 ]
 
 [project.optional-dependencies]

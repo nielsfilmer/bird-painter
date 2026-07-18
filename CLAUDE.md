@@ -249,6 +249,10 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     view + per-species `last_painted_at` (the cooldown key).
   - `brush.py` — the brush: species → fal FLUX `schnell` REST call →
     painting bytes; house-style prompt template; soft-failure policy.
+  - `ears.py` — the ears: BirdNET via `birdnetlib`; `detect_file` /
+    `detect_samples` → `Detection`s above the confidence floor.
+  - `detect_cli.py` — `python -m bird_painter.detect_cli <clip> [floor]`,
+    prints detections (demo/verify the ears).
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
   - `web.py` — FastAPI app: wall page, `/api/live`, `/images/*`, `/dev/paint/*`.
   - `static/index.html` — the wall (polling, fade in/out).

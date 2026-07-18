@@ -11,3 +11,6 @@ __pycache__/
 
 # Paintings archive (local data, grows unbounded — see PLAN.md risks)
 data/
+
+# Local audio test clips (not committed — licensing/size)
+samples/
