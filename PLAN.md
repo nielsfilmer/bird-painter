@@ -92,10 +92,13 @@ served locally off the same process.
     plates glide outward as newer ones arrive.
   - **Birds never overlap; captions always straight.** Layout is computed
     globally: each plate takes the first free spot walking the spiral (its
-    box = image + caption + margin vs everything already placed), so plates
-    and captions never sit on each other (best-effort least-overlap only
-    when a small screen genuinely can't fit all 12). The tilt applies to
+    box = image + caption + margin vs everything already placed). If any
+    plate can't find a free spot at the current size, all plates shrink
+    together (bounded shrink-and-relayout loop) until everything fits —
+    so overlap is engineered away, not just unlikely. The tilt applies to
     the painting image only — captions stay horizontal and readable.
+    (Transient exception, accepted: a freshly-expired plate crossfades out
+    where it stood, so a gliding live plate can briefly pass over it.)
 
 ## House style
 
