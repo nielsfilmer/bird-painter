@@ -42,7 +42,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
 
     port = int(positional[0]) if positional else load_config().port
-    uvicorn.run("bird_painter.web:app", host="127.0.0.1", port=port)
+    uvicorn.run(
+        "bird_painter.web:create_app", factory=True, host="127.0.0.1", port=port
+    )
 
 
 if __name__ == "__main__":

@@ -2,9 +2,10 @@
 a dev endpoint that paints a named species (real brush with FAL_KEY, else a
 placeholder) until the trigger gate drives painting from detections.
 
-`create_app(config)` is the factory (tests inject throwaway config/archives);
-the module-level `app` at the bottom is the production instance uvicorn
-imports (`bird_painter.web:app`)."""
+`create_app(config)` is the factory (tests inject throwaway config/archives).
+There is deliberately NO module-level app instance — importing this module has
+no side effects; uvicorn builds the production app via
+`uvicorn.run("bird_painter.web:create_app", factory=True)` (see __main__)."""
 
 from __future__ import annotations
 
@@ -134,6 +135,3 @@ def create_app(config: Config | None = None) -> FastAPI:
         )
 
     return app
-
-
-app = create_app()
