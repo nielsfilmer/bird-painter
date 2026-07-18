@@ -11,6 +11,7 @@ stance).
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 
 import numpy as np
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 # BirdNET's fixed input rate; do not change without adding resampling.
 BIRDNET_SAMPLERATE = 48000
+
+# Backoff after a failed window, so a persistent fault (mic unplugged, bad
+# rate) can't spin the loop at 100% CPU flooding the log.
+ERROR_BACKOFF_SECONDS = 1.0
 
 
 class MicListener:
@@ -60,10 +65,17 @@ class MicListener:
                 try:
                     samples = self._record_window()
                     detections = self.ears.detect_samples(samples, self.samplerate)
-                except Exception as exc:  # noqa: BLE001 — one bad window never
-                    logger.error("capture: window failed: %s", exc)  # kills the loop
+                except Exception:  # noqa: BLE001 — one bad window never kills
+                    logger.exception("capture: window failed")  # the loop
+                    time.sleep(ERROR_BACKOFF_SECONDS)  # don't spin on a hard fault
                     continue
-                if detections:
+                if not detections:
+                    continue
+                # A raising callback (e.g. slice 5's paint) must not kill
+                # listening either — the loop is the durable part.
+                try:
                     on_detections(detections)
+                except Exception:  # noqa: BLE001
+                    logger.exception("capture: on_detections callback failed")
         except KeyboardInterrupt:
             logger.info("listening stopped")
