@@ -28,7 +28,7 @@ class Painting:
     species_scientific: str
     confidence: float
     born_at: float  # unix seconds
-    source: str  # "detection" | "dev"
+    source: str  # "detection" | "dev" | "dev-placeholder"
 
 
 def slugify(name: str) -> str:

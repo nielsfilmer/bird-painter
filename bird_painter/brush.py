@@ -14,8 +14,13 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# Sync route is right for schnell (~1-2 s renders). If PLAN.md's upgrade to
+# FLUX dev/pro happens, revisit: slower models belong on queue.fal.run.
 FAL_ENDPOINT = "https://fal.run/fal-ai/flux/schnell"
 REQUEST_TIMEOUT_SECONDS = 60.0
+
+# Sentinel for "BirdNET/dev gave us no scientific name" — shared with web.py.
+UNKNOWN_SCIENTIFIC = "Species incognita"
 
 # The fixed vintage-naturalist house style (PLAN.md "House style").
 PROMPT_TEMPLATE = (
@@ -29,7 +34,7 @@ PROMPT_TEMPLATE = (
 
 def build_prompt(species_common: str, species_scientific: str) -> str:
     name = species_common
-    if species_scientific and species_scientific != "Species incognita":
+    if species_scientific and species_scientific != UNKNOWN_SCIENTIFIC:
         name = f"{species_common} ({species_scientific})"
     return PROMPT_TEMPLATE.format(name=name)
 
@@ -55,16 +60,19 @@ def paint(
         )
         response.raise_for_status()
         images = response.json().get("images") or []
-        if not images or not images[0].get("url"):
+        if not images or not isinstance(images[0], dict) or not images[0].get("url"):
             logger.error("brush: fal returned no image for %s", species_common)
             return None
         image_response = httpx.get(
             images[0]["url"], timeout=REQUEST_TIMEOUT_SECONDS
         )
         image_response.raise_for_status()
-        content_type = image_response.headers.get("content-type", "")
+        content_type = images[0].get("content_type") or image_response.headers.get(
+            "content-type", ""
+        )
         extension = "png" if "png" in content_type else "jpg"
         return image_response.content, extension
-    except httpx.HTTPError as exc:
+    except Exception as exc:  # noqa: BLE001 — soft-failure contract: the loop
+        # must survive ANY brush failure (HTTP, JSON decode, shape surprises).
         logger.error("brush: paint failed for %s: %s", species_common, exc)
         return None

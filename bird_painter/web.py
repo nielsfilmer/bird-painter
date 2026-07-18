@@ -1,6 +1,6 @@
 """FastAPI app: serves the wall page, the live-set API, archived images, and
-a dev endpoint to drop a placeholder painting onto the wall (until the real
-pipeline exists)."""
+a dev endpoint that paints a named species (real brush with FAL_KEY, else a
+placeholder) until the trigger gate drives painting from detections."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def dev_paint(species: str) -> JSONResponse:
     set, a placeholder plate otherwise. Dev helper until the trigger gate
     (slice 5) drives painting from detections."""
     common = species.replace("-", " ").replace("_", " ").title()
-    scientific = "Species incognita"
+    scientific = brush.UNKNOWN_SCIENTIFIC
     result = brush.paint(common, scientific, fal_key=config.fal_key)
     if result is not None:
         image_bytes, extension = result
