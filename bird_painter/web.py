@@ -1,6 +1,6 @@
 """FastAPI app: serves the wall page, the live-set API, archived images, and
-a dev endpoint to drop a placeholder painting onto the wall (until the real
-pipeline exists)."""
+a dev endpoint that paints a named species (real brush with FAL_KEY, else a
+placeholder) until the trigger gate drives painting from detections."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
+from . import brush
 from .config import load_config
 from .placeholder import placeholder_svg
 from .store import Store
@@ -56,16 +57,28 @@ def image(filename: str) -> FileResponse:
 
 @app.post("/dev/paint/{species}")
 def dev_paint(species: str) -> JSONResponse:
-    """Drop a placeholder painting on the wall. Dev-only helper for the
-    skeleton; the real brush (slice 2) replaces the image source."""
+    """Paint a named species onto the wall — the real brush when FAL_KEY is
+    set, a placeholder plate otherwise. Dev helper until the trigger gate
+    (slice 5) drives painting from detections."""
     common = species.replace("-", " ").replace("_", " ").title()
-    scientific = "Species incognita"
+    scientific = brush.UNKNOWN_SCIENTIFIC
+    result = brush.paint(common, scientific, fal_key=config.fal_key)
+    if result is not None:
+        image_bytes, extension = result
+        source = "dev"
+    elif not config.fal_key:
+        image_bytes, extension = placeholder_svg(common, scientific), "svg"
+        source = "dev-placeholder"
+    else:
+        # Failure policy (PLAN.md): soft failure — no painting, no crash,
+        # nothing marked painted; the caller may simply try again.
+        raise HTTPException(status_code=502, detail="paint failed; see server log")
     painting = store.add(
-        image_bytes=placeholder_svg(common, scientific),
-        extension="svg",
+        image_bytes=image_bytes,
+        extension=extension,
         species_common=common,
         species_scientific=scientific,
         confidence=1.0,
-        source="dev",
+        source=source,
     )
-    return JSONResponse({"painted": painting.file}, status_code=201)
+    return JSONResponse({"painted": painting.file, "source": source}, status_code=201)
