@@ -25,19 +25,20 @@ separate, later decision — see Non-goals.)
 
 ## The pipeline
 
-Four stages, left to right:
+Four stages left to right, with a **trigger gate** (the debounce/cap logic)
+sitting between recognize and generate:
 
 ```
-[ mic ] --> capture --> recognize (BirdNET) --> generate (FLUX) --> display (wall)
-             local        local                    cloud API          local web page
+[ mic ] --> capture --> recognize (BirdNET) --[trigger gate]--> generate (FLUX) --> display (wall)
+             local        local                                   cloud API          local web page
 ```
 
 1. **Capture** — read audio from the machine's microphone in rolling windows.
 2. **Recognize** — run BirdNET locally on each window; emit `(species,
    confidence, time)` for detections above a confidence floor.
-3. **Trigger** — a detection paints a bird only if that species has no live
-   painting already (debounce), subject to a global per-hour cap (cost
-   ceiling).
+3. **Trigger gate** — a detection paints a bird only if that species is off
+   cooldown (see the precise rule below), subject to a global per-hour cap
+   (cost ceiling).
 4. **Generate** — call a hosted image model with a prompt built from the
    species + the fixed house style; get back a painting.
 5. **Display** — save the painting to the permanent archive, add it to the live
@@ -112,9 +113,13 @@ the confidence floor (too low → wrong birds on the wall) and the per-hour cap
 | Location filter (lat/long/week) | **off** | BirdNET can weight by location/season to cut implausible species — nice later, skip for v0 |
 
 **Trigger rule, precisely:** a BirdNET detection with confidence ≥ floor paints
-the species **iff** (a) that species has no currently-live painting, and (b) the
-rolling per-hour paint count is under the cap. TTL doubles as the repaint
-cooldown — one knob, not two.
+the species **iff** (a) it's been at least TTL since that species was last
+painted (`now − last_painted_at[species] ≥ TTL`), and (b) the rolling per-hour
+paint count is under the cap. The cooldown keys on a per-species
+`last_painted_at` timestamp, **not** on whether a painting is still on the
+wall — so wall overflow eviction (below) can never shorten the cooldown by
+letting an evicted-but-unexpired species repaint early. TTL doubles as the
+repaint cooldown — one knob, not two.
 
 ## Scope
 
@@ -148,6 +153,15 @@ whole magic; ship it first.
   actual fal pricing before leaving it running unattended for days.
 - **BirdNET false positives** in noisy environments — the confidence floor is
   the main defense; location filter (fast-follow) helps.
+- **Image-API failure / outage** — fal could be slow, error, or rate-limit. v0
+  policy: on a failed paint, log it, don't retry aggressively, don't consume the
+  hourly cap slot, and don't mark the species painted (so it retries naturally
+  on the next detection). No painting simply means no new bird on the wall — a
+  soft failure, never a crash.
+- **Archive disk growth** — the permanent on-disk archive grows unbounded (every
+  bird ever painted is kept). Trivial for a personal toy at 20 paints/hour, but
+  name it: no retention/pruning in v0; add an archive cap or size-based prune as
+  a fast-follow if it ever matters.
 
 ## Decision log
 
