@@ -247,7 +247,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `config.py` — knobs (defaults = PLAN.md v0 table, env-overridable).
   - `store.py` — permanent archive (files + `meta.jsonl`) + ephemeral live
     view + per-species `last_painted_at` (the cooldown key).
-  - `placeholder.py` — SVG placeholder plates (until the slice-2 brush).
+  - `brush.py` — the brush: species → fal FLUX `schnell` REST call →
+    painting bytes; house-style prompt template; soft-failure policy.
+  - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
   - `web.py` — FastAPI app: wall page, `/api/live`, `/images/*`, `/dev/paint/*`.
   - `static/index.html` — the wall (polling, fade in/out).
   - `__main__.py` — `python -m bird_painter [port]` (default 8321).
