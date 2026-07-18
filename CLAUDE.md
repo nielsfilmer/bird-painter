@@ -256,11 +256,17 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `capture.py` — `MicListener`: records rolling 48 kHz mono windows from
     the mic and feeds each to the ears; soft-failure loop.
   - `listen_cli.py` — `python -m bird_painter.listen_cli`, live mic →
-    printed detections (ears + mic end-to-end; painting is slice 5).
+    printed detections (ears + mic only, no painting).
+  - `gate.py` — `TriggerGate`: the paint-or-not decision — per-species TTL
+    cooldown (via the store) + rolling per-hour cap.
+  - `runner.py` — `PaintRunner`: detections → gate → brush → store; the
+    callback the mic feeds. Only a successful paint consumes a cap slot.
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
   - `web.py` — FastAPI app: wall page, `/api/live`, `/images/*`, `/dev/paint/*`.
   - `static/index.html` — the wall (polling, fade in/out).
-  - `__main__.py` — `python -m bird_painter [port]` (default 8321).
+  - `__main__.py` — `python -m bird_painter [port]` (default 8321): runs the
+    whole loop — wall + live mic listener painting heard birds (disable the
+    mic with `BP_ENABLE_LISTENER=false` for wall-only / tests / QA).
 - `.gitignore` — excludes `.claude/settings.local.json` (machine-local
   permission grants; public repo).
 - `CLAUDE.md` — this file: per-repo workflow + context.

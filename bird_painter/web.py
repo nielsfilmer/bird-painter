@@ -4,7 +4,10 @@ placeholder) until the trigger gate drives painting from detections."""
 
 from __future__ import annotations
 
+import logging
 import mimetypes
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -12,14 +15,47 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import brush
 from .config import load_config
+from .gate import TriggerGate
 from .placeholder import placeholder_svg
+from .runner import PaintRunner
 from .store import Store
 
+logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 
 config = load_config()
 store = Store(config.archive_dir, config.paint_ttl_seconds)
-app = FastAPI(title="bird-painter")
+gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
+runner = PaintRunner(config, store, gate)
+
+
+def _start_listener() -> None:
+    """Load BirdNET and run the mic loop, painting heard birds onto the wall.
+    Runs in a daemon thread so the wall serves immediately; a mic/model
+    failure is logged and leaves the wall running (still usable via
+    /dev/paint)."""
+    try:
+        from .capture import MicListener
+        from .ears import Ears
+
+        ears = Ears(confidence_floor=config.confidence_floor)
+        listener = MicListener(ears, window_seconds=config.analysis_window_seconds)
+        logger.info("listener: painting birds heard on the mic")
+        listener.listen(runner.on_detections)
+    except Exception:  # noqa: BLE001 — the wall must survive a broken listener
+        logger.exception("listener failed to start; wall runs without it")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if config.enable_listener:
+        threading.Thread(target=_start_listener, daemon=True).start()
+    else:
+        logger.info("listener disabled (BP_ENABLE_LISTENER); wall-only")
+    yield
+
+
+app = FastAPI(title="bird-painter", lifespan=lifespan)
 
 
 @app.get("/", response_class=HTMLResponse)
