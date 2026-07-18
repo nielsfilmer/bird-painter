@@ -1,6 +1,9 @@
 # Machine-local Claude permission grants — never commit (public repo).
 .claude/settings.local.json
 
+# macOS
+.DS_Store
+
 # Secrets
 .env
 
@@ -11,3 +14,6 @@ __pycache__/
 
 # Paintings archive (local data, grows unbounded — see PLAN.md risks)
 data/
+
+# Local audio test clips (not committed — licensing/size)
+samples/
