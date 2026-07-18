@@ -42,7 +42,7 @@ def _start_listener() -> None:
         listener = MicListener(ears, window_seconds=config.analysis_window_seconds)
         logger.info("listener: painting birds heard on the mic")
         listener.listen(runner.on_detections)
-    except Exception:  # noqa: BLE001 — the wall must survive a listener that
+    except Exception:  # noqa: BLE001 — the wall must survive a broken listener
         logger.exception("listener failed to start; wall runs without it")
 
 
