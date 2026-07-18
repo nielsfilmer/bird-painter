@@ -29,8 +29,11 @@ def main() -> None:
             float(sys.argv[2]) if len(sys.argv) > 2 else load_config().confidence_floor
         )
     except ValueError:
-        print(f"Confidence floor must be a number, got: {sys.argv[2]!r}", file=sys.stderr)
-        raise SystemExit(2)
+        print(
+            f"Confidence floor must be a number, got: {sys.argv[2]!r}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from None
 
     print(f"Loading BirdNET (floor {floor})…", file=sys.stderr)
     # birdnetlib prints progress to stdout; redirect it to stderr so stdout
@@ -41,7 +44,7 @@ def main() -> None:
             detections = ears.detect_file(path)
     except Exception as exc:  # noqa: BLE001 — demo CLI: a bad clip shouldn't traceback
         print(f"Could not analyse {path}: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     if not detections:
         print("No birds detected above the confidence floor.")

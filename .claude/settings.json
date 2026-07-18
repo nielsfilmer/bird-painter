@@ -4,7 +4,10 @@
       "Bash(git:*)",
       "Bash(gh pr:*)",
       "Bash(gh issue:*)",
-      "Bash(bash scripts/status.sh)"
+      "Bash(bash scripts/status.sh)",
+      "Bash(make review-checks)",
+      "Bash(make lint)",
+      "Bash(make test)"
     ]
   }
 }

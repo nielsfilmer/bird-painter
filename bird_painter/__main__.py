@@ -26,7 +26,8 @@ def _list_devices() -> None:
     for index, dev in enumerate(sd.query_devices()):
         if dev["max_input_channels"] > 0:
             marker = "  <- default" if index == default_in else ""
-            print(f"  {index}: {dev['name']} ({int(dev['default_samplerate'])} Hz){marker}")
+            rate = int(dev["default_samplerate"])
+            print(f"  {index}: {dev['name']} ({rate} Hz){marker}")
 
 
 def main() -> None:
