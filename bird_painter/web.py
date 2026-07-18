@@ -1,6 +1,6 @@
 """FastAPI app: serves the wall page, the live-set API, archived images, and
 a dev endpoint that paints a named species (real brush with FAL_KEY, else a
-placeholder) until the trigger gate drives painting from detections.
+placeholder) alongside the detection-driven trigger gate.
 
 `create_app(config)` is the factory (tests inject throwaway config/archives).
 There is deliberately NO module-level app instance — importing this module has
