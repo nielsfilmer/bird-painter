@@ -1,0 +1,2 @@
+# Machine-local Claude permission grants — never commit (public repo).
+.claude/settings.local.json

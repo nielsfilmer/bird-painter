@@ -109,6 +109,11 @@ the QA brief; the step-3 bullets above only summarise them. Their repo-static
 `PLAN.md` it names; only the per-review values (`#N`, `<URL>`,
 `<SCREENSHOT PATH>`) get filled when spawning the agents.
 
+The TBD values in this file (how to run the app, the design reference, the
+review-checks wrapper) are mirrored in that skill's templates — when one gets
+pinned, update **both** this file and the corresponding spot in
+`.claude/skills/review-prompts/SKILL.md` in the same change.
+
 ### Workflow disciplines
 
 - **One PR = one concern.** Don't tack an orthogonal change onto an open PR;
@@ -226,6 +231,8 @@ architecture are not yet decided — they will be pinned down in `PLAN.md`
 ## File map
 
 - `README.md` — project stub.
+- `.gitignore` — excludes `.claude/settings.local.json` (machine-local
+  permission grants; public repo).
 - `CLAUDE.md` — this file: per-repo workflow + context.
 - `PLAN.md` — (not yet written) product/architecture source of truth.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
