@@ -47,6 +47,7 @@ class Config:
     wall_max_live: int = field(
         default_factory=lambda: _env_int("BP_WALL_MAX_LIVE", 12)
     )
+    port: int = field(default_factory=lambda: _env_int("BP_PORT", 8537))
     archive_dir: Path = field(
         default_factory=lambda: Path(os.environ.get("BP_ARCHIVE_DIR", "data/archive"))
     )
