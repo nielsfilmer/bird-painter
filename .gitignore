@@ -1,6 +1,9 @@
 # Machine-local Claude permission grants — never commit (public repo).
 .claude/settings.local.json
 
+# macOS
+.DS_Store
+
 # Secrets
 .env
 
