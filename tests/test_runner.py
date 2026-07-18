@@ -1,3 +1,4 @@
+import dataclasses
 from unittest.mock import patch
 
 from bird_painter.ears import Detection
@@ -48,12 +49,7 @@ def test_failed_paint_stores_nothing_and_retries(config, archive_dir):
 
 
 def test_hourly_cap_stops_painting(config, archive_dir):
-    capped = type(config)(
-        archive_dir=config.archive_dir,
-        enable_listener=False,
-        fal_key="",
-        max_paints_per_hour=1,
-    )
+    capped = dataclasses.replace(config, max_paints_per_hour=1)
     runner, store = make_runner(capped, archive_dir)
     with patch(
         "bird_painter.runner.paint_species", return_value=(b"img", "jpg")

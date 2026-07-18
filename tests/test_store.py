@@ -64,5 +64,6 @@ def test_image_path_serves_archived_images_only(store):
     assert store.image_path("meta.jsonl") is None
 
 
-def test_servable_extensions_cover_everything_the_app_writes():
+def test_servable_extensions_include_the_types_the_app_writes():
+    # brush writes png/jpg, placeholder writes svg
     assert {".svg", ".png", ".jpg"} <= SERVABLE_EXTENSIONS

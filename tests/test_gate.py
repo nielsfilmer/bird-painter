@@ -23,6 +23,16 @@ def test_cooldown_blocks_within_ttl_and_frees_after():
     assert gate.allows("Robin", now=1101.0)
 
 
+def test_cooldown_boundary_exactly_ttl_is_allowed():
+    """PLAN.md: paints iff now − last_painted_at ≥ TTL — the boundary is
+    inclusive."""
+    store = StubStore()
+    gate = TriggerGate(store, ttl_seconds=100, max_paints_per_hour=20)
+    store.last["Robin"] = 1000.0
+    assert not gate.allows("Robin", now=1099.999)
+    assert gate.allows("Robin", now=1100.0)
+
+
 def test_cooldown_is_per_species():
     store = StubStore()
     gate = TriggerGate(store, ttl_seconds=100, max_paints_per_hour=20)

@@ -1,3 +1,4 @@
+import dataclasses
 import subprocess
 import sys
 from pathlib import Path
@@ -54,13 +55,8 @@ def test_images_refuses_missing_traversal_and_non_images(client):
     assert client.get("/images/meta.jsonl").status_code == 404
 
 
-def test_live_caps_at_wall_max_live(archive_dir):
-    from bird_painter.config import Config
-
-    config = Config(
-        archive_dir=archive_dir, enable_listener=False, fal_key="", wall_max_live=2
-    )
-    app = create_app(config)
+def test_live_caps_at_wall_max_live(config):
+    app = create_app(dataclasses.replace(config, wall_max_live=2))
     with TestClient(app) as client:
         for species in ("robin", "wren", "junco"):
             client.post(f"/dev/paint/{species}")
@@ -70,12 +66,11 @@ def test_live_caps_at_wall_max_live(archive_dir):
 def test_importing_web_has_no_side_effects(tmp_path: Path):
     """Regression for PR #28: `import bird_painter.web` must not create the
     default data/ archive (Config.archive_dir is a relative path)."""
-    result = subprocess.run(
+    subprocess.run(
         [sys.executable, "-c", "import bird_painter.web"],
         cwd=tmp_path,
         capture_output=True,
         text=True,
         check=True,
     )
-    assert result.returncode == 0
     assert list(tmp_path.iterdir()) == []

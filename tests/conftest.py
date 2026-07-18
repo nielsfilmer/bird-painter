@@ -1,9 +1,20 @@
+import os
 from pathlib import Path
 
 import pytest
 
 from bird_painter.config import Config
 from bird_painter.store import Store
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    """Config's field defaults read the environment (and load_dotenv runs at
+    import), so the dev's real .env — including a live FAL_KEY — would leak
+    into any test that doesn't pin every knob. Strip them all, every test."""
+    for name in list(os.environ):
+        if name.startswith("BP_") or name == "FAL_KEY":
+            monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture
