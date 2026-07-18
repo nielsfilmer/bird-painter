@@ -14,6 +14,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +49,13 @@ class Ears:
         recording.analyze()
         return self._to_detections(recording.detections)
 
-    def detect_samples(self, samples, rate: int) -> list[Detection]:
-        """Analyse one in-memory PCM window (float array + sample rate)."""
+    def detect_samples(self, samples: "np.ndarray", rate: int) -> list[Detection]:
+        """Analyse one in-memory PCM window.
+
+        `samples` must already be what BirdNET expects: a mono float array at
+        48 kHz. Unlike `detect_file`, `RecordingBuffer` does NOT resample — the
+        live-mic capture (slice 4) is responsible for delivering 48 kHz mono.
+        """
         from birdnetlib import RecordingBuffer
 
         recording = RecordingBuffer(
@@ -61,10 +70,11 @@ class Ears:
                 species_common=d["common_name"],
                 species_scientific=d["scientific_name"],
                 confidence=float(d["confidence"]),
-                start_seconds=float(d.get("start_time", 0.0)),
-                end_seconds=float(d.get("end_time", 0.0)),
+                start_seconds=float(d["start_time"]),
+                end_seconds=float(d["end_time"]),
             )
             for d in raw
         ]
-        # BirdNET already filters by min_conf; sort strongest-first for callers.
+        # BirdNET already filters by min_conf (strict >, and it clamps the
+        # floor to [0.01, 0.99]); sort strongest-first for callers.
         return sorted(detections, key=lambda d: d.confidence, reverse=True)
