@@ -94,8 +94,11 @@ Every task ends with a pull request. Do **not** push directly to `main`.
      notification.
    Push follow-up commits to the same PR branch; don't open a second PR for
    review fixes on this PR's stated concern.
-5. **Notify the user** when the PR is clean and ready for human review + merge.
-   **Do not merge the PR yourself — the user is the merge gate.**
+5. **Merge the PR yourself once it's clean, then notify.** The user removed
+   themselves as merge gate for this repo permanently (2026-07-18, see the
+   decision log). Merge clean, fully-reviewed PRs (`gh pr merge`) and notify;
+   don't hold them for human merge. The review loop (steps 3–4) still gates a
+   merge — only genuinely-clean PRs go in.
 
 ### Review-agent prompt templates
 
@@ -249,6 +252,10 @@ recorded here:
 
 - **2026-07-18** — Project bootstrapped from `claude-project-template`. Scope
   set as "AI bird image generator"; stack/architecture deferred to `PLAN.md`.
+- **2026-07-18** — **User removed themselves as merge gate for this repo,
+  permanently.** Claude merges clean, fully-reviewed PRs itself and notifies
+  (workflow step 5). Scope: PR merges only; the review loop still gates. Mirror
+  of the `crypto-trader` arrangement. Also recorded in global `~/.claude/CLAUDE.md`.
 
 ## Phase trackers
 
