@@ -211,9 +211,11 @@ pinned, update **both** this file and the corresponding spot in
   reported as a gap, never skipped silently. The policy-consistent way to cut the
   resulting permission prompts is a single narrow repo wrapper (e.g.
   `Bash(make review-checks)` in the project allowlist), not opening the whole
-  `npx`/`npm run`/interpreter surface. This repo has **no toolchain yet** —
-  when one lands (linter, type-checker, tests), add the wrapper and record it
-  here. Alongside it, the review's spec-fidelity pass and smell baseline (both
+  `npx`/`npm run`/interpreter surface. **This repo's wrapper is
+  `make review-checks`** (= `make lint`, ruff + `make test`, pytest — see the
+  Makefile), allowlisted in `.claude/settings.json`; the senior-dev review
+  runs it on every PR. Alongside it, the review's spec-fidelity pass and smell
+  baseline (both
   adapted from mattpocock/skills' two-axis `code-review`, MIT) cover what
   tooling can't: delivery against the originating spec, and design judgement
   calls.
@@ -276,6 +278,10 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 - `CLAUDE.md` — this file: per-repo workflow + context.
 - `PLAN.md` — product/architecture source of truth (concept, pipeline, stack,
   v0 config, scope, risks, decision log).
+- `Makefile` — `make review-checks` (= lint via ruff + test via pytest); the
+  deterministic-check wrapper the senior-dev review runs.
+- `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API;
+  import-purity regression). Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
   milestones/issues (backs the `/status` skill).
 - `.claude/settings.json` — project permission allowlist.

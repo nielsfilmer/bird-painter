@@ -49,7 +49,7 @@ class Ears:
         recording.analyze()
         return self._to_detections(recording.detections)
 
-    def detect_samples(self, samples: "np.ndarray", rate: int) -> list[Detection]:
+    def detect_samples(self, samples: np.ndarray, rate: int) -> list[Detection]:
         """Analyse one in-memory PCM window.
 
         `samples` must already be what BirdNET expects: a mono float array at

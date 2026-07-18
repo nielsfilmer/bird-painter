@@ -31,8 +31,9 @@ Static-analysis pass (run the repo's OWN deterministic tooling, then reason):
      `.pre-commit-config.yaml`, `justfile`.
    - Language config: package.json `scripts` (lint/typecheck) + eslint/biome/
      prettier/tsconfig; pyproject/ruff/flake8/mypy/bandit; golangci-lint/go vet;
-     clippy/cargo fmt. (This repo's stack is not yet pinned — discover, don't
-     assume.)
+     clippy/cargo fmt. (This repo: Python — the gating command is
+     `make review-checks` = ruff + pytest, allowlisted, so it runs without a
+     permission prompt. Prefer it.)
    If the repo declares no linters/type-checkers/SAST, say so and skip — do not
    introduce new tools.
 2. Run them on the PR branch, SCOPED to the changed files (the merge-base..head

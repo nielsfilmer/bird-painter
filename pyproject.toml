@@ -16,7 +16,24 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# assert is pytest's idiom; S318: tests parse OUR OWN generated SVG, not
+# untrusted input
+"tests/*" = ["S101", "S318"]
+# the SVG template's long attribute lines aren't code
+"bird_painter/placeholder.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["setuptools>=68"]
