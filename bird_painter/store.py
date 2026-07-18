@@ -12,8 +12,13 @@ from __future__ import annotations
 import json
 import re
 import time
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+# Image types the /images endpoint may serve; keeps meta.jsonl (and anything
+# else that lands in the archive dir) unreachable from the web.
+SERVABLE_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".webp"}
 
 
 @dataclass(frozen=True)
@@ -31,6 +36,11 @@ def slugify(name: str) -> str:
 
 
 class Store:
+    """Single-process only: the in-memory painting list is the source of the
+    live view, so running uvicorn with --workers N would give each worker its
+    own diverging store. The app runs with the default single worker; sync
+    endpoints hit the threadpool but list appends/reads are GIL-safe here."""
+
     def __init__(self, archive_dir: Path, ttl_seconds: int):
         self.archive_dir = archive_dir
         self.ttl_seconds = ttl_seconds
@@ -58,7 +68,11 @@ class Store:
         source: str,
     ) -> Painting:
         born_at = time.time()
-        filename = f"{int(born_at)}_{slugify(species_common)}.{extension}"
+        # uuid suffix: same-species-same-second paints must never overwrite an
+        # archived file ("archived forever" — PLAN.md).
+        filename = (
+            f"{int(born_at)}_{slugify(species_common)}_{uuid.uuid4().hex[:8]}.{extension}"
+        )
         (self.archive_dir / filename).write_bytes(image_bytes)
         painting = Painting(
             file=filename,
@@ -91,8 +105,10 @@ class Store:
         return max(times) if times else None
 
     def image_path(self, filename: str) -> Path | None:
-        """Resolve an archived image safely (no path traversal)."""
+        """Resolve an archived image safely (no traversal, images only)."""
         if filename != Path(filename).name:
+            return None
+        if Path(filename).suffix.lower() not in SERVABLE_EXTENSIONS:
             return None
         path = self.archive_dir / filename
         return path if path.is_file() else None

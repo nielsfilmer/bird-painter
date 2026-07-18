@@ -77,7 +77,6 @@ function heardText(bornAt) {
 function makePlate(p) {
   const fig = document.createElement("figure");
   fig.className = "plate";
-  fig.dataset.bornAt = p.born_at;
   fig.innerHTML = `
     <img src="/images/${encodeURIComponent(p.file)}" alt="">
     <figcaption>
@@ -107,7 +106,9 @@ async function refresh() {
       setTimeout(() => el.remove(), FADE_MS);
     }
   }
-  for (const p of data.paintings) {
+  // Payload is newest-first; iterate oldest-first so prepend() leaves the
+  // newest plate leftmost both on initial load and on live additions.
+  for (const p of [...data.paintings].reverse()) {
     if (!plates.has(p.file)) {
       const el = makePlate(p);
       plates.set(p.file, el);

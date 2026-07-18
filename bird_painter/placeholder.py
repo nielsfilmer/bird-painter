@@ -6,6 +6,7 @@ store and wall don't care which produced a painting."""
 from __future__ import annotations
 
 import hashlib
+from xml.sax.saxutils import escape
 
 _PALETTE = ["#8a6d3b", "#5b7065", "#7a5c61", "#54687e", "#6e6248", "#4f5d4a"]
 
@@ -14,6 +15,8 @@ def placeholder_svg(species_common: str, species_scientific: str) -> bytes:
     tint = _PALETTE[
         int(hashlib.sha256(species_common.encode()).hexdigest(), 16) % len(_PALETTE)
     ]
+    species_common = escape(species_common)
+    species_scientific = escape(species_scientific)
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500">
   <rect width="400" height="500" fill="#f3ecd9"/>
   <rect x="14" y="14" width="372" height="472" fill="none" stroke="{tint}" stroke-width="3"/>
