@@ -74,5 +74,11 @@ def paint(
         return image_response.content, extension
     except Exception as exc:  # noqa: BLE001 — soft-failure contract: the loop
         # must survive ANY brush failure (HTTP, JSON decode, shape surprises).
-        logger.error("brush: paint failed for %s: %s", species_common, exc)
+        # On HTTP errors, include the response body: fal puts the actionable
+        # reason there (e.g. "Exhausted balance"), not in the status line.
+        # Never log request headers — that's where the key lives.
+        detail = ""
+        if isinstance(exc, httpx.HTTPStatusError):
+            detail = f" — response: {exc.response.text[:500]}"
+        logger.error("brush: paint failed for %s: %s%s", species_common, exc, detail)
         return None
