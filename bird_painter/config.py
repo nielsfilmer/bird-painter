@@ -22,6 +22,13 @@ def _env_int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Config:
     # Paint TTL doubles as the per-species repaint cooldown (one knob, not two).
@@ -44,6 +51,11 @@ class Config:
         default_factory=lambda: Path(os.environ.get("BP_ARCHIVE_DIR", "data/archive"))
     )
     fal_key: str = field(default_factory=lambda: os.environ.get("FAL_KEY", ""))
+    # Start the live mic listener alongside the wall. Off → wall-only (tests,
+    # QA, or a machine with no mic); the /dev/paint endpoint still works.
+    enable_listener: bool = field(
+        default_factory=lambda: _env_bool("BP_ENABLE_LISTENER", True)
+    )
 
 
 def load_config() -> Config:
