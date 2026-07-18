@@ -265,7 +265,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `web.py` — FastAPI app: wall page, `/api/live`, `/images/*`, `/dev/paint/*`.
   - `static/index.html` — the wall (polling, fade in/out).
   - `__main__.py` — `python -m bird_painter [port]` (port: CLI arg → `BP_PORT`
-    → default 8537): runs the
+    → default 8537; `--list-devices` lists mics; sets up INFO logging so the
+    listener heartbeat surfaces): runs the
     whole loop — wall + live mic listener painting heard birds (disable the
     mic with `BP_ENABLE_LISTENER=false` for wall-only / tests / QA).
 - `.gitignore` — excludes `.claude/settings.local.json` (machine-local

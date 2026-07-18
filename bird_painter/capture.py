@@ -43,6 +43,12 @@ class MicListener:
         self.samplerate = samplerate
         self.device = device
 
+    def _device_name(self) -> str:
+        try:
+            return sd.query_devices(self.device, "input")["name"]
+        except Exception:  # noqa: BLE001 — naming is best-effort diagnostics
+            return "default input" if self.device is None else str(self.device)
+
     def _record_window(self) -> np.ndarray:
         frames = int(self.window_seconds * self.samplerate)
         recording = sd.rec(
@@ -58,18 +64,35 @@ class MicListener:
     def listen(self, on_detections: Callable[[list[Detection]], None]) -> None:
         """Record → detect → callback, forever. Ctrl-C stops it cleanly."""
         logger.info(
-            "listening: %ds windows at %d Hz", self.window_seconds, self.samplerate
+            "listening on '%s': %ds windows at %d Hz",
+            self._device_name(),
+            self.window_seconds,
+            self.samplerate,
         )
         try:
             while True:
                 try:
                     samples = self._record_window()
+                    level = float(np.abs(samples).max())
                     detections = self.ears.detect_samples(samples, self.samplerate)
                 except Exception:  # noqa: BLE001 — one bad window never kills
                     logger.exception("capture: window failed")  # the loop
                     time.sleep(ERROR_BACKOFF_SECONDS)  # don't spin on a hard fault
                     continue
-                if not detections:
+                # Heartbeat every window so it's visible the loop is alive and
+                # what it heard — the wall alone can't distinguish "listening,
+                # nothing yet" from "listener dead". `level` also reveals a
+                # silent/wrong input device (near-zero peak).
+                if detections:
+                    logger.info(
+                        "window (peak %.3f): %s",
+                        level,
+                        ", ".join(
+                            f"{d.species_common} {d.confidence:.2f}" for d in detections
+                        ),
+                    )
+                else:
+                    logger.info("window (peak %.3f): nothing above the floor", level)
                     continue
                 # A raising callback (e.g. slice 5's paint) must not kill
                 # listening either — the loop is the durable part.

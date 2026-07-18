@@ -39,8 +39,15 @@ def _start_listener() -> None:
         from .ears import Ears
 
         ears = Ears(confidence_floor=config.confidence_floor)
-        listener = MicListener(ears, window_seconds=config.analysis_window_seconds)
-        logger.info("listener: painting birds heard on the mic")
+        listener = MicListener(
+            ears,
+            window_seconds=config.analysis_window_seconds,
+            device=config.input_device,
+        )
+        logger.info(
+            "listener: painting birds heard on the mic (floor %.2f)",
+            config.confidence_floor,
+        )
         listener.listen(runner.on_detections)
     except Exception:  # noqa: BLE001 — the wall must survive a broken listener
         logger.exception("listener failed to start; wall runs without it")
