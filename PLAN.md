@@ -90,6 +90,12 @@ served locally off the same process.
     stable per-painting size (~24–36 vmin), tilt, and scatter (hashed from
     its filename, so layout is deterministic across reloads). Existing
     plates glide outward as newer ones arrive.
+  - **Birds never overlap; captions always straight.** Layout is computed
+    globally: each plate takes the first free spot walking the spiral (its
+    box = image + caption + margin vs everything already placed), so plates
+    and captions never sit on each other (best-effort least-overlap only
+    when a small screen genuinely can't fit all 12). The tilt applies to
+    the painting image only — captions stay horizontal and readable.
 
 ## House style
 

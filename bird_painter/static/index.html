@@ -121,52 +121,86 @@ function heardText(bornAt) {
 }
 
 // Collage layout: phyllotaxis spiral from the center — newest bird in the
-// middle, older ones drifting outward. Per-painting hash gives each a stable
-// size, tilt, and a little scatter so it never looks like a grid. Positions
-// are computed in pixels against the real viewport (aspect-aware) and clamped
-// so no plate ever leaves the screen, portrait or landscape.
+// middle, older ones drifting outward, sized/tilted stably per painting.
+// Layout is computed for ALL plates together (layoutAll): each takes the
+// first spiral spot where its box — image plus caption, plus a margin —
+// overlaps nothing already placed, so birds never sit on each other and
+// captions stay clear. Positions are pixels against the real viewport
+// (aspect-aware) and clamped so no plate ever leaves the screen. Only the
+// image tilts; captions stay horizontal.
 const SIZE_MIN_VMIN = 24, SIZE_SPAN_VMIN = 12;   // plate width 24–35 vmin
 const MAX_INDEX = 12;                            // matches the wall's live cap
 const SPREAD_X = 0.42, SPREAD_Y = 0.38;          // ellipse: fraction of viewport
 const PLATE_ASPECT = 5 / 4, CAPTION_ALLOWANCE = 1.18; // image 4:5 + caption room
 const TOP_Z = 200;
+const GAP_VMIN = 2;          // breathing room between plate boxes
+const SPIRAL_STEP = 0.35;    // how far along the spiral each retry walks
+const MAX_TRIES = 150;       // then settle for the least-overlapping spot
+const FILL_FACTOR = 0.5;     // plates may claim at most this share of the
+                             // viewport — beyond it, everything scales down
+                             // together so a no-overlap fit stays possible
 
-function place(el, index) {
-  const h = hash(el.dataset.file);
-  const W = wall.clientWidth, H = wall.clientHeight;
-  const vmin = Math.min(W, H) / 100;
-  const sizeVmin = SIZE_MIN_VMIN + (h % SIZE_SPAN_VMIN);
-  const sizePx = sizeVmin * vmin;
-  const jitter = (((h >>> 4) % 100) / 100 - 0.5) * 6 * vmin;  // ±3vmin
-  const jitterA = (((h >>> 8) % 100) / 100 - 0.5) * 0.5;      // ±0.25 rad
-  const tilt = ((h >>> 16) % 15) - 7;                         // -7..+7 deg
-  const angle = index * GOLDEN_ANGLE + jitterA;
-  const reach = Math.sqrt(index) / Math.sqrt(MAX_INDEX);      // 0..~1
-  let x = index === 0 ? 0 : Math.cos(angle) * reach * SPREAD_X * W + jitter;
-  let y = index === 0 ? 0 : Math.sin(angle) * reach * SPREAD_Y * H + jitter;
-  // Keep the whole plate (and its caption) on screen.
-  const clampX = Math.max(0, W / 2 - sizePx / 2);
-  const clampY = Math.max(0, H / 2 - (sizePx * PLATE_ASPECT * CAPTION_ALLOWANCE) / 2);
-  x = Math.max(-clampX, Math.min(clampX, x));
-  y = Math.max(-clampY, Math.min(clampY, y));
-  el.style.width = `${sizeVmin}vmin`;
-  el.style.transform =
-    `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${tilt}deg)`;
-  el.style.zIndex = String(TOP_Z - index);       // newer sits on top
+function overlapArea(a, b) {
+  const w = Math.min(a.x + a.w / 2, b.x + b.w / 2)
+          - Math.max(a.x - a.w / 2, b.x - b.w / 2);
+  const h = Math.min(a.y + a.h / 2, b.y + b.h / 2)
+          - Math.max(a.y - a.h / 2, b.y - b.h / 2);
+  return Math.max(0, w) * Math.max(0, h);
 }
 
-// Re-clamp everything when the viewport changes shape, in recency order
-// (DOM order is insertion order, not recency).
+function layoutAll() {
+  const W = wall.clientWidth, H = wall.clientHeight;
+  const vmin = Math.min(W, H) / 100;
+  // Crowding scale: if everyone's boxes together would claim more than
+  // FILL_FACTOR of the screen, shrink all plates by the same factor.
+  const naturalArea = liveOrder.reduce((sum, file) => {
+    if (!plates.has(file)) return sum;
+    const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
+    return sum + (s + GAP_VMIN * vmin) * (s * PLATE_ASPECT * CAPTION_ALLOWANCE + GAP_VMIN * vmin);
+  }, 0);
+  const scale = Math.min(1, Math.sqrt((FILL_FACTOR * W * H) / (naturalArea || 1)));
+  const placed = [];
+  liveOrder.forEach((file, index) => {
+    const el = plates.get(file);
+    if (!el) return;
+    const h = hash(file);
+    const sizeVmin = (SIZE_MIN_VMIN + (h % SIZE_SPAN_VMIN)) * scale;
+    const sizePx = sizeVmin * vmin;
+    const boxW = sizePx + GAP_VMIN * vmin;
+    const boxH = sizePx * PLATE_ASPECT * CAPTION_ALLOWANCE + GAP_VMIN * vmin;
+    const jitterA = (((h >>> 8) % 100) / 100 - 0.5) * 0.5; // ±0.25 rad
+    const tilt = ((h >>> 16) % 15) - 7;                    // -7..+7 deg
+    const clampX = Math.max(0, W / 2 - sizePx / 2);
+    const clampY = Math.max(0, H / 2 - (boxH - GAP_VMIN * vmin) / 2);
+    // Walk the spiral from this plate's natural spot until the box is free.
+    let best = null;
+    for (let t = index, tries = 0; tries < MAX_TRIES; tries++, t += SPIRAL_STEP) {
+      const angle = t * GOLDEN_ANGLE + jitterA;
+      const reach = Math.sqrt(t) / Math.sqrt(MAX_INDEX);
+      let x = t === 0 ? 0 : Math.cos(angle) * reach * SPREAD_X * W;
+      let y = t === 0 ? 0 : Math.sin(angle) * reach * SPREAD_Y * H;
+      x = Math.max(-clampX, Math.min(clampX, x));
+      y = Math.max(-clampY, Math.min(clampY, y));
+      const box = { x, y, w: boxW, h: boxH };
+      const overlap = placed.reduce((sum, other) => sum + overlapArea(box, other), 0);
+      if (overlap === 0) { best = box; break; }
+      if (best === null || overlap < best.overlap) best = { ...box, overlap };
+    }
+    placed.push(best);
+    el.style.width = `${sizeVmin.toFixed(1)}vmin`;
+    el.style.transform =
+      `translate(-50%, -50%) translate(${best.x.toFixed(1)}px, ${best.y.toFixed(1)}px)`;
+    el.querySelector("img").style.transform = `rotate(${tilt}deg)`;
+    el.style.zIndex = String(TOP_Z - index);     // newer sits on top
+  });
+}
+
+// Re-layout when the viewport changes shape.
 let liveOrder = []; // files, newest first — set by refresh()
 let resizeTimer;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    liveOrder.forEach((file, index) => {
-      const el = plates.get(file);
-      if (el) place(el, index);
-    });
-  }, 150);
+  resizeTimer = setTimeout(layoutAll, 150);
 });
 
 function makePlate(p) {
@@ -204,7 +238,7 @@ async function refresh() {
   }
   // Payload is newest-first; index 0 = newest = center of the collage.
   liveOrder = data.paintings.map(p => p.file);
-  data.paintings.forEach((p, index) => {
+  for (const p of data.paintings) {
     let el = plates.get(p.file);
     if (!el) {
       el = makePlate(p);
@@ -213,8 +247,8 @@ async function refresh() {
     } else {
       el.querySelector(".heard").textContent = heardText(p.born_at);
     }
-    place(el, index); // existing plates glide outward as newer ones arrive
-  });
+  }
+  layoutAll(); // existing plates glide to new collision-free spots
   empty.classList.toggle("hidden", plates.size > 0);
 }
 
