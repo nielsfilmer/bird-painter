@@ -82,6 +82,14 @@ served locally off the same process.
   (framework: **FastAPI**). New painting fades in when its bird is heard;
   expired ones fade out. Subtle per-bird label (species, time heard). Updates by
   **simple polling every few seconds** (SSE is overkill for one local viewer).
+  - **Collage, not a grid** (Phase 3): the page itself is the aged-cream paper
+    the paintings live on — painting edges are feathered (CSS mask) and
+    multiply-blended into the shared paper so nothing reads as a floating
+    rectangle. Placement is a phyllotaxis spiral growing from the middle:
+    newest bird at the center, older ones drifting outward, each with a
+    stable per-painting size (~24–36 vmin), tilt, and scatter (hashed from
+    its filename, so layout is deterministic across reloads). Existing
+    plates glide outward as newer ones arrive.
 
 ## House style
 
@@ -109,7 +117,7 @@ the confidence floor (too low → wrong birds on the wall) and the per-hour cap
 | BirdNET confidence floor | **0.6** | filters weak guesses; a wrong-species painting is the worst failure mode |
 | Analysis window | **~15 s rolling** | BirdNET's native chunk; steady detection |
 | Max paints / hour | **20** | hard ceiling so a loud dawn chorus can't run away the API bill |
-| Wall grid | **up to ~12 live** | full but not cramped; overflow → oldest fades first |
+| Wall collage | **up to ~12 live** | full but not cramped; overflow → oldest fades first |
 | Location filter (lat/long/week) | **off** | BirdNET can weight by location/season to cut implausible species — nice later, skip for v0 |
 
 **Trigger rule, precisely:** a BirdNET detection with confidence ≥ floor paints

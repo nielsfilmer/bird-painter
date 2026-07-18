@@ -5,27 +5,50 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>bird-painter</title>
 <style>
-  :root {
-    --paper: #171512;
-    --ink: #d8cfba;
-    --ink-dim: #8d846f;
-  }
   * { box-sizing: border-box; margin: 0; }
+  :root {
+    --ink: #4a3f2e;
+    --ink-dim: #8d8065;
+  }
+  html, body { height: 100%; }
   body {
-    background: var(--paper);
+    /* The paper the collage lives on — same aged-cream world as the
+       paintings, with soft mottling so it reads as one sheet. */
+    background:
+      radial-gradient(ellipse at 22% 18%, rgba(122, 96, 59, 0.10), transparent 55%),
+      radial-gradient(ellipse at 78% 76%, rgba(122, 96, 59, 0.12), transparent 50%),
+      radial-gradient(ellipse at 65% 25%, rgba(255, 252, 240, 0.55), transparent 60%),
+      radial-gradient(ellipse at 50% 50%, #f4edda 0%, #ece1c6 62%, #ddcda6 100%);
     color: var(--ink);
     font-family: Georgia, "Times New Roman", serif;
-    min-height: 100vh;
-    padding: 3vmin;
+    overflow: hidden;
   }
-  #wall {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 3vmin;
+  /* Grain overlay: subtle paper tooth over everything, plates included. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.42 0 0 0 0 0.36 0 0 0 0 0.25 0 0 0 0.05 0'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
   }
+  /* Same paper as body: position:fixed makes #wall a stacking context, so
+     the plates' multiply blends against #wall's own backdrop — it must carry
+     the paper itself or the blend sees only transparency (halo bug). */
+  #wall { position: fixed; inset: 0; background: inherit; }
   .plate {
+    position: absolute;
+    left: 50%;
+    top: 50%;
     opacity: 0;
-    transition: opacity 1.8s ease;
+    /* Blend the whole plate (painting + ink labels) into the paper. On the
+       figure itself — not the img — because the figure's transform creates a
+       stacking context that would isolate a child's blend from the page. */
+    mix-blend-mode: multiply;
+    transition:
+      opacity 2.2s ease,
+      transform 1.6s cubic-bezier(0.22, 1, 0.36, 1),
+      width 1.6s cubic-bezier(0.22, 1, 0.36, 1);
     text-align: center;
   }
   .plate.shown { opacity: 1; }
@@ -35,13 +58,25 @@
     aspect-ratio: 4 / 5;
     object-fit: cover;
     display: block;
-    border: 1px solid #3a352c;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
-    background: #f3ecd9;
+    /* Feather the painting's edges away into the paper — no hard rectangle.
+       (The melt itself is the figure-level multiply above.) */
+    -webkit-mask-image: radial-gradient(ellipse 54% 54% at 50% 50%, black 64%, transparent 92%);
+    mask-image: radial-gradient(ellipse 54% 54% at 50% 50%, black 64%, transparent 92%);
   }
-  .plate figcaption { margin-top: 1.1vmin; font-size: 15px; }
-  .plate .species { letter-spacing: 0.04em; }
-  .plate .heard { color: var(--ink-dim); font-size: 12.5px; margin-top: 2px; }
+  .plate figcaption {
+    margin-top: -1.6vmin;
+    font-size: clamp(11px, 1.6vmin, 16px);
+  }
+  .plate .species {
+    letter-spacing: 0.09em;
+    font-variant: small-caps;
+  }
+  .plate .heard {
+    color: var(--ink-dim);
+    font-size: clamp(9px, 1.2vmin, 12.5px);
+    font-style: italic;
+    margin-top: 0.2vmin;
+  }
   #empty {
     position: fixed;
     inset: 0;
@@ -49,8 +84,8 @@
     place-items: center;
     color: var(--ink-dim);
     font-style: italic;
-    font-size: 20px;
-    letter-spacing: 0.06em;
+    font-size: clamp(16px, 2.6vmin, 24px);
+    letter-spacing: 0.12em;
     pointer-events: none;
     transition: opacity 1.8s ease;
   }
@@ -64,7 +99,17 @@
 const wall = document.getElementById("wall");
 const empty = document.getElementById("empty");
 const plates = new Map(); // file -> element
-const FADE_MS = 1900;
+const FADE_MS = 2300;
+const GOLDEN_ANGLE = 2.399963229728653; // radians, 137.5°
+
+function hash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
 function heardText(bornAt) {
   const mins = Math.round((Date.now() / 1000 - bornAt) / 60);
@@ -74,9 +119,29 @@ function heardText(bornAt) {
   return `heard ${h}h ${mins % 60}m ago`;
 }
 
+// Collage layout: phyllotaxis spiral from the center — newest bird in the
+// middle, older ones drifting outward. Per-painting hash gives each a stable
+// size, tilt, and a little scatter so it never looks like a grid.
+function place(el, index) {
+  const h = hash(el.dataset.file);
+  const size = 24 + (h % 12);                    // 24–35 vmin wide
+  const jitterR = ((h >> 4) % 9) - 4;            // -4..+4 vmin
+  const jitterA = (((h >> 8) % 100) / 100 - 0.5) * 0.5; // -0.25..+0.25 rad
+  const tilt = ((h >> 16) % 15) - 7;             // -7..+7 deg
+  const angle = index * GOLDEN_ANGLE + jitterA;
+  const radius = index === 0 ? 0 : 26 * Math.sqrt(index) + jitterR;
+  const x = Math.cos(angle) * radius * 1.25;     // stretch: screens are wide
+  const y = Math.sin(angle) * radius * 0.78;
+  el.style.width = `${size}vmin`;
+  el.style.transform =
+    `translate(-50%, -50%) translate(${x}vmin, ${y}vmin) rotate(${tilt}deg)`;
+  el.style.zIndex = String(200 - index);         // newer sits on top
+}
+
 function makePlate(p) {
   const fig = document.createElement("figure");
   fig.className = "plate";
+  fig.dataset.file = p.file;
   fig.innerHTML = `
     <img src="/images/${encodeURIComponent(p.file)}" alt="">
     <figcaption>
@@ -106,17 +171,18 @@ async function refresh() {
       setTimeout(() => el.remove(), FADE_MS);
     }
   }
-  // Payload is newest-first; iterate oldest-first so prepend() leaves the
-  // newest plate leftmost both on initial load and on live additions.
-  for (const p of [...data.paintings].reverse()) {
-    if (!plates.has(p.file)) {
-      const el = makePlate(p);
+  // Payload is newest-first; index 0 = newest = center of the collage.
+  data.paintings.forEach((p, index) => {
+    let el = plates.get(p.file);
+    if (!el) {
+      el = makePlate(p);
       plates.set(p.file, el);
-      wall.prepend(el);
+      wall.appendChild(el);
     } else {
-      plates.get(p.file).querySelector(".heard").textContent = heardText(p.born_at);
+      el.querySelector(".heard").textContent = heardText(p.born_at);
     }
-  }
+    place(el, index); // existing plates glide outward as newer ones arrive
+  });
   empty.classList.toggle("hidden", plates.size > 0);
 }
 
