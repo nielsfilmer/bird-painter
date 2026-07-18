@@ -264,7 +264,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
   - `web.py` — FastAPI app: wall page, `/api/live`, `/images/*`, `/dev/paint/*`.
   - `static/index.html` — the wall (polling, fade in/out).
-  - `__main__.py` — `python -m bird_painter [port]` (default 8321): runs the
+  - `__main__.py` — `python -m bird_painter [port]` (port: CLI arg → `BP_PORT`
+    → default 8537): runs the
     whole loop — wall + live mic listener painting heard birds (disable the
     mic with `BP_ENABLE_LISTENER=false` for wall-only / tests / QA).
 - `.gitignore` — excludes `.claude/settings.local.json` (machine-local
