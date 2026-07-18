@@ -29,6 +29,15 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _resolve_device(raw: str | None) -> int | str | None:
+    """A device given as a numeric string is a device index; anything else is
+    a name substring sounddevice matches; empty/None means the default."""
+    if raw is None or raw.strip() == "":
+        return None
+    raw = raw.strip()
+    return int(raw) if raw.isdigit() else raw
+
+
 @dataclass(frozen=True)
 class Config:
     # Paint TTL doubles as the per-species repaint cooldown (one knob, not two).
@@ -48,6 +57,11 @@ class Config:
         default_factory=lambda: _env_int("BP_WALL_MAX_LIVE", 12)
     )
     port: int = field(default_factory=lambda: _env_int("BP_PORT", 8537))
+    # Mic input device: a numeric index or a name substring (see
+    # `python -m bird_painter --list-devices`). None = system default input.
+    input_device: int | str | None = field(
+        default_factory=lambda: _resolve_device(os.environ.get("BP_INPUT_DEVICE"))
+    )
     archive_dir: Path = field(
         default_factory=lambda: Path(os.environ.get("BP_ARCHIVE_DIR", "data/archive"))
     )
