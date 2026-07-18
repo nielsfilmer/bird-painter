@@ -136,7 +136,9 @@ otherwise, and say so in the notification.
 ```
 You are a QA engineer verifying PR #N of nielsfilmer/bird-painter by
 EXERCISING the running app, not reading the diff. An instance is ALREADY
-RUNNING for you at <URL>, and a rendered screenshot of it is at
+RUNNING for you at <URL> (the orchestrator started it with
+`.venv/bin/python -m bird_painter <port>` on a throwaway archive), and a
+rendered screenshot of it is at
 <SCREENSHOT PATH> (Read it as an image). Do NOT try to start the app yourself
 — interpreters / `npm run` are blocked in your sandbox and you don't need
 them: hit the running <URL> (curl its endpoints, or drive it with a browser if
