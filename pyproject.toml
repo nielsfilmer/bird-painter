@@ -12,6 +12,7 @@ dependencies = [
     "birdnetlib>=0.18",
     "librosa>=0.10",
     "tensorflow>=2.16",
+    "sounddevice>=0.4",  # live mic capture (PortAudio)
 ]
 
 [project.optional-dependencies]
