@@ -5,9 +5,8 @@
 > self-contained, per-repo instantiation (so it travels to other machines /
 > teammates who don't share that global file). Keep the two from drifting.
 >
-> **Source of truth for product / architecture is `PLAN.md`.** It does not
-> exist yet — writing it is Phase 0/1 work. Until it lands, this file is the
-> only durable context; once it exists, read it before making changes.
+> **Source of truth for product / architecture is `PLAN.md`.** Read it before
+> making changes — it pins the concept, pipeline, stack, and v0 config.
 
 Persistent context for future Claude sessions on this repo. Read this first.
 
@@ -226,10 +225,17 @@ pinned, update **both** this file and the corresponding spot in
 
 ## What this project is
 
-**bird-painter** is an AI bird image generator: a web app that generates
-("paints") bird images with an image model. Product scope, stack, and
-architecture are not yet decided — they will be pinned down in `PLAN.md`
-(Phase 0/1 work). Repo: `nielsfilmer/bird-painter` (public).
+**bird-painter** is an ambient installation. A local microphone listens
+outdoors; BirdNET recognizes which bird species are singing right now; each
+newly-heard species is painted by a hosted image model (FLUX `schnell` on
+fal.ai) in a fixed vintage-naturalist style; the paintings show on a
+full-screen local "wall" and fade out after a few hours so the wall stays a
+fresh reflection of what's been heard. **Local ears, cloud brush** — one
+Python process on the mic machine runs capture → BirdNET → image API call →
+archive + live set → serves the wall (FastAPI). Only the image call leaves the
+house. Audience: personal toy, not a public product. Full detail — pipeline,
+component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
+`nielsfilmer/bird-painter` (public).
 
 ## File map
 
@@ -237,7 +243,8 @@ architecture are not yet decided — they will be pinned down in `PLAN.md`
 - `.gitignore` — excludes `.claude/settings.local.json` (machine-local
   permission grants; public repo).
 - `CLAUDE.md` — this file: per-repo workflow + context.
-- `PLAN.md` — (not yet written) product/architecture source of truth.
+- `PLAN.md` — product/architecture source of truth (concept, pipeline, stack,
+  v0 config, scope, risks, decision log).
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
   milestones/issues (backs the `/status` skill).
 - `.claude/settings.json` — project permission allowlist.
@@ -246,12 +253,15 @@ architecture are not yet decided — they will be pinned down in `PLAN.md`
 
 ## Decision log / source of truth
 
-`PLAN.md` (once written) is the canonical product/architecture doc; decisions
-land there as a dated decision-log section. Until it exists, decisions are
-recorded here:
+`PLAN.md` is the canonical product/architecture doc; product/architecture
+decisions land there as a dated decision-log section. This file's log covers
+workflow/process decisions:
 
-- **2026-07-18** — Project bootstrapped from `claude-project-template`. Scope
-  set as "AI bird image generator"; stack/architecture deferred to `PLAN.md`.
+- **2026-07-18** — Project bootstrapped from `claude-project-template`.
+- **2026-07-18** — Concept + stack pinned via design grilling; written to
+  `PLAN.md` (ambient installation, local Python service, BirdNET + fal FLUX
+  `schnell`, ephemeral wall). `PLAN.md`'s own decision log holds the product
+  details.
 - **2026-07-18** — **User removed themselves as merge gate for this repo,
   permanently.** Claude merges clean, fully-reviewed PRs itself and notifies
   (workflow step 5). Scope: PR merges only; the review loop still gates. Mirror
