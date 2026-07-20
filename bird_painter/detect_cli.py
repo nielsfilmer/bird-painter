@@ -12,7 +12,7 @@ import contextlib
 import sys
 from pathlib import Path
 
-from .config import load_config
+from .config import load_config_or_exit
 from .ears import Ears
 
 
@@ -24,16 +24,17 @@ def main() -> None:
     if not Path(path).is_file():
         print(f"No such audio file: {path}", file=sys.stderr)
         raise SystemExit(2)
-    try:
-        floor = (
-            float(sys.argv[2]) if len(sys.argv) > 2 else load_config().confidence_floor
-        )
-    except ValueError:
-        print(
-            f"Confidence floor must be a number, got: {sys.argv[2]!r}",
-            file=sys.stderr,
-        )
-        raise SystemExit(2) from None
+    if len(sys.argv) > 2:
+        try:
+            floor = float(sys.argv[2])
+        except ValueError:
+            print(
+                f"Confidence floor must be a number, got: {sys.argv[2]!r}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from None
+    else:
+        floor = load_config_or_exit().confidence_floor
 
     print(f"Loading BirdNET (floor {floor})…", file=sys.stderr)
     # birdnetlib prints progress to stdout; redirect it to stderr so stdout

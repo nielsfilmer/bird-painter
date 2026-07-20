@@ -3,7 +3,9 @@ every knob can be overridden via environment variable (loaded from .env)."""
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -11,22 +13,71 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
+# birdnetlib clamps min_conf to this range and filters with strict `>`.
+CONFIDENCE_FLOOR_MIN = 0.01
+CONFIDENCE_FLOOR_MAX = 0.99
+
+_TRUE = {"1", "true", "yes", "on"}
+_FALSE = {"0", "false", "no", "off"}
+
+
+class ConfigError(ValueError):
+    """A bad environment-variable value. Carries a message meant to be shown
+    to the user (the CLIs catch it and exit cleanly instead of tracebacking)."""
+
 
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
-    return float(raw) if raw else default
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        raise ConfigError(f"{name} must be a number, got: {raw!r}") from None
 
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
-    return int(raw) if raw else default
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ConfigError(f"{name} must be an integer, got: {raw!r}") from None
 
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None or raw == "":
         return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    value = raw.strip().lower()
+    if value in _TRUE:
+        return True
+    if value in _FALSE:
+        return False
+    # Don't silently disable the mic on a typo — say so.
+    raise ConfigError(
+        f"{name} must be one of {sorted(_TRUE | _FALSE)}, got: {raw!r}"
+    )
+
+
+def _confidence_floor() -> float:
+    """The confidence floor, clamped to birdnetlib's honest [0.01, 0.99] range
+    (it clamps internally anyway; clamping here keeps Config truthful and warns
+    so a surprising 0 or 1.0 doesn't pass silently)."""
+    value = _env_float("BP_CONFIDENCE_FLOOR", 0.6)
+    clamped = min(CONFIDENCE_FLOOR_MAX, max(CONFIDENCE_FLOOR_MIN, value))
+    if clamped != value:
+        logger.warning(
+            "BP_CONFIDENCE_FLOOR %s is outside [%.2f, %.2f]; using %s",
+            value,
+            CONFIDENCE_FLOOR_MIN,
+            CONFIDENCE_FLOOR_MAX,
+            clamped,
+        )
+    return clamped
 
 
 def _resolve_device(raw: str | None) -> int | str | None:
@@ -44,9 +95,7 @@ class Config:
     paint_ttl_seconds: int = field(
         default_factory=lambda: _env_int("BP_PAINT_TTL_SECONDS", 3 * 60 * 60)
     )
-    confidence_floor: float = field(
-        default_factory=lambda: _env_float("BP_CONFIDENCE_FLOOR", 0.6)
-    )
+    confidence_floor: float = field(default_factory=_confidence_floor)
     analysis_window_seconds: int = field(
         default_factory=lambda: _env_int("BP_ANALYSIS_WINDOW_SECONDS", 15)
     )
@@ -75,3 +124,13 @@ class Config:
 
 def load_config() -> Config:
     return Config()
+
+
+def load_config_or_exit() -> Config:
+    """load_config() for CLI entrypoints: a bad env value prints its message
+    and exits 2 instead of tracebacking."""
+    try:
+        return load_config()
+    except ConfigError as exc:
+        print(exc, file=sys.stderr)
+        raise SystemExit(2) from None

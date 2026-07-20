@@ -15,7 +15,7 @@ import logging
 import sys
 
 from .capture import MicListener, device_name, list_input_devices
-from .config import load_config
+from .config import load_config_or_exit
 from .ears import Detection, Ears
 
 
@@ -33,7 +33,7 @@ def main() -> None:
         return
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    config = load_config()
+    config = load_config_or_exit()
     print(
         f"Input device: {device_name(config.input_device)}. "
         "Select another with BP_INPUT_DEVICE=<index|name> "
