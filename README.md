@@ -64,7 +64,7 @@ for personal / non-commercial use**, because:
 | Component | License | Note |
 |---|---|---|
 | This repo's code | **MIT** | Do what you like. |
-| `birdnetlib` (code) | MIT | The Python wrapper. |
+| `birdnetlib` (code) | Apache-2.0 | The Python wrapper. |
 | **BirdNET models** | **CC BY-NC-SA 4.0** | **Non-commercial**, attribution, share-alike. This is the binding constraint — running the recognition is non-commercial use. |
 | **FLUX.1 [schnell]** (default brush) | Apache-2.0 | Commercial use permitted. |
 | **FLUX.1 [dev]** (`BP_FAL_MODEL=fal-ai/flux/dev`) | Non-commercial | Switching to `dev` makes image generation non-commercial too. |
