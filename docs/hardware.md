@@ -49,13 +49,13 @@ frame in the living room" concept.
 
 | Part | Recommended | ~€ | Why |
 |---|---|---|---|
-| E-paper panel | **Pimoroni Inky Impression 7.3" (2025 Edition)** — Spectra 6, **7-colour**, **800×480**, ~12 s full refresh, 40-pin HAT, no soldering | ~85 | Full colour is the whole point — our birds are painterly, so a red/black/white or mono panel would gut them. Purpose-built for photo frames; the newer Spectra 6 panel has more saturated colour + faster refresh than the older ACeP one. |
+| E-paper panel | **Pimoroni Inky Impression 7.3" (2025 Edition)** — Spectra 6, **6-colour**, **800×480**, ~12 s panel refresh (~20–25 s full cycle over SPI), 40-pin HAT, no soldering | ~85 | Full colour is the whole point — our birds are painterly, so a red/black/white or mono panel would gut them. Purpose-built for photo frames; the newer Spectra 6 panel has more saturated colour + faster refresh than the older ACeP one. |
 | Display controller | **Raspberry Pi Zero 2 WH** (with pre-soldered header) | ~20 | The Inky is a HAT — it needs a Pi behind it. The frame only fetches a PNG and pushes it, so a Zero 2 W is plenty. |
 | Storage | microSD 16–32 GB (A1) | ~8 | OS for the Zero. |
 | Power | USB micro-B PSU (5 V/2.5 A) | ~9 | Wall power; the panel only draws while refreshing. |
 | Enclosure | IKEA frame (the board is **174 × 123 mm**, fits a **180 × 130 mm** aperture) or Pimoroni's wooden frame accessory | ~10 | Indoors, so no weatherproofing. |
 
-**Render target for slice #49: 800 × 480, landscape, 7-colour palette** (Spectra
+**Render target for slice #49: 800 × 480, landscape, 6-colour palette** (Spectra
 6: black, white, red, green, blue, yellow — the Inky library handles dithering
 to that palette).
 
@@ -68,7 +68,7 @@ reworked; less flexible. The Impression + Zero 2 W is the more hackable path.
 
 | Part | Recommended | ~€ | Why |
 |---|---|---|---|
-| Computer | **Raspberry Pi 4 Model B, 4 GB** (value) — or **Pi 5, 4 GB** (comfortable) | ~55 / ~65 | BirdNET (TF-Lite) needs a Pi 4 minimum; Pi 5 runs TF-Lite ~5× faster than Pi 4 for snappier detection + headroom. A Zero 2 W (512 MB) *can* run BirdNET but is slow and RAM-tight — fine for the frame, not ideal for the ears. |
+| Computer | **Raspberry Pi 4 Model B, 4 GB** (value) — or **Pi 5, 4 GB** (comfortable) | ~55 / ~65 | BirdNET-Pi officially runs on a Pi 3B+/Zero 2 W and up, but our recorder also paints + serves, so a Pi 4 gives comfortable headroom; Pi 5 runs TF-Lite ~5× faster than Pi 4 for snappier detection. A Zero 2 W (512 MB) works but is slow and RAM-tight — fine for the frame, not ideal for the ears. |
 | Storage | microSD 32 GB (A1/A2) | ~10 | OS + the growing painting archive (see #19-era note: archive is unbounded; a bigger card or a USB SSD if it runs for months). |
 | Microphone | **Plug-and-play USB mic, mono** (e.g. a USB lavalier/omni like a Boya BY-series, or a simple USB mini-mic) + **foam windscreen** | ~15–30 | BirdNET wants sensitivity, not hi-fi — flat-ish to ~12 kHz, no distortion. **Mono** (BirdNET processes mono anyway). Avoid separate USB sound-cards (ground-loop buzz). |
 | USB extension | 1–2 m USB extension cable | ~5 | Move the mic away from the Pi to dodge the Pi's electromagnetic noise, and to reach the window/eave while the Pi stays dry. |
@@ -120,14 +120,15 @@ credentials or anything the vendor mints.
 
 ## Open notes / decisions
 
-- **Refresh cadence.** The Inky takes ~12 s to redraw and colour e-paper
+- **Refresh cadence.** The Inky takes ~12 s to redraw (~20–25 s full cycle over
+  SPI) and colour e-paper
   shouldn't be hammered — a **few-minutes** update cadence suits an ambient
   frame (the wall's own TTL is hours). The live browser wall keeps its 5 s poll;
   only the frame is slow.
-- **Colour fidelity.** Spectra 6 is 7 fixed colours with dithering — the
-  vintage-cutout birds will read well but won't be photographic. #49 should
-  render at 800×480 and let the Inky library do the palette dithering (don't
-  pre-quantise).
+- **Colour fidelity.** Spectra 6 is 6 fixed colours (black, white, red, green,
+  blue, yellow) with dithering — the vintage-cutout birds will read well but
+  won't be photographic. #49 should render at 800×480 and let the Inky library
+  do the palette dithering (don't pre-quantise).
 - **Outdoor power/rain** is the fiddliest bit — the pragmatic v0 is *mic
   outside, Pi inside*, which sidesteps enclosure/IP concerns entirely.
 - **Archive growth** on the recorder's SD (follow-up from earlier phases) — a
