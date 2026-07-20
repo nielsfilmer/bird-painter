@@ -74,3 +74,31 @@ def test_importing_web_has_no_side_effects(tmp_path: Path):
         check=True,
     )
     assert list(tmp_path.iterdir()) == []
+
+
+def test_dev_paint_returns_502_when_the_brush_fails_with_a_key(monkeypatch, config):
+    # FAL_KEY set, but the brush returns None (a soft paint failure): the
+    # endpoint 502s and nothing is stored.
+    from bird_painter import brush
+
+    keyed = dataclasses.replace(config, fal_key="present")
+    monkeypatch.setattr(brush, "paint", lambda *a, **k: None)
+    app = create_app(keyed)
+    with TestClient(app) as client:
+        response = client.post("/dev/paint/robin")
+        assert response.status_code == 502
+        assert client.get("/api/live").json()["paintings"] == []
+
+
+def test_dev_paint_uses_the_real_brush_when_a_key_is_set(monkeypatch, config):
+    from bird_painter import brush
+
+    keyed = dataclasses.replace(config, fal_key="present")
+    monkeypatch.setattr(brush, "paint", lambda *a, **k: (b"JPGBYTES", "jpg"))
+    app = create_app(keyed)
+    with TestClient(app) as client:
+        response = client.post("/dev/paint/song-thrush")
+        assert response.status_code == 201
+        assert response.json()["source"] == "dev"
+        live = client.get("/api/live").json()["paintings"]
+        assert [p["species_common"] for p in live] == ["Song Thrush"]
