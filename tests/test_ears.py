@@ -115,8 +115,6 @@ def test_no_non_bird_animal_slips_past_the_denylist():
 
 
 
-
-
 def test_silence_load_swallows_raw_fd_writes_then_restores(capfd):
     # os.write goes straight to the fd (like TF Lite's C++ XNNPACK line),
     # bypassing Python buffering — the exact thing _silence_load must catch.

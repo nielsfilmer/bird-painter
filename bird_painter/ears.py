@@ -36,27 +36,38 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 def _silence_load():
     """Silence the model-load noise. TF Lite writes some lines (the 'Created
     XNNPACK delegate' INFO) straight to the stdout/stderr file descriptors from
-    C++, bypassing Python — so we redirect the fds themselves to /dev/null for
-    the duration, which also swallows birdnetlib's print()s and any warning
-    output. Scoped tightly to the ~seconds of Analyzer() construction. On any
-    error the fds are restored in `finally`, and exceptions still propagate."""
+    C++, bypassing Python — the fd redirect below is the ONLY thing that
+    catches those; it also swallows birdnetlib's print()s and warning output
+    (TF_CPP_MIN_LOG_LEVEL handles TF's own logger belt-and-suspenders). On any
+    error the fds are restored in `finally` and exceptions still propagate
+    (a load failure's traceback prints after the block, unswallowed).
+
+    CAVEAT: os.dup2 on fds 1/2 is PROCESS-GLOBAL and cross-thread. In the app,
+    Analyzer() loads in the listener daemon thread, so for the ~seconds of the
+    load ANY thread's stdout/stderr (uvicorn's included) goes to /dev/null.
+    Startup-only, and in practice uvicorn's logs land outside the window — but
+    it's a real race, accepted for a single-process personal installation.
+    See the follow-up issue about loading Ears before the listener thread."""
     sys.stdout.flush()
     sys.stderr.flush()
     devnull = os.open(os.devnull, os.O_WRONLY)
-    saved_out, saved_err = os.dup(1), os.dup(2)
-    os.dup2(devnull, 1)
-    os.dup2(devnull, 2)
+    saved_out = saved_err = None
     try:
+        saved_out, saved_err = os.dup(1), os.dup(2)
+        os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             yield
     finally:
         sys.stdout.flush()
         sys.stderr.flush()
-        os.dup2(saved_out, 1)
-        os.dup2(saved_err, 2)
-        os.close(saved_out)
-        os.close(saved_err)
+        if saved_out is not None:
+            os.dup2(saved_out, 1)
+            os.close(saved_out)
+        if saved_err is not None:
+            os.dup2(saved_err, 2)
+            os.close(saved_err)
         os.close(devnull)
 
 # BirdNET's label set (BirdNET_GLOBAL_6K_V2.4) isn't birds-only: alongside
