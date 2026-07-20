@@ -39,7 +39,7 @@ def _maybe_pick_device(config, skip: bool) -> None:
     if (
         skip
         or not config.enable_listener
-        or os.environ.get("BP_INPUT_DEVICE")
+        or os.environ.get("BP_INPUT_DEVICE", "").strip()  # already pinned
         or not sys.stdin.isatty()
     ):
         return

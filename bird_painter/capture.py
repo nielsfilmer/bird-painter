@@ -127,8 +127,11 @@ def select_input_device() -> int | None:
     prompt = f"Device index [Enter for default {default_in}]: "
     try:
         raw = input(prompt)
-    except EOFError:
+    except EOFError:  # stdin closed / piped-empty — fall back to default
         return None
+    except KeyboardInterrupt:  # Ctrl-C at the picker aborts the launch cleanly
+        print()
+        raise SystemExit(130) from None
     chosen = resolve_device_choice(raw, {i for i, _ in devices})
     if raw.strip() and chosen is None:
         print(f"'{raw.strip()}' isn't a listed index — using the default.")

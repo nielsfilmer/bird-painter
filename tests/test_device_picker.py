@@ -1,5 +1,8 @@
 import dataclasses
 
+import pytest
+
+from bird_painter import capture
 from bird_painter.__main__ import _maybe_pick_device
 from bird_painter.capture import resolve_device_choice
 
@@ -74,3 +77,53 @@ def test_picker_default_choice_leaves_env_unset(monkeypatch, config):
     import os
 
     assert "BP_INPUT_DEVICE" not in os.environ
+
+
+
+_FAKE_DEVICES = (
+    [
+        (3, {"name": "Scarlett", "default_samplerate": 48000}),
+        (4, {"name": "MacBook", "default_samplerate": 48000}),
+    ],
+    3,
+)
+
+
+def test_select_input_device_returns_chosen_index(monkeypatch):
+    monkeypatch.setattr(capture, "_input_devices", lambda: _FAKE_DEVICES)
+    monkeypatch.setattr(capture, "device_name", lambda d: f"dev{d}")
+    monkeypatch.setattr("builtins.input", lambda prompt="": "4")
+    assert capture.select_input_device() == 4
+
+
+def test_select_input_device_blank_is_default(monkeypatch):
+    monkeypatch.setattr(capture, "_input_devices", lambda: _FAKE_DEVICES)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+    assert capture.select_input_device() is None
+
+
+def test_select_input_device_eof_is_default(monkeypatch):
+    monkeypatch.setattr(capture, "_input_devices", lambda: _FAKE_DEVICES)
+
+    def raise_eof(prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", raise_eof)
+    assert capture.select_input_device() is None
+
+
+def test_select_input_device_ctrl_c_aborts(monkeypatch):
+    monkeypatch.setattr(capture, "_input_devices", lambda: _FAKE_DEVICES)
+
+    def raise_kbd(prompt=""):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("builtins.input", raise_kbd)
+    with pytest.raises(SystemExit) as exc:
+        capture.select_input_device()
+    assert exc.value.code == 130
+
+
+def test_select_input_device_no_devices_returns_none(monkeypatch):
+    monkeypatch.setattr(capture, "_input_devices", lambda: ([], None))
+    assert capture.select_input_device() is None
