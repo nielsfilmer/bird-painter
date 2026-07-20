@@ -118,3 +118,28 @@ def test_paint_image_download_failure_is_a_soft_failure(monkeypatch):
     monkeypatch.setattr(brush.httpx, "post", fake_post)
     monkeypatch.setattr(brush.httpx, "get", fake_get)
     assert brush.paint("Robin", brush.UNKNOWN_SCIENTIFIC, fal_key="k") is None
+
+
+def test_paint_uses_the_configured_model_endpoint(monkeypatch):
+    seen = {}
+
+    def fake_post(url, **kw):
+        seen["url"] = url
+        return _resp(200, json={"images": [{"url": "http://cdn/x.png",
+                                            "content_type": "image/png"}]})
+
+    def fake_get(url, **kw):
+        return _resp(200, content=b"B", headers={"content-type": "image/png"})
+
+    monkeypatch.setattr(brush.httpx, "post", fake_post)
+    monkeypatch.setattr(brush.httpx, "get", fake_get)
+    brush.paint("Robin", brush.UNKNOWN_SCIENTIFIC, fal_key="k", model="fal-ai/flux/dev")
+    assert seen["url"] == "https://fal.run/fal-ai/flux/dev"
+
+
+def test_prompt_has_no_field_guide_or_text_triggers():
+    prompt = brush.build_prompt("European Robin", "Erithacus rubecula").lower()
+    assert "white" in prompt
+    assert "no text" in prompt
+    for trigger in ("field guide plate", "audubon", "engraving"):
+        assert trigger not in prompt

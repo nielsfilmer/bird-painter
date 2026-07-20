@@ -116,7 +116,9 @@ def create_app(config: Config | None = None) -> FastAPI:
         detection-driven trigger gate."""
         common = species.replace("-", " ").replace("_", " ").title()
         scientific = brush.UNKNOWN_SCIENTIFIC
-        result = brush.paint(common, scientific, fal_key=config.fal_key)
+        result = brush.paint(
+            common, scientific, fal_key=config.fal_key, model=config.fal_model
+        )
         if result is not None:
             image_bytes, extension = result
             source = "dev"

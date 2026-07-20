@@ -115,6 +115,12 @@ class Config:
         default_factory=lambda: Path(os.environ.get("BP_ARCHIVE_DIR", "data/archive"))
     )
     fal_key: str = field(default_factory=lambda: os.environ.get("FAL_KEY", ""))
+    # fal model id for the brush. schnell is cheapest/fastest but follows the
+    # no-text/white-background prompt loosely; fal-ai/flux/dev obeys it far
+    # better (pricier). Override with BP_FAL_MODEL.
+    fal_model: str = field(
+        default_factory=lambda: os.environ.get("BP_FAL_MODEL", "fal-ai/flux/schnell")
+    )
     # Start the live mic listener alongside the wall. Off → wall-only (tests,
     # QA, or a machine with no mic); the /dev/paint endpoint still works.
     enable_listener: bool = field(
