@@ -103,18 +103,19 @@ served locally off the same process.
     plates glide outward as newer ones arrive.
   - **Framed like a naturalist wall-chart.** A fixed title header sits at the
     top (small italic eyebrow "birds outside" + letterspaced "heard recently");
-    a compact cluster sits centred below it — a central oval sized by the
-    SMALLER viewport axis, so a wide screen gets a dense clump in the middle,
-    not birds fanned edge-to-edge. **No per-bird text** — a bird is a bare
-    cutout, its species only in the image `alt` for screen readers. Birds are
-    painted on plain white, so the wall's multiply-blend drops the ground and
-    leaves clean cutouts on the shared paper.
-  - **Birds never overlap.** Layout is computed globally: each plate takes the
-    first free spot walking the spiral (its box = image + margin vs everything
-    already placed, kept inside the sub-title band). If any plate can't find a
-    free spot at the current size, all plates shrink together (bounded
-    shrink-and-relayout loop) until everything fits — so overlap is engineered
-    away, not just unlikely. The tilt applies to the painting image only.
+    a **tight** cluster sits centred below it — a central oval sized by the
+    SMALLER viewport axis (and a smaller span fraction), so a wide screen gets
+    a dense clump in the middle, not birds fanned edge-to-edge. Each bird
+    carries a **subtle per-bird label** — species (small-caps) + "heard …"
+    (italic) — added programmatically as page text, **never baked into the
+    image**. Birds are painted on plain white, so the wall's multiply-blend
+    drops the ground and leaves clean cutouts on the shared paper.
+  - **Birds never overlap, and stand upright (no rotation).** Layout is
+    computed globally: each plate takes the first free spot walking the spiral
+    (its box = image + caption + margin vs everything already placed, kept
+    inside the sub-title band). If any plate can't find a free spot at the
+    current size, all plates shrink together (bounded shrink-and-relayout loop)
+    until everything fits — so overlap is engineered away, not just unlikely.
     (Transient exception, accepted: a freshly-expired plate crossfades out
     where it stood, so a gliding live plate can briefly pass over it.)
 
