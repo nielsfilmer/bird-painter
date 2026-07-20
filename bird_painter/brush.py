@@ -22,13 +22,17 @@ REQUEST_TIMEOUT_SECONDS = 60.0
 # Sentinel for "BirdNET/dev gave us no scientific name" — shared with web.py.
 UNKNOWN_SCIENTIFIC = "Species incognita"
 
-# The fixed vintage-naturalist house style (PLAN.md "House style").
+# The fixed vintage-naturalist house style (PLAN.md "House style"). The bird
+# is painted as an isolated cutout on plain white so the wall's multiply-blend
+# drops the background and leaves just the bird; the long "no text" tail keeps
+# FLUX from baking in field-guide captions/labels (it likes to).
 PROMPT_TEMPLATE = (
-    "A vintage naturalist illustration of a {name}, hand-painted "
-    "19th-century field-guide plate in the style of John James Audubon, "
-    "single bird in full view perched on a branch, fine watercolor and ink "
-    "detail, muted earth tones, aged cream paper background with subtle "
-    "foxing, no text, no border"
+    "A vintage naturalist illustration of a single {name}, hand-painted "
+    "watercolor and ink in the style of John James Audubon, the whole bird "
+    "in full view, muted natural colors, fine feather detail, isolated on a "
+    "plain solid white background, studio cutout of one bird, nothing else. "
+    "Absolutely no text, no words, no letters, no caption, no label, no title, "
+    "no numbers, no signature, no watermark, no border, no frame, no scenery."
 )
 
 
