@@ -106,10 +106,14 @@ served locally off the same process.
     a **tight** cluster sits centred below it — a central oval sized by the
     SMALLER viewport axis (and a smaller span fraction), so a wide screen gets
     a dense clump in the middle, not birds fanned edge-to-edge. Each bird
-    carries a **subtle per-bird label** — species (small-caps) + "heard …"
-    (italic) — added programmatically as page text, **never baked into the
-    image**. Birds are painted on plain white, so the wall's multiply-blend
-    drops the ground and leaves clean cutouts on the shared paper.
+    carries a **small per-bird label** — species (small-caps) + "heard at
+    HH:MM" (italic, 24-hour) — added programmatically as page text, **never
+    baked into the image**. The label is a **fixed clock time, not "x min
+    ago"**: the e-ink frame only refreshes every few minutes, so a relative
+    label would be stale between draws. Birds are painted on plain white, so
+    the wall's multiply-blend drops the ground and leaves clean cutouts on the
+    shared paper; the birds are sized generously (small caption reserve) so
+    they read as the subject.
   - **Birds never overlap, and stand upright (no rotation).** Layout is
     computed globally: each plate takes the first free spot walking the spiral
     (its box = image + caption + margin vs everything already placed, kept

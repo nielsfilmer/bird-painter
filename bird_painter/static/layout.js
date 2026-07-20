@@ -11,7 +11,7 @@
 // set can't fit at the current size, all plates shrink together until it does.
 
 const GOLDEN_ANGLE = 2.399963229728653; // radians, 137.5°
-const SIZE_MIN_VMIN = 22, SIZE_SPAN_VMIN = 13;   // plate width 22–34 vmin
+const SIZE_MIN_VMIN = 30, SIZE_SPAN_VMIN = 14;   // plate width 30–44 vmin
 const MAX_INDEX = 12;                            // matches the wall's live cap
 const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrait
 // The plate's box also reserves room for the caption below the image (species
@@ -20,8 +20,8 @@ const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrai
 // floor — the caption font is clamped, so on small plates/viewports it stops
 // scaling down and a pure ratio would under-reserve (labels then spill onto
 // the bird below).
-const CAPTION_ALLOWANCE = 1.2;
-const CAPTION_FLOOR_PX = 38;
+const CAPTION_ALLOWANCE = 1.1;
+const CAPTION_FLOOR_PX = 26;
 
 function captionPx(imageHeightPx) {
   return Math.max(CAPTION_FLOOR_PX, imageHeightPx * (CAPTION_ALLOWANCE - 1));
@@ -30,7 +30,7 @@ const TOP_Z = 200;
 const GAP_VMIN = 0.5;        // tight spacing — a dense cutout cluster
 const SPIRAL_STEP = 0.22;    // how far along the spiral each retry walks
 const MAX_TRIES = 220;       // spiral samples per plate before giving up
-const FILL_FACTOR = 0.86;    // plates may claim at most this share of the cluster
+const FILL_FACTOR = 0.92;    // plates may claim at most this share of the cluster
 const SHRINK_RETRIES = 8;    // if any plate still couldn't find a free spot,
 const SHRINK_STEP = 0.9;     // shrink everyone by this and lay out again
 // The cluster is a central oval whose size is driven by the SMALLER viewport
@@ -38,7 +38,7 @@ const SHRINK_STEP = 0.9;     // shrink everyone by this and lay out again
 // the edges on a wide screen. CLUSTER_ASPECT lets it be a little wider than
 // tall (like the reference wall-chart). A smaller SPAN packs the birds
 // tighter toward the centre.
-const CLUSTER_SPAN = 0.56;   // cluster fills this fraction of the limiting axis
+const CLUSTER_SPAN = 0.64;   // cluster fills this fraction of the limiting axis
 const CLUSTER_ASPECT = 1.35; // cluster oval is this much wider than tall
 
 export function hash(str) {

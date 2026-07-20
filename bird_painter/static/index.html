@@ -71,15 +71,15 @@
   }
   .plate .species {
     font-variant: small-caps;
-    letter-spacing: 0.06em;
-    font-size: clamp(10px, 1.35vmin, 15px);
+    letter-spacing: 0.05em;
+    font-size: clamp(8px, 1.05vmin, 12px);
     color: var(--ink);
   }
   .plate .heard {
     font-style: italic;
-    font-size: clamp(8px, 1.05vmin, 12px);
+    font-size: clamp(7px, 0.85vmin, 10px);
     color: #6b5e45;
-    margin-top: 0.1vmin;
+    margin-top: 0.05vmin;
   }
   /* Title chrome at the top of the wall. */
   #header {
@@ -136,11 +136,11 @@ const plates = new Map(); // file -> element
 const FADE_MS = 2300;
 
 function heardText(bornAt) {
-  const mins = Math.round((Date.now() / 1000 - bornAt) / 60);
-  if (mins < 1) return "heard just now";
-  if (mins < 60) return `heard ${mins} min ago`;
-  const h = Math.floor(mins / 60);
-  return `heard ${h}h ${mins % 60}m ago`;
+  // A fixed clock time, not "x min ago": the e-ink frame only refreshes every
+  // few minutes, so a relative label would be stale between draws. The
+  // timestamp is correct whenever the panel last rendered.
+  const t = new Date(bornAt * 1000);
+  return `heard at ${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`;
 }
 
 // Apply the pure layout (bird_painter/static/layout.js) to the plate elements.
@@ -208,14 +208,12 @@ async function refresh() {
   // Payload is newest-first; index 0 = newest = center of the collage.
   liveOrder = data.paintings.map(p => p.file);
   for (const p of data.paintings) {
-    let el = plates.get(p.file);
-    if (!el) {
-      el = makePlate(p);
+    if (!plates.has(p.file)) {
+      const el = makePlate(p);
       plates.set(p.file, el);
       wall.appendChild(el);
-    } else {
-      el.querySelector(".heard").textContent = heardText(p.born_at);
     }
+    // The caption is a fixed timestamp, so it never needs re-rendering.
   }
   layoutAll(); // existing plates glide to new collision-free spots
   empty.classList.toggle("hidden", plates.size > 0);
