@@ -98,13 +98,18 @@ served locally off the same process.
     stable per-painting size (~24–36 vmin), tilt, and scatter (hashed from
     its filename, so layout is deterministic across reloads). Existing
     plates glide outward as newer ones arrive.
-  - **Birds never overlap; captions always straight.** Layout is computed
-    globally: each plate takes the first free spot walking the spiral (its
-    box = image + caption + margin vs everything already placed). If any
-    plate can't find a free spot at the current size, all plates shrink
-    together (bounded shrink-and-relayout loop) until everything fits —
-    so overlap is engineered away, not just unlikely. The tilt applies to
-    the painting image only — captions stay horizontal and readable.
+  - **Framed like a naturalist wall-chart.** A fixed title header sits at the
+    top (small italic eyebrow "birds outside" + letterspaced "heard recently");
+    the cluster fills the band below it. **No per-bird text** — a bird is a bare
+    cutout, its species only in the image `alt` for screen readers. Birds are
+    painted on plain white, so the wall's multiply-blend drops the ground and
+    leaves clean cutouts on the shared paper.
+  - **Birds never overlap.** Layout is computed globally: each plate takes the
+    first free spot walking the spiral (its box = image + margin vs everything
+    already placed, kept inside the sub-title band). If any plate can't find a
+    free spot at the current size, all plates shrink together (bounded
+    shrink-and-relayout loop) until everything fits — so overlap is engineered
+    away, not just unlikely. The tilt applies to the painting image only.
     (Transient exception, accepted: a freshly-expired plate crossfades out
     where it stood, so a gliding live plate can briefly pass over it.)
 
@@ -117,7 +122,9 @@ grab-bag of outputs. It's a one-line prompt template, trivial to swap later
 (watercolor, ink, oil…).
 
 - Prompt is built from the species' **common + scientific name** plus the style
-  template.
+  template. The bird is painted **isolated on plain white** (so the wall
+  cutout-blends it) with a hard **no-text** instruction — FLUX otherwise likes
+  to bake field-guide captions/labels into the plate.
 - Accepted limitation: FLUX won't perfectly render every one of ~6000 species,
   especially rare ones. It takes artistic license. For a personal toy that's
   charm, not a defect.
