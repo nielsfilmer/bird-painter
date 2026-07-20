@@ -5,7 +5,7 @@
 
 VENV := .venv/bin
 
-.PHONY: lint test review-checks
+.PHONY: lint test test-js review-checks
 
 lint:
 	$(VENV)/ruff check bird_painter tests
@@ -13,4 +13,14 @@ lint:
 test:
 	$(VENV)/pytest -q
 
-review-checks: lint test
+# The wall's layout maths (bird_painter/static/layout.js) — guarded by
+# node --test so a density/overlap regression fails here, not by hand.
+# Skips gracefully if node isn't installed (Python checks still run).
+test-js:
+	@if command -v node >/dev/null 2>&1; then \
+		node --test bird_painter/static/*.test.js; \
+	else \
+		echo "test-js: node not found — skipping JS layout tests"; \
+	fi
+
+review-checks: lint test test-js

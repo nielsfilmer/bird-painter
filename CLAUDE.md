@@ -271,7 +271,13 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `web.py` — FastAPI app via `create_app(config)` factory (no import-time
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
     `/images/*`, `/dev/paint/*`.
-  - `static/index.html` — the wall (polling, fade in/out).
+  - `static/index.html` — the wall (polling, fade in/out); imports the layout
+    module and applies it to the plate DOM.
+  - `static/layout.js` — pure collage-layout maths (`computeCollage`): spiral
+    placement, no-overlap, crowding scale. No DOM — unit-tested.
+  - `static/layout.test.js` — `node --test` guard for the layout (overlap-free
+    across random sets/viewports, determinism, on-screen); run by
+    `make test-js` inside `make review-checks`.
   - `__main__.py` — `python -m bird_painter [port]` (port: CLI arg → `BP_PORT`
     → default 8537; `--list-devices` lists mics; sets up INFO logging so the
     listener heartbeat surfaces): runs the
@@ -282,8 +288,10 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 - `CLAUDE.md` — this file: per-repo workflow + context.
 - `PLAN.md` — product/architecture source of truth (concept, pipeline, stack,
   v0 config, scope, risks, decision log).
-- `Makefile` — `make review-checks` (= lint via ruff + test via pytest); the
-  deterministic-check wrapper the senior-dev review runs.
+- `Makefile` — `make review-checks` (= lint via ruff + test via pytest +
+  test-js via `node --test` for the wall layout); the deterministic-check
+  wrapper the senior-dev review runs. `test-js` skips gracefully if node is
+  absent.
 - `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API;
   import-purity regression). Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub

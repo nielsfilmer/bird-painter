@@ -78,6 +78,11 @@ def create_app(config: Config | None = None) -> FastAPI:
     def wall() -> str:
         return (STATIC_DIR / "index.html").read_text()
 
+    @app.get("/layout.js")
+    def layout_js() -> FileResponse:
+        # The wall imports this ES module (its layout maths, unit-tested).
+        return FileResponse(STATIC_DIR / "layout.js", media_type="text/javascript")
+
     @app.get("/api/live")
     def live() -> JSONResponse:
         paintings = store.live()[: config.wall_max_live]
