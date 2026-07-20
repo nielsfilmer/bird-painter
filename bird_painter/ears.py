@@ -169,8 +169,14 @@ class Ears:
         if self.latitude is None or self.longitude is None:
             return {}
         return {
-            "lat": self.latitude,
-            "lon": self.longitude,
+            # birdnetlib gates the location model on a truthiness check
+            # (`if recording.lon and recording.lat`), so an exact 0.0 — the
+            # equator or the prime meridian, both legal populated coordinates —
+            # would silently fall back to the global model. Nudge a bare zero by
+            # a sub-metre epsilon (~1e-6° ≈ 11 cm) so the filter still engages;
+            # far below BirdNET's coarse location-grid resolution.
+            "lat": self.latitude or 1e-6,
+            "lon": self.longitude or 1e-6,
             "date": datetime.date.today(),
         }
 

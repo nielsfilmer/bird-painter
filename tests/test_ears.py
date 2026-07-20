@@ -31,6 +31,18 @@ def test_location_kwargs_carries_lat_lon_and_today():
     assert kwargs["date"] == datetime.date.today()
 
 
+def test_location_kwargs_nudges_bare_zero_so_filter_still_engages():
+    # birdnetlib gates the filter on `lon and lat` truthiness, so an exact 0.0
+    # (equator / prime meridian) would silently disable it. The nudge keeps it
+    # non-zero and sub-metre-close.
+    ears = _ears_without_model(latitude=0.0, longitude=0.0)
+    kwargs = ears._location_kwargs()
+    assert kwargs["lat"] != 0
+    assert kwargs["lon"] != 0
+    assert abs(kwargs["lat"]) < 1e-4
+    assert abs(kwargs["lon"]) < 1e-4
+
+
 def test_real_birds_pass():
     for sci in (
         "Erithacus rubecula",       # European Robin
