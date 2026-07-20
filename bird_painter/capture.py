@@ -30,9 +30,13 @@ logger = logging.getLogger(__name__)
 # BirdNET's fixed input rate; do not change without adding resampling.
 BIRDNET_SAMPLERATE = 48000
 
-# Backoff after a failed window, so a persistent fault (mic unplugged, bad
-# rate) can't spin the loop at 100% CPU flooding the log.
+# Backoff after a failed window / stream fault, so a persistent fault (mic
+# unplugged, bad rate) can't spin the loop at 100% CPU flooding the log.
 ERROR_BACKOFF_SECONDS = 1.0
+
+# Cap the block queue so a wedged analyzer can't grow memory without bound;
+# when full we drop the OLDEST block (stale audio is the least useful).
+MAX_QUEUED_BLOCKS = 256
 
 
 class _WindowAccumulator:
@@ -48,8 +52,9 @@ class _WindowAccumulator:
 
     def push(self, block: np.ndarray) -> np.ndarray | None:
         """Add a block; return a fresh window snapshot when one is due, else
-        None. The returned array is a copy the caller may analyse while the
-        stream keeps filling the buffer."""
+        None. The returned array is a copy the caller owns and may mutate/hold
+        while the stream keeps filling the buffer (push rebinds `_buf`, so it
+        never hands back a live view of internal state)."""
         self._buf = np.concatenate([self._buf, block])
         if len(self._buf) > self.window:
             self._buf = self._buf[-self.window :]
@@ -144,36 +149,70 @@ class MicListener:
     def listen(self, on_detections: Callable[[list[Detection]], None]) -> None:
         """Stream → window → detect → callback, forever. Ctrl-C stops it
         cleanly. Capture runs continuously in PortAudio's thread, so no audio
-        is dropped while a window is being analysed."""
+        is dropped while a window is being analysed. If the stream faults or
+        goes silent (mic unplugged), it's logged and reopened after a backoff
+        — the listener recovers rather than wedging."""
         logger.info(
             "listening on '%s': %ds windows at %d Hz",
             self._device_name(),
             self.window_seconds,
             self.samplerate,
         )
-        blocks: queue.Queue[np.ndarray] = queue.Queue()
+        while True:
+            try:
+                self._stream_once(on_detections)
+            except KeyboardInterrupt:
+                logger.info("listening stopped")
+                return
+            except Exception:  # noqa: BLE001 — a stream fault must not kill the
+                logger.exception("capture: stream error; reopening")  # listener
+            time.sleep(ERROR_BACKOFF_SECONDS)
+
+    def _stream_once(self, on_detections: Callable[[list[Detection]], None]) -> None:
+        """Open the stream and analyse windows until it faults or falls silent
+        (returns so listen() reopens it)."""
+        blocks: queue.Queue[np.ndarray] = queue.Queue(maxsize=MAX_QUEUED_BLOCKS)
+        warned_statuses: set[str] = set()
 
         def on_audio(indata, frames, time_info, status) -> None:
             if status:
-                logger.warning("capture: stream status %s", status)
+                # Log each distinct status once per stream, not every callback.
+                text = str(status)
+                if text not in warned_statuses:
+                    warned_statuses.add(text)
+                    logger.warning("capture: stream status %s", text)
             # Copy — PortAudio reuses indata's buffer after the callback.
-            blocks.put(indata[:, 0].copy())
+            block = indata[:, 0].copy()
+            try:
+                blocks.put_nowait(block)
+            except queue.Full:  # analyzer lagging — drop the oldest block
+                try:
+                    blocks.get_nowait()
+                except queue.Empty:
+                    pass
+                blocks.put_nowait(block)
 
         accumulator = _WindowAccumulator(
             window=int(self.window_seconds * self.samplerate),
             hop=int(self.hop_seconds * self.samplerate),
         )
-        try:
-            with sd.InputStream(
-                samplerate=self.samplerate,
-                channels=1,
-                dtype="float32",
-                device=self.device,
-                callback=on_audio,
-            ):
-                while True:
-                    window = accumulator.push(blocks.get())
-                    if window is not None:
-                        self._analyse_window(window, on_detections)
-        except KeyboardInterrupt:
-            logger.info("listening stopped")
+        # If no audio arrives for a few windows the stream has wedged (mic
+        # gone) — give up so listen() reopens it.
+        silence_timeout = self.window_seconds * 3 + 5
+        with sd.InputStream(
+            samplerate=self.samplerate,
+            channels=1,
+            dtype="float32",
+            device=self.device,
+            callback=on_audio,
+        ):
+            while True:
+                try:
+                    block = blocks.get(timeout=silence_timeout)
+                except queue.Empty:
+                    logger.warning("capture: no audio for %ss; reopening stream",
+                                   silence_timeout)
+                    return
+                window = accumulator.push(block)
+                if window is not None:
+                    self._analyse_window(window, on_detections)

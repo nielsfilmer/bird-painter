@@ -41,11 +41,17 @@ def test_hop_smaller_than_window_overlaps():
     assert [int(w[-1]) for w in windows] == [99, 149, 199]
 
 
-def test_returned_window_is_a_copy_safe_to_mutate():
-    acc = _WindowAccumulator(window=10, hop=10)
-    win = None
-    for b in _blocks(10, 10):
-        win = acc.push(b)
-    win[:] = -1  # caller mutating its copy
-    nxt = acc.push(np.zeros(10, dtype="float32"))
-    assert nxt is not None and nxt.max() >= 0  # internal buffer untouched
+def test_returned_window_is_safe_for_the_caller_to_mutate():
+    # Contract: a caller may mutate/hold a returned window without corrupting a
+    # later (overlapping) window. With hop < window the two share samples, so
+    # this would fail if push handed back a live view of internal state.
+    acc = _WindowAccumulator(window=10, hop=5)
+    first = None
+    for b in _blocks(10, 5):
+        first = acc.push(b)
+    assert first is not None
+    first[:] = -999  # caller stomps its window
+    second = acc.push(np.arange(10, 15, dtype="float32"))  # samples 10..14
+    assert second is not None
+    # second holds 5..14; the shared 5..9 region must be the real values
+    assert list(second[:5]) == [5, 6, 7, 8, 9]
