@@ -1,9 +1,10 @@
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
 
-from bird_painter.ears import NON_BIRD_SCIENTIFIC, is_bird
+from bird_painter.ears import NON_BIRD_SCIENTIFIC, _silence_load, is_bird
 
 
 def test_real_birds_pass():
@@ -111,3 +112,28 @@ def test_no_non_bird_animal_slips_past_the_denylist():
         and not any(t in common.lower() for t in trap_bird_substrings)
     ]
     assert leaked == []
+
+
+
+
+
+def test_silence_load_swallows_raw_fd_writes_then_restores(capfd):
+    # os.write goes straight to the fd (like TF Lite's C++ XNNPACK line),
+    # bypassing Python buffering — the exact thing _silence_load must catch.
+    with _silence_load():
+        os.write(1, b"SWALLOWED-STDOUT\n")
+        os.write(2, b"SWALLOWED-STDERR\n")
+    os.write(1, b"VISIBLE-AFTER\n")
+    out, err = capfd.readouterr()
+    assert "SWALLOWED" not in out
+    assert "SWALLOWED" not in err
+    assert "VISIBLE-AFTER" in out
+
+
+def test_silence_load_restores_fds_even_on_exception(capfd):
+    with pytest.raises(RuntimeError):
+        with _silence_load():
+            raise RuntimeError("boom")
+    os.write(1, b"RESTORED\n")
+    out, _ = capfd.readouterr()
+    assert "RESTORED" in out

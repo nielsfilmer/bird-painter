@@ -11,7 +11,11 @@ seconds) — construct one `Ears` and reuse it, never per-window.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import sys
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,6 +24,40 @@ if TYPE_CHECKING:
     import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Quiet TensorFlow's C++ INFO/WARNING logs (the "Created XNNPACK delegate" line
+# etc.). Must be set before TF is imported — it is, since birdnetlib (and thus
+# TF) is imported lazily inside Ears, after this module loads. setdefault so a
+# caller can still override.
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+
+
+@contextlib.contextmanager
+def _silence_load():
+    """Silence the model-load noise. TF Lite writes some lines (the 'Created
+    XNNPACK delegate' INFO) straight to the stdout/stderr file descriptors from
+    C++, bypassing Python — so we redirect the fds themselves to /dev/null for
+    the duration, which also swallows birdnetlib's print()s and any warning
+    output. Scoped tightly to the ~seconds of Analyzer() construction. On any
+    error the fds are restored in `finally`, and exceptions still propagate."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    saved_out, saved_err = os.dup(1), os.dup(2)
+    os.dup2(devnull, 1)
+    os.dup2(devnull, 2)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            yield
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(saved_out, 1)
+        os.dup2(saved_err, 2)
+        os.close(saved_out)
+        os.close(saved_err)
+        os.close(devnull)
 
 # BirdNET's label set (BirdNET_GLOBAL_6K_V2.4) isn't birds-only: alongside
 # ~6400 birds it carries machine/human noise pseudo-classes and ~86 non-bird
@@ -88,12 +126,17 @@ class Detection:
 
 class Ears:
     def __init__(self, confidence_floor: float):
-        # Imported lazily: birdnetlib drags in tensorflow, a heavy import we
-        # don't want to pay just to load config or the web app.
-        from birdnetlib.analyzer import Analyzer
-
         self.confidence_floor = confidence_floor
-        self._analyzer = Analyzer()
+        # Loading BirdNET is noisy: pydub warns about missing ffmpeg (we never
+        # decode compressed audio — we feed raw 48 kHz samples), TF Lite warns
+        # about deprecation + prints an XNNPACK line, and birdnetlib print()s
+        # its load progress ("Labels loaded." …). None of it is actionable.
+        # (birdnetlib is imported lazily here — it drags in tensorflow, too
+        # heavy to pay just to load config or the wall.)
+        with _silence_load():
+            from birdnetlib.analyzer import Analyzer
+
+            self._analyzer = Analyzer()
 
     def detect_file(self, path: str | Path) -> list[Detection]:
         from birdnetlib import Recording
