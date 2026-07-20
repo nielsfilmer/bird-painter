@@ -41,9 +41,14 @@ def device_name(device: int | str | None) -> str:
 def list_input_devices() -> None:
     """Print the available mic input devices with their indices, marking the
     system default — the values usable as BP_INPUT_DEVICE."""
-    default_in = sd.default.device[0]
+    try:
+        default_in = sd.default.device[0]
+        devices = list(enumerate(sd.query_devices()))
+    except Exception as exc:  # noqa: BLE001 — no audio backend / PortAudio error
+        print(f"Could not query audio devices: {exc}")
+        return
     print("Input devices (use the index or a name substring as BP_INPUT_DEVICE):")
-    for index, dev in enumerate(sd.query_devices()):
+    for index, dev in devices:
         if dev["max_input_channels"] > 0:
             marker = "  <- default" if index == default_in else ""
             rate = int(dev["default_samplerate"])
