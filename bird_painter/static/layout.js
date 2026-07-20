@@ -15,8 +15,17 @@ const SIZE_MIN_VMIN = 22, SIZE_SPAN_VMIN = 13;   // plate width 22–34 vmin
 const MAX_INDEX = 12;                            // matches the wall's live cap
 const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrait
 // The plate's box also reserves room for the caption below the image (species
-// + "heard …"), so a bird never sits on the label of the one below it.
+// + "heard …"), so a bird never sits on the label of the one below it. The
+// reserve is the LARGER of a fraction of the image height and a fixed pixel
+// floor — the caption font is clamped, so on small plates/viewports it stops
+// scaling down and a pure ratio would under-reserve (labels then spill onto
+// the bird below).
 const CAPTION_ALLOWANCE = 1.2;
+const CAPTION_FLOOR_PX = 38;
+
+function captionPx(imageHeightPx) {
+  return Math.max(CAPTION_FLOOR_PX, imageHeightPx * (CAPTION_ALLOWANCE - 1));
+}
 const TOP_Z = 200;
 const GAP_VMIN = 0.5;        // tight spacing — a dense cutout cluster
 const SPIRAL_STEP = 0.22;    // how far along the spiral each retry walks
@@ -60,11 +69,12 @@ function computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH) {
     const h = hash(file);
     const sizeVmin = (SIZE_MIN_VMIN + (h % SIZE_SPAN_VMIN)) * scale;
     const sizePx = sizeVmin * vmin;
+    const imageH = sizePx * PLATE_ASPECT;
     const boxW = sizePx + GAP_VMIN * vmin;
-    const boxH = sizePx * PLATE_ASPECT * CAPTION_ALLOWANCE + GAP_VMIN * vmin;
+    const boxH = imageH + captionPx(imageH) + GAP_VMIN * vmin;
     const jitterA = (((h >>> 8) % 100) / 100 - 0.5) * 0.5; // ±0.25 rad
     const clampX = Math.max(0, boundW - sizePx / 2);
-    const clampY = Math.max(0, boundH - sizePx * PLATE_ASPECT * CAPTION_ALLOWANCE / 2);
+    const clampY = Math.max(0, boundH - (imageH + captionPx(imageH)) / 2);
     let best = null, bestOverlap = Infinity;
     for (let t = index, tries = 0; tries < MAX_TRIES; tries++, t += SPIRAL_STEP) {
       const angle = t * GOLDEN_ANGLE + jitterA;
@@ -99,8 +109,8 @@ export function computeCollage(files, W, H, bandTop) {
   const halfH = Math.min(bandH, span) / 2;
   const naturalArea = files.reduce((sum, file) => {
     const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
-    return sum + (s + GAP_VMIN * vmin)
-      * (s * PLATE_ASPECT * CAPTION_ALLOWANCE + GAP_VMIN * vmin);
+    const imageH = s * PLATE_ASPECT;
+    return sum + (s + GAP_VMIN * vmin) * (imageH + captionPx(imageH) + GAP_VMIN * vmin);
   }, 0);
   // Size plates to fill the cluster oval (not the whole viewport), so they
   // pack densely in the middle rather than shrinking to dots on a big screen.
