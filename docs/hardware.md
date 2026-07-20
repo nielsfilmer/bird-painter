@@ -49,7 +49,7 @@ frame in the living room" concept.
 
 | Part | Recommended | ~€ | Why |
 |---|---|---|---|
-| E-paper panel | **Waveshare 13.3" E Ink Spectra 6 (E6)** — **6-colour**, **1600×1200 (~200 PPI)**, SPI, with the HAT+ standard driver (Pi 4B/5) | ~200–260 | The big one on purpose: 4× the pixels of the 7.3" (800×480). Colour e-paper is 6-colour across the board (Spectra 6 is the current ceiling — no colour panel does more), but at ~200 PPI the dithering reads as continuous tone — a fine art-print look that stays true to the naturalist-plate aesthetic, no glow, near-zero idle power. |
+| E-paper panel | **Waveshare 13.3" E Ink Spectra 6 (E6)** — **6-colour**, **1600×1200 (~200 PPI)**, SPI, with the HAT+ standard driver (Pi 4B/5) | ~200–260 | The big one on purpose: 5× the pixels of the 7.3" (1600×1200 = 1.92 M px vs 800×480 = 0.38 M). Colour e-paper is 6-colour in the current generation (Spectra 6; the older 7-colour ACeP is discontinued and looked worse), but at ~200 PPI the dithering reads as continuous tone — a fine art-print look that stays true to the naturalist-plate aesthetic, no glow, near-zero idle power. |
 | Display controller | **Raspberry Pi 4 Model B (2 GB)** | ~45 | The 13.3" HAT+ driver targets the Pi 4B/5 40-pin+ header. The frame's own job (fetch a PNG, push over SPI) is trivial — 2 GB is plenty; a Zero 2 W *may* drive the raw panel but the packaged HAT+ is spec'd for Pi 4/5, so a Pi 4 is the safe pick. |
 | Storage | microSD 16–32 GB (A1) | ~8 | OS for the frame Pi. |
 | Power | Official Pi 4 USB-C PSU (5 V/3 A) | ~9 | Wall power; the panel only draws while refreshing. |
@@ -86,7 +86,7 @@ Notes on the bigger panel:
 
 | Part | Recommended | ~€ | Why |
 |---|---|---|---|
-| Computer | **Raspberry Pi 4 Model B, 4 GB** (value) — or **Pi 5, 4 GB** (comfortable) | ~55 / ~65 | BirdNET-Pi officially runs on a Pi 3B+/Zero 2 W and up, but our recorder also paints + serves, so a Pi 4 gives comfortable headroom; Pi 5 runs TF-Lite ~5× faster than Pi 4 for snappier detection. A Zero 2 W (512 MB) works but is slow and RAM-tight — fine for the frame, not ideal for the ears. |
+| Computer | **Raspberry Pi 4 Model B, 4 GB** (value) — or **Pi 5, 4 GB** (comfortable) | ~55 / ~65 | BirdNET-Pi officially runs on a Pi 3B+/Zero 2 W and up, but our recorder also paints + serves, so a Pi 4 gives comfortable headroom; Pi 5 runs TF-Lite ~5× faster than Pi 4 for snappier detection. A Zero 2 W (512 MB) works but is slow and RAM-tight — not ideal for the ears. |
 | Storage | microSD 32 GB (A1/A2) | ~10 | OS + the growing painting archive (see #19-era note: archive is unbounded; a bigger card or a USB SSD if it runs for months). |
 | Microphone | **Plug-and-play USB mic, mono** (e.g. a USB lavalier/omni like a Boya BY-series, or a simple USB mini-mic) + **foam windscreen** | ~15–30 | BirdNET wants sensitivity, not hi-fi — flat-ish to ~12 kHz, no distortion. **Mono** (BirdNET processes mono anyway). Avoid separate USB sound-cards (ground-loop buzz). |
 | USB extension | 1–2 m USB extension cable | ~5 | Move the mic away from the Pi to dodge the Pi's electromagnetic noise, and to reach the window/eave while the Pi stays dry. |
@@ -129,7 +129,7 @@ credentials or anything the vendor mints.
 
 **Frame Pi:**
 1. Flash Raspberry Pi OS Lite, enable SPI.
-2. Install the panel driver (Waveshare's `epaper`/`IT8951`-class Python lib for the 13.3" Spectra 6).
+2. Install the panel driver — Waveshare's **`epd13in3E`** driver for the 13.3" Spectra 6 HAT+ (E). NB: that's a different panel from Waveshare's *grayscale* 13.3" (which uses the IT8951 controller) — don't grab the IT8951 lib.
 3. Run the slice-#50 client: fetch `http://<recorder>:8537/wall.png` on a timer
    (respecting the panel's ~25–35 s refresh — update every few minutes, not
    seconds) and push to the panel.
