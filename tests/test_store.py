@@ -67,3 +67,71 @@ def test_image_path_serves_archived_images_only(store):
 def test_servable_extensions_include_the_types_the_app_writes():
     # brush writes png/jpg, placeholder writes svg
     assert {".svg", ".png", ".jpg"} <= SERVABLE_EXTENSIONS
+
+
+def test_load_ignores_unknown_future_fields(archive_dir, store):
+    # a newer version wrote an extra key; old code must still boot
+    add_painting(store)
+    line = store.meta_path.read_text().splitlines()[0]
+    import json
+    rec = json.loads(line)
+    rec["mood"] = "serene"  # field this Painting doesn't know
+    store.meta_path.write_text(json.dumps(rec) + "\n")
+    reloaded = Store(archive_dir, ttl_seconds=100)
+    assert len(reloaded.live()) == 1
+
+
+def test_load_skips_records_missing_a_required_field(archive_dir, store):
+    add_painting(store, "Robin")
+    add_painting(store, "Wren")
+    import json
+    lines = store.meta_path.read_text().splitlines()
+    broken = json.loads(lines[0])
+    del broken["confidence"]  # drop a required field
+    store.meta_path.write_text(json.dumps(broken) + "\n" + lines[1] + "\n")
+    reloaded = Store(archive_dir, ttl_seconds=100)
+    # the good record survives, the broken one is skipped (not a crash)
+    assert [p.species_common for p in reloaded.live()] == ["Wren"]
+
+
+def test_load_skips_unparseable_lines(archive_dir, store):
+    add_painting(store, "Robin")
+    good = store.meta_path.read_text().splitlines()[0]
+    store.meta_path.write_text("{not json\n" + good + "\n")
+    reloaded = Store(archive_dir, ttl_seconds=100)
+    assert [p.species_common for p in reloaded.live()] == ["Robin"]
+
+
+def test_load_skips_valid_json_that_isnt_an_object(archive_dir, store):
+    # a line that parses but isn't a dict (null / number / array / string)
+    add_painting(store, "Robin")
+    good = store.meta_path.read_text().splitlines()[0]
+    store.meta_path.write_text("null\n42\n[1, 2]\n" + good + "\n")
+    reloaded = Store(archive_dir, ttl_seconds=100)
+    assert [p.species_common for p in reloaded.live()] == ["Robin"]
+
+
+def test_concurrent_adds_do_not_interleave_meta_lines(store):
+    import json
+    import threading
+
+    def worker(n):
+        for _ in range(25):
+            add_painting(store, f"Species {n}")
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    lines = [x for x in store.meta_path.read_text().splitlines() if x.strip()]
+    # Every add is recorded exactly once as a complete parseable line and lands
+    # in the live set. NOTE: on CPython+POSIX, O_APPEND + the GIL already make
+    # these small buffered appends atomic, so this passes with or without the
+    # lock — it guards against LOST/DUPLICATED adds and documents the
+    # concurrent contract; the lock is defence-in-depth for non-CPython / larger
+    # writes, not something this test can fail on.
+    assert len(lines) == 100
+    for line in lines:
+        json.loads(line)
+    assert len(store.live()) == 100
