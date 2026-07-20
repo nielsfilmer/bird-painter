@@ -21,6 +21,61 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# BirdNET's label set (BirdNET_GLOBAL_6K_V2.4) isn't birds-only: alongside
+# ~6400 birds it carries machine/human noise pseudo-classes and ~86 non-bird
+# animals — frogs, toads, crickets, katydids, coneheads, mammals — so the model
+# can report "that wasn't a bird". We paint birds, so drop all of these.
+#
+# Matched on the SCIENTIFIC name (a stable identifier) rather than the common
+# name: common names are a trap — "Squirrel Cuckoo", "Cricket Longtail", the
+# frogmouths, "Cicadabird" are all real birds. The list below is the exact set
+# of non-bird labels in this model version; tests/test_ears.py re-derives it
+# from the shipped label file and fails if a birdnetlib bump changes it.
+NON_BIRD_SCIENTIFIC = frozenset({
+    # machine / human / environment pseudo-classes (scientific == common)
+    "Dog", "Engine", "Environmental", "Fireworks", "Gun",
+    "Human non-vocal", "Human vocal", "Human whistle",
+    "Noise", "Power tools", "Siren",
+    # mammals
+    "Canis latrans", "Canis lupus", "Odocoileus virginianus",
+    "Sciurus carolinensis", "Tamias striatus", "Tamiasciurus hudsonicus",
+    # frogs & toads
+    "Acris crepitans", "Acris gryllus", "Anaxyrus americanus",
+    "Anaxyrus canorus", "Anaxyrus cognatus", "Anaxyrus fowleri",
+    "Anaxyrus houstonensis", "Anaxyrus microscaphus", "Anaxyrus quercicus",
+    "Anaxyrus speciosus", "Anaxyrus terrestris", "Anaxyrus woodhousii",
+    "Dryophytes andersonii", "Dryophytes arenicolor", "Dryophytes avivoca",
+    "Dryophytes chrysoscelis", "Dryophytes cinereus", "Dryophytes femoralis",
+    "Dryophytes gratiosus", "Dryophytes squirellus", "Dryophytes versicolor",
+    "Eleutherodactylus planirostris", "Gastrophryne carolinensis",
+    "Gastrophryne olivacea", "Hyliola regilla", "Incilius valliceps",
+    "Lithobates catesbeianus", "Lithobates clamitans", "Lithobates palustris",
+    "Lithobates sylvaticus", "Pseudacris brimleyi", "Pseudacris clarkii",
+    "Pseudacris crucifer", "Pseudacris feriarum", "Pseudacris nigrita",
+    "Pseudacris ocularis", "Pseudacris ornata", "Pseudacris streckeri",
+    "Pseudacris triseriata", "Scaphiopus couchii", "Spea bombifrons",
+    # crickets, katydids, coneheads
+    "Allonemobius allardi", "Allonemobius tinnulus", "Allonemobius walkeri",
+    "Amblycorypha alexanderi", "Amblycorypha longinicta",
+    "Amblycorypha oblongifolia", "Amblycorypha rotundifolia", "Anaxipha exigua",
+    "Atlanticus testaceus", "Conocephalus brevipennis",
+    "Conocephalus fasciatus", "Cyrtoxipha columbiana", "Eunemobius carolinus",
+    "Eunemobius confusus", "Gryllus assimilis", "Gryllus fultoni",
+    "Gryllus pennsylvanicus", "Gryllus rubens", "Microcentrum rhombifolium",
+    "Miogryllus saussurei", "Neoconocephalus bivocatus",
+    "Neoconocephalus ensiger", "Neoconocephalus retusus",
+    "Neoconocephalus robustus", "Neonemobius cubensis", "Oecanthus celerinictus",
+    "Oecanthus exclamationis", "Oecanthus fultoni", "Oecanthus nigricornis",
+    "Oecanthus niveus", "Oecanthus pini", "Oecanthus quadripunctatus",
+    "Orchelimum agile", "Orchelimum concinnum", "Orchelimum pulchellum",
+    "Orocharis saltator", "Phyllopalpus pulchellus", "Pterophylla camellifolia",
+    "Scudderia curvicauda", "Scudderia furcata", "Scudderia texensis",
+})
+
+
+def is_bird(scientific_name: str) -> bool:
+    return scientific_name.strip() not in NON_BIRD_SCIENTIFIC
+
 
 @dataclass(frozen=True)
 class Detection:
@@ -74,6 +129,8 @@ class Ears:
                 end_seconds=float(d["end_time"]),
             )
             for d in raw
+            # Drop BirdNET's non-bird noise/human/machine/animal classes.
+            if is_bird(d["scientific_name"])
         ]
         # BirdNET already filters by min_conf (strict >, and it clamps the
         # floor to [0.01, 0.99]); sort strongest-first for callers.
