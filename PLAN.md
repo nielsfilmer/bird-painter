@@ -65,11 +65,14 @@ served locally off the same process.
 
 ### Components
 
-- **Non-bird filter** — BirdNET's label set isn't birds-only; it carries
-  noise/human/machine/insect classes (Dog, Engine, Gun, Siren, Fireworks,
-  Noise, Power tools, Human vocal/non-vocal/whistle, Environmental, two
-  crickets) so it can say "not a bird". The ears drop these — only birds reach
-  the wall.
+- **Non-bird filter** — BirdNET's label set isn't birds-only; alongside ~6400
+  birds it carries 11 machine/human/environment pseudo-classes (Dog, Engine,
+  Gun, Siren, Fireworks, Noise, Power tools, Human vocal/non-vocal/whistle,
+  Environmental) and ~86 non-bird animals (frogs, toads, crickets, katydids,
+  cicadas, mammals) so it can say "not a bird". The ears drop all of these,
+  matching on the scientific name (common names like "Squirrel Cuckoo" are
+  bird traps); only birds reach the wall. A test re-derives the denylist from
+  the shipped label file so a birdnetlib upgrade can't silently break it.
 - **Recognizer** — BirdNET via [`birdnetlib`](https://github.com/joeweiss/birdnetlib),
   a clean Python wrapper around Cornell Lab's BirdNET-Analyzer. Runs fully
   local and offline, no API key, trained on ~6000 species, returns species +

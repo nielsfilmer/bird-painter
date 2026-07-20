@@ -1,38 +1,113 @@
-from bird_painter.ears import NON_BIRD_COMMON_NAMES, is_bird
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+from bird_painter.ears import NON_BIRD_SCIENTIFIC, is_bird
 
 
 def test_real_birds_pass():
-    for name in ("European Robin", "Great Tit", "Song Thrush", "Northern Cardinal"):
-        assert is_bird(name)
-
-
-def test_noise_and_human_and_machine_classes_are_dropped():
-    for name in (
-        "Gun",
-        "Engine",
-        "Siren",
-        "Fireworks",
-        "Dog",
-        "Noise",
-        "Power tools",
-        "Human non-vocal",
-        "Human vocal",
-        "Human whistle",
-        "Environmental",
+    for sci in (
+        "Erithacus rubecula",       # European Robin
+        "Parus major",              # Great Tit
+        "Turdus philomelos",        # Song Thrush
+        "Cardinalis cardinalis",    # Northern Cardinal
+        # common-name traps that ARE birds
+        "Piaya cayana",             # Squirrel Cuckoo
+        "Spiloptila clamans",       # Cricket Longtail
+        "Podargus strigoides",      # Tawny Frogmouth
+        "Edolisoma tenuirostre",    # Common Cicadabird
     ):
-        assert not is_bird(name)
+        assert is_bird(sci)
 
 
-def test_insect_classes_are_dropped():
-    assert not is_bird("Gryllus assimilis")
-    assert not is_bird("Miogryllus saussurei")
+def test_pseudo_and_animal_classes_are_dropped():
+    for sci in (
+        "Gun", "Engine", "Siren", "Human non-vocal", "Noise",  # machine/human
+        "Canis latrans",              # Coyote
+        "Lithobates catesbeianus",    # American Bullfrog
+        "Pseudacris crucifer",        # Spring Peeper
+        "Gryllus assimilis",          # a field cricket
+        "Sciurus carolinensis",       # Eastern Gray Squirrel
+    ):
+        assert not is_bird(sci)
 
 
-def test_match_is_case_and_whitespace_insensitive():
-    assert not is_bird("  gun ")
-    assert not is_bird("HUMAN NON-VOCAL")
+def test_match_is_whitespace_insensitive():
+    assert not is_bird("  Gun ")
+    assert not is_bird(" Canis latrans ")
 
 
-def test_denylist_names_are_normalized_lowercase():
-    # is_bird lowercases its input, so the set must hold lowercase to match.
-    assert all(name == name.lower() for name in NON_BIRD_COMMON_NAMES)
+def _label_file() -> Path:
+    """The BirdNET label file shipped inside birdnetlib (found without
+    importing the package, so no tensorflow load)."""
+    spec = importlib.util.find_spec("birdnetlib")
+    assert spec and spec.origin
+    return (
+        Path(spec.origin).parent
+        / "models/analyzer/BirdNET_GLOBAL_6K_V2.4_Labels.txt"
+    )
+
+
+# Genera BirdNET_GLOBAL_6K_V2.4 carries that are NOT birds (frogs/toads,
+# orthopterans, mammals). Kept here in the test — the drift guard's job is to
+# prove NON_BIRD_SCIENTIFIC still equals what this derivation finds.
+_NON_BIRD_GENERA = {
+    "Acris", "Anaxyrus", "Dryophytes", "Hyliola", "Lithobates", "Pseudacris",
+    "Scaphiopus", "Gastrophryne", "Incilius", "Eleutherodactylus", "Spea",
+    "Oecanthus", "Gryllus", "Miogryllus", "Scudderia", "Neoconocephalus",
+    "Conocephalus", "Orocharis", "Anaxipha", "Eunemobius", "Allonemobius",
+    "Amblycorypha", "Microcentrum", "Pterophylla", "Atlanticus", "Neonemobius",
+    "Cyrtoxipha", "Phyllopalpus", "Orchelimum", "Canis", "Odocoileus",
+    "Tamiasciurus", "Sciurus", "Tamias",
+}
+
+
+@pytest.mark.skipif(
+    not _label_file().exists(), reason="birdnetlib label file not installed"
+)
+def test_denylist_matches_the_shipped_label_file():
+    """Drift guard: if a birdnetlib bump adds/removes a non-bird label, this
+    fails so the denylist gets updated instead of silently painting frogs."""
+    rows = [
+        tuple(line.split("_", 1))
+        for line in _label_file().read_text(encoding="utf-8").splitlines()
+        if "_" in line
+    ]
+    derived = {
+        sci
+        for sci, common in rows
+        if sci.split()[0] in _NON_BIRD_GENERA or sci.strip() == common.strip()
+    }
+    assert derived == set(NON_BIRD_SCIENTIFIC)
+
+
+@pytest.mark.skipif(
+    not _label_file().exists(), reason="birdnetlib label file not installed"
+)
+def test_no_non_bird_animal_slips_past_the_denylist():
+    """Completeness audit: every label whose common name reads like a non-bird
+    animal is either denylisted or a known bird whose name merely borrows the
+    word (frogmouth, mousebird, squirrel cuckoo…)."""
+    keywords = (
+        "frog", "toad", "cricket", "katydid", "cicada", "squirrel", "deer",
+        "wolf", "coyote", "chipmunk", "spadefoot", "peeper", "bullfrog",
+        "conehead", "treefrog",
+    )
+    trap_bird_substrings = (
+        "frogmouth", "cicadabird", "squirrel cuckoo", "cricket longtail",
+        "killdeer",  # Charadrius vociferus — a bird, not a deer
+    )
+    rows = [
+        tuple(line.split("_", 1))
+        for line in _label_file().read_text(encoding="utf-8").splitlines()
+        if "_" in line
+    ]
+    leaked = [
+        (sci, common)
+        for sci, common in rows
+        if any(k in common.lower() for k in keywords)
+        and sci not in NON_BIRD_SCIENTIFIC
+        and not any(t in common.lower() for t in trap_bird_substrings)
+    ]
+    assert leaked == []
