@@ -8,7 +8,8 @@ recorder-on-a-Pi) follow once the parts below are pinned.
 > Prices are rough 2026 figures and drift — treat the linked official product
 > pages as the source of truth. Parts are chosen for EU availability
 > (Kiwi Electronics NL is the natural distributor for a Dutch build; Pimoroni
-> UK and The Pi Hut ship to the EU).
+> UK and The Pi Hut ship to the EU but add post-Brexit customs — see
+> "Buying in the Netherlands" below).
 
 ---
 
@@ -98,7 +99,8 @@ Notes on the bigger panel:
 ## Procurement checklist (your side)
 
 One batched order. All parts are EU-available; **Kiwi Electronics (kiwi-electronics.com, NL)**
-carries the Pis, e-paper panels, and mics, or split across Pimoroni/The Pi Hut.
+carries the Pis, e-paper panels, and mics. See "Buying in the Netherlands"
+below for a per-part NL sourcing plan (and why to skip the UK shops).
 
 - [ ] Waveshare 13.3" E Ink Spectra 6 (E6), 1600×1200, with HAT+ driver — https://www.waveshare.com/13.3inch-e-paper-hat-plus-e.htm
 - [ ] Raspberry Pi 4 Model B 2 GB (frame controller) — official reseller
@@ -128,7 +130,7 @@ VAT included.
 | **Raspberry Pi 4B** (2 GB frame + 4 GB recorder), **PSUs, microSD** | **Kiwi Electronics** (kiwi-electronics.com) — official Pi reseller, ships from NL (PostNL/DHL), same-day if ordered before 17:00 | One order covers both Pis + USB-C PSUs + SD cards. Other NL approved resellers: RaspberryStore, SOS Solutions, Antratek, Elektor. |
 | **USB mic (mono) + foam windscreen** | SOS Solutions / Elektronica voor jou (mini USB mic), or bol.com / Amazon.nl | Commodity — cheapest via bol.com/Amazon.nl. Windscreen from bol.com/Amazon.nl. |
 | **microSD (32 GB)** | TinyTronics (tinytronics.nl, cheap) or with the Kiwi order | Either works. |
-| **Deep box frame + mat** | IKEA (Sännahed/Ribba deep frame) + a cut mat; bol.com for a custom mat | Sized to the ~300 × 230 mm panel. |
+| **Deep box frame + mat** | IKEA (Sannahed/Ribba deep frame) + a cut mat; bol.com for a custom mat | Sized to the ~300 × 230 mm panel. |
 
 **Simplest split:** one **Kiwi Electronics** order (both Pis + PSUs + SD) + one
 **Amazon.nl** order (the panel, HAT+ SKU) + an **IKEA/bol.com** run (frame, mic,
