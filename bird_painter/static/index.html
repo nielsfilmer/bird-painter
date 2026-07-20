@@ -41,15 +41,14 @@
     left: 50%;
     top: 50%;
     opacity: 0;
-    /* Blend the whole plate (painting + ink labels) into the paper. On the
-       figure itself — not the img — because the figure's transform creates a
-       stacking context that would isolate a child's blend from the page. */
+    /* Blend the painting into the paper. On the figure itself — not the img —
+       because the figure's transform creates a stacking context that would
+       isolate a child's blend from the page. */
     mix-blend-mode: multiply;
     transition:
       opacity 2.2s ease,
       transform 1.6s cubic-bezier(0.22, 1, 0.36, 1),
       width 1.6s cubic-bezier(0.22, 1, 0.36, 1);
-    text-align: center;
   }
   .plate.shown { opacity: 1; }
   .plate.dying { opacity: 0; }
@@ -168,7 +167,7 @@ function band() {
 // One layout pass at a given scale. Returns the chosen spots plus how many
 // plates had to settle for an overlapping spot (fallbacks) — the caller
 // shrinks and retries until that count is zero.
-function computeLayout(scale, W, H, vmin, bandH, yOffset) {
+function computeLayout(scale, W, H, vmin, bandH) {
   const placed = [];
   let fallbacks = 0;
   liveOrder.forEach((file, index) => {
@@ -199,7 +198,7 @@ function computeLayout(scale, W, H, vmin, bandH, yOffset) {
       if (overlap < bestOverlap) { best = box; bestOverlap = overlap; }
     }
     if (bestOverlap > 0) fallbacks++;
-    placed.push({ box: best, file, sizeVmin, tilt, index, yOffset });
+    placed.push({ box: best, file, sizeVmin, tilt, index });
   });
   return { placed, fallbacks };
 }
@@ -219,12 +218,12 @@ function layoutAll() {
   // A single spiral walk can fail even on a roomy screen (edge clamping
   // collapses far candidates into the same bands) — so shrink-and-relayout
   // until every plate found a genuinely free spot.
-  let result = computeLayout(scale, W, H, vmin, bandH, yOffset);
+  let result = computeLayout(scale, W, H, vmin, bandH);
   for (let i = 0; i < SHRINK_RETRIES && result.fallbacks > 0; i++) {
     scale *= SHRINK_STEP;
-    result = computeLayout(scale, W, H, vmin, bandH, yOffset);
+    result = computeLayout(scale, W, H, vmin, bandH);
   }
-  for (const { box, file, sizeVmin, tilt, index, yOffset } of result.placed) {
+  for (const { box, file, sizeVmin, tilt, index } of result.placed) {
     const el = plates.get(file);
     if (!el) continue;
     el.style.width = `${sizeVmin.toFixed(1)}vmin`;
