@@ -42,11 +42,14 @@ def slugify(name: str) -> str:
 _PAINTING_FIELDS = {f.name for f in fields(Painting)}
 
 
-def _painting_from_record(record: dict) -> Painting | None:
+def _painting_from_record(record: object) -> Painting | None:
     """Build a Painting from a meta.jsonl record, tolerating schema drift:
     keys added by a newer version are ignored; a record missing a field the
-    current Painting needs is skipped with a warning rather than crashing boot
-    on a TypeError."""
+    current Painting needs (or not a JSON object at all) is skipped with a
+    warning rather than crashing boot on a TypeError/AttributeError."""
+    if not isinstance(record, dict):
+        logger.warning("store: skipping meta record that isn't a JSON object")
+        return None
     known = {k: v for k, v in record.items() if k in _PAINTING_FIELDS}
     missing = _PAINTING_FIELDS - known.keys()
     if missing:

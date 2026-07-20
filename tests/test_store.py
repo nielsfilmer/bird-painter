@@ -102,6 +102,15 @@ def test_load_skips_unparseable_lines(archive_dir, store):
     assert [p.species_common for p in reloaded.live()] == ["Robin"]
 
 
+def test_load_skips_valid_json_that_isnt_an_object(archive_dir, store):
+    # a line that parses but isn't a dict (null / number / array / string)
+    add_painting(store, "Robin")
+    good = store.meta_path.read_text().splitlines()[0]
+    store.meta_path.write_text("null\n42\n[1, 2]\n" + good + "\n")
+    reloaded = Store(archive_dir, ttl_seconds=100)
+    assert [p.species_common for p in reloaded.live()] == ["Robin"]
+
+
 def test_concurrent_adds_do_not_interleave_meta_lines(store):
     import json
     import threading
@@ -116,8 +125,13 @@ def test_concurrent_adds_do_not_interleave_meta_lines(store):
     for t in threads:
         t.join()
     lines = [x for x in store.meta_path.read_text().splitlines() if x.strip()]
+    # Every add is recorded exactly once as a complete parseable line and lands
+    # in the live set. NOTE: on CPython+POSIX, O_APPEND + the GIL already make
+    # these small buffered appends atomic, so this passes with or without the
+    # lock — it guards against LOST/DUPLICATED adds and documents the
+    # concurrent contract; the lock is defence-in-depth for non-CPython / larger
+    # writes, not something this test can fail on.
     assert len(lines) == 100
-    # every line is a complete, parseable JSON object — no torn writes
     for line in lines:
         json.loads(line)
     assert len(store.live()) == 100
