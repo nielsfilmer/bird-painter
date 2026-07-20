@@ -3,6 +3,8 @@ name = "bird-painter"
 version = "0.1.0"
 description = "Ambient installation: paints the birds it hears outside"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+readme = "README.md"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",

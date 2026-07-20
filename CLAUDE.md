@@ -242,7 +242,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 
 ## File map
 
-- `README.md` — project stub.
+- `README.md` — public README: what it is, quickstart, hardware pointer,
+  and the Licenses section (code MIT; BirdNET model CC BY-NC-SA / non-commercial).
+- `LICENSE` — MIT (repo code).
 - `pyproject.toml` — Python package + deps (FastAPI/uvicorn/dotenv).
 - `.env.example` — env template (FAL_KEY + knob overrides); copy to `.env`.
 - `bird_painter/` — the one local service:

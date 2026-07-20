@@ -5,11 +5,11 @@ Phase 4 takes bird-painter off the laptop and into the room. This is the
 together. The software slices (#49 `/wall.png` render, #50 e-paper client, #51
 recorder-on-a-Pi) follow once the parts below are pinned.
 
-> Prices are rough 2026 figures and drift — treat the linked official product
-> pages as the source of truth. Parts are chosen for EU availability
-> (Kiwi Electronics NL is the natural distributor for a Dutch build; Pimoroni
-> UK and The Pi Hut ship to the EU but add post-Brexit customs — see
-> "Buying in the Netherlands" below).
+> Prices are rough 2026 figures and drift, and vendors vary by region — treat
+> the linked official product pages as the source of truth and buy from a
+> [Raspberry Pi Approved Reseller](https://www.raspberrypi.com/resellers/) in
+> your own region. See "Sourcing tips" below for the one part that's easy to
+> order wrong.
 
 ---
 
@@ -96,45 +96,36 @@ Notes on the bigger panel:
 
 ---
 
-## Procurement checklist (your side)
+## Procurement checklist
 
-One batched order. All parts are EU-available; **Kiwi Electronics (kiwi-electronics.com, NL)**
-carries the Pis, e-paper panels, and mics. See "Buying in the Netherlands"
-below for a per-part NL sourcing plan (and why to skip the UK shops).
-
-- [ ] Waveshare 13.3" E Ink Spectra 6 (E6), 1600×1200, with HAT+ driver — https://www.waveshare.com/13.3inch-e-paper-hat-plus-e.htm
-- [ ] Raspberry Pi 4 Model B 2 GB (frame controller) — official reseller
-- [ ] Raspberry Pi 4 Model B 4 GB (recorder) — or Pi 5 4 GB — official reseller
+- [ ] Waveshare 13.3" E Ink Spectra 6 (E6), 1600×1200, **with HAT+ driver** — https://www.waveshare.com/13.3inch-e-paper-hat-plus-e.htm
+- [ ] Raspberry Pi 4 Model B 2 GB (frame controller)
+- [ ] Raspberry Pi 4 Model B 4 GB (recorder) — or Pi 5 4 GB
 - [ ] 2× microSD (32 GB) + a card reader
 - [ ] USB mic (mono) + foam windscreen + USB extension cable
 - [ ] PSUs: 2× Pi 4/5 USB-C (frame + recorder)
 - [ ] Deep box frame + mat sized to the ~300 × 230 mm panel
 - [ ] (Recorder) small vented enclosure / under-eave mount
 
-**Paste back to me:** just the panel + recorder models you actually buy (so I
-pin the `/wall.png` resolution and the ARM install notes to them) — no
-credentials or anything the vendor mints.
+## Sourcing tips
 
----
-
-## Buying in the Netherlands
-
-Prefer **NL/EU vendors** — post-Brexit, UK shops (Pimoroni, The Pi Hut) add
-customs + import VAT + handling + delay at the border, and Waveshare-direct
-(China) means import clearance and ~2–3 weeks. Everything below is NL/EU with
-VAT included.
-
-| What | Where (NL) | Note |
-|---|---|---|
-| **Waveshare 13.3" Spectra 6 panel** | **Amazon.nl** — get the **"with HAT+ Standard Driver HAT"** SKU (ASIN **B0DPBW2R25**), *not* the raw "without Driver Board" (B0DPBTT286, which needs a separate driver) | The reliable in-stock path. Antratek (Rotterdam, the NL Waveshare distributor) lists it domestically but was **out of stock + raw-panel-only** at time of writing — set a back-in-stock alert there if you'd rather buy domestic, but don't wait on it. |
-| **Raspberry Pi 4B** (2 GB frame + 4 GB recorder), **PSUs, microSD** | **Kiwi Electronics** (kiwi-electronics.com) — official Pi reseller, ships from NL (PostNL/DHL), same-day if ordered before 17:00 | One order covers both Pis + USB-C PSUs + SD cards. Other NL approved resellers: RaspberryStore, SOS Solutions, Antratek, Elektor. |
-| **USB mic (mono) + foam windscreen** | SOS Solutions / Elektronica voor jou (mini USB mic), or bol.com / Amazon.nl | Commodity — cheapest via bol.com/Amazon.nl. Windscreen from bol.com/Amazon.nl. |
-| **microSD (32 GB)** | TinyTronics (tinytronics.nl, cheap) or with the Kiwi order | Either works. |
-| **Deep box frame + mat** | IKEA (Sannahed/Ribba deep frame) + a cut mat; bol.com for a custom mat | Sized to the ~300 × 230 mm panel. |
-
-**Simplest split:** one **Kiwi Electronics** order (both Pis + PSUs + SD) + one
-**Amazon.nl** order (the panel, HAT+ SKU) + an **IKEA/bol.com** run (frame, mic,
-windscreen). All NL/EU, no customs.
+- **Get the panel *with* the driver.** Waveshare sells the 13.3" Spectra 6 in
+  two near-identical listings: the **HAT+ (E) *with* the driver board** (what
+  you want) and a **raw panel *without* a driver** (needs a separate driver —
+  don't buy this by mistake). There's also a same-size **(B) red/black/white
+  3-colour** panel — not the 6-colour Spectra 6. Read the title carefully.
+- **Buy Pis from an
+  [Approved Reseller](https://www.raspberrypi.com/resellers/) in your region**
+  — they carry the boards, official USB-C PSUs, and microSD, usually in one
+  order.
+- **Prefer an in-region / same-customs-union seller** to avoid import duties,
+  VAT-on-import, and courier clearance fees. Ordering the panel direct from the
+  manufacturer (e.g. China) is often *not* cheaper once import VAT + a handling
+  fee + a multi-week wait are added; a regional distributor or a price-
+  comparison search for the *with-driver* SKU usually wins on landed cost and
+  speed.
+- The mic, windscreen, USB extension, microSD, and picture frame are
+  commodities — any general electronics/hardware shop or marketplace has them.
 
 ---
 
@@ -148,6 +139,8 @@ windscreen). All NL/EU, no customs.
    wheel installs; a Pi build may need `tflite-runtime`).
 3. Pick the mic: `python -m bird_painter --list-devices`, set `BP_INPUT_DEVICE`.
 4. Put `FAL_KEY` (and optional `BP_FAL_MODEL=fal-ai/flux/dev`) in `.env`.
+   (Note: `flux/dev` is a non-commercial model — see the repo's Licenses
+   section; `flux/schnell` is Apache-2.0.)
 5. Autostart via a `systemd` unit (`bird_painter.service`) so it runs on boot.
 
 **Frame Pi:**
