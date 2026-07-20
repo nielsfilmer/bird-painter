@@ -17,8 +17,8 @@ const GOLDEN_ANGLE = 2.399963229728653; // radians, 137.5°
 // scale stays 1; as the wall fills past what the cluster can hold at full
 // size, the fill scale drops below 1 and every plate shrinks together (rule:
 // big to start, smaller when crowded). A tight span keeps a minimum size —
-// the smallest bucket stays ~82% of the largest — so no bird renders far
-// smaller than its neighbours.
+// the smallest bucket stays ~85% of the largest (22/26) — so no bird renders
+// far smaller than its neighbours.
 const SIZE_MIN_VMIN = 22, SIZE_SPAN_VMIN = 5;    // plate width 22–26 vmin
 const MAX_INDEX = 12;                            // matches the wall's live cap
 const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrait
@@ -45,8 +45,9 @@ const SHRINK_STEP = 0.9;     // shrink everyone by this and lay out again
 // centre, older ones spiralling outward. It fills most of BOTH viewport axes
 // so the collage uses the whole screen (target: a 16:9 display) instead of
 // huddling in the middle — but the width is also capped to a multiple of the
-// height (CLUSTER_ASPECT) so an ultrawide screen doesn't fan the birds
-// edge-to-edge into one thin band.
+// height (CLUSTER_ASPECT). That cap binds whenever the viewport is wider than
+// ~16:9 (including standard 16:9 itself, leaving small side margins) and keeps
+// a short/ultrawide screen from fanning the birds edge-to-edge into one band.
 const CLUSTER_W_FRAC = 0.92; // cluster spans this fraction of the width…
 const CLUSTER_H_FRAC = 0.9;  // …and this fraction of the sub-title band height
 const CLUSTER_ASPECT = 1.7;  // …but never wider than this × its half-height
