@@ -15,7 +15,18 @@ import sys
 
 import uvicorn
 
-from .config import load_config
+from .config import ConfigError, load_config
+
+
+def _resolve_port(positional: list[str]) -> int:
+    if positional:
+        try:
+            return int(positional[0])
+        except ValueError:
+            raise ConfigError(
+                f"port must be a number, got: {positional[0]!r}"
+            ) from None
+    return load_config().port
 
 
 def main() -> None:
@@ -32,7 +43,11 @@ def main() -> None:
     # otherwise stay hidden under uvicorn's logging config.
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
 
-    port = int(positional[0]) if positional else load_config().port
+    try:
+        port = _resolve_port(positional)
+    except ConfigError as exc:
+        print(exc, file=sys.stderr)
+        raise SystemExit(2) from None
     uvicorn.run(
         "bird_painter.web:create_app", factory=True, host="127.0.0.1", port=port
     )

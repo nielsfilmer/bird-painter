@@ -138,7 +138,7 @@ the confidence floor (too low → wrong birds on the wall) and the per-hour cap
 | Knob | Default | Rationale |
 |---|---|---|
 | Paint TTL (= species repaint cooldown) | **3 hours** | keeps the wall a fresh set; a species repaints only once TTL has elapsed since it was last painted |
-| BirdNET confidence floor | **0.6** | filters weak guesses; a wrong-species painting is the worst failure mode |
+| BirdNET confidence floor | **0.6** | filters weak guesses; a wrong-species painting is the worst failure mode. Clamped to birdnetlib's `[0.01, 0.99]` (a `0` or `1.0` is coerced + warned); the filter is strict `>`, so a detection exactly at the floor is excluded |
 | Analysis window | **~15 s rolling** | BirdNET's native chunk; steady detection |
 | Max paints / hour | **20** | hard ceiling so a loud dawn chorus can't run away the API bill |
 | Wall collage | **up to ~12 live** | full but not cramped; overflow → oldest fades first |
