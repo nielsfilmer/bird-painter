@@ -65,6 +65,28 @@ test("no two birds ever visibly overlap, across random sets and viewports", () =
   }
 });
 
+test("on a wide screen the cluster stays a compact central clump", () => {
+  // The bug this fixes: spread scaled with viewport WIDTH, so a wide screen
+  // fanned birds edge-to-edge. The cluster should be bounded by the smaller
+  // axis, so on 2400x1000 it occupies the middle, not the full width. Loop
+  // several seeds so it's not a single-arrangement fluke.
+  const [W, H] = [2400, 1000];
+  const bandTop = 150;
+  const vmin = Math.min(W, H) / 100;
+  for (let seed = 1; seed <= 20; seed++) {
+    const files = randomFiles(makeRng(seed), 12);
+    const placed = computeCollage(files, W, H, bandTop);
+    let reach = 0;
+    for (const p of placed) {
+      reach = Math.max(reach, Math.abs(p.x) + (p.sizeVmin * vmin) / 2);
+    }
+    assert.ok(
+      reach <= W * 0.4,
+      `seed ${seed}: cluster too wide — reached ${reach.toFixed(0)}px of ${W / 2}px half-width`,
+    );
+  }
+});
+
 test("layout is deterministic for the same files + viewport", () => {
   const files = randomFiles(makeRng(7), 9);
   const a = computeCollage(files, 1280, 800, 120);

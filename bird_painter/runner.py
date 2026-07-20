@@ -30,7 +30,10 @@ class PaintRunner:
         if not self.gate.allows(species):
             return
         result = paint_species(
-            species, detection.species_scientific, fal_key=self.config.fal_key
+            species,
+            detection.species_scientific,
+            fal_key=self.config.fal_key,
+            model=self.config.fal_model,
         )
         if result is None:
             # Soft failure (fal outage / no key): nothing marked painted, no

@@ -103,7 +103,9 @@ served locally off the same process.
     plates glide outward as newer ones arrive.
   - **Framed like a naturalist wall-chart.** A fixed title header sits at the
     top (small italic eyebrow "birds outside" + letterspaced "heard recently");
-    the cluster fills the band below it. **No per-bird text** — a bird is a bare
+    a compact cluster sits centred below it — a central oval sized by the
+    SMALLER viewport axis, so a wide screen gets a dense clump in the middle,
+    not birds fanned edge-to-edge. **No per-bird text** — a bird is a bare
     cutout, its species only in the image `alt` for screen readers. Birds are
     painted on plain white, so the wall's multiply-blend drops the ground and
     leaves clean cutouts on the shared paper.
@@ -125,9 +127,12 @@ grab-bag of outputs. It's a one-line prompt template, trivial to swap later
 (watercolor, ink, oil…).
 
 - Prompt is built from the species' **common + scientific name** plus the style
-  template. The bird is painted **isolated on plain white** (so the wall
-  cutout-blends it) with a hard **no-text** instruction — FLUX otherwise likes
-  to bake field-guide captions/labels into the plate.
+  template. The bird is painted **isolated on flat pure white** (so the wall
+  cutout-blends it cleanly, no paper vignette) with a hard **no-text** tail and
+  no "field-guide plate / Audubon" style words — those make FLUX bake in
+  engraved captions and an aged-paper ground. `schnell` follows this loosely;
+  `fal-ai/flux/dev` (via `BP_FAL_MODEL`) obeys it far better — recommended if
+  text/paper still leak through.
 - Accepted limitation: FLUX won't perfectly render every one of ~6000 species,
   especially rare ones. It takes artistic license. For a personal toy that's
   charm, not a defect.

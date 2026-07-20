@@ -16,23 +16,29 @@ logger = logging.getLogger(__name__)
 
 # Sync route is right for schnell (~1-2 s renders). If PLAN.md's upgrade to
 # FLUX dev/pro happens, revisit: slower models belong on queue.fal.run.
-FAL_ENDPOINT = "https://fal.run/fal-ai/flux/schnell"
+FAL_BASE = "https://fal.run"
+DEFAULT_MODEL = "fal-ai/flux/schnell"
+FAL_ENDPOINT = f"{FAL_BASE}/{DEFAULT_MODEL}"  # default; paint() builds from model
 REQUEST_TIMEOUT_SECONDS = 60.0
 
 # Sentinel for "BirdNET/dev gave us no scientific name" — shared with web.py.
 UNKNOWN_SCIENTIFIC = "Species incognita"
 
-# The fixed vintage-naturalist house style (PLAN.md "House style"). The bird
-# is painted as an isolated cutout on plain white so the wall's multiply-blend
-# drops the background and leaves just the bird; the long "no text" tail keeps
-# FLUX from baking in field-guide captions/labels (it likes to).
+# House style (PLAN.md). Deliberately does NOT say "field-guide plate" /
+# "Audubon" / "engraving" — those style words make FLUX bake in engraved
+# captions AND an aged-paper ground (which then can't cutout cleanly). Instead:
+# a single bird, isolated and centred on FLAT PURE WHITE, with a hard no-text /
+# no-paper tail. On white, the wall's multiply-blend drops the ground to a
+# clean cutout. schnell follows this loosely; flux/dev (BP_FAL_MODEL) obeys it
+# far better — recommended if text/paper still leak through.
 PROMPT_TEMPLATE = (
-    "A vintage naturalist illustration of a single {name}, hand-painted "
-    "watercolor and ink in the style of John James Audubon, the whole bird "
-    "in full view, muted natural colors, fine feather detail, isolated on a "
-    "plain solid white background, studio cutout of one bird, nothing else. "
-    "Absolutely no text, no words, no letters, no caption, no label, no title, "
-    "no numbers, no signature, no watermark, no border, no frame, no scenery."
+    "A single {name} bird, hand-painted naturalist watercolor, the whole bird "
+    "perched in full side view, soft muted natural colors, fine feather "
+    "detail, cleanly isolated and centred on a pure flat bright white "
+    "background, the bird is the only thing in the image. No text, no words, "
+    "no letters, no caption, no label, no numbers, no signature, no watermark, "
+    "no border, no frame, no paper texture, no vignette, no scenery, no "
+    "background objects."
 )
 
 
@@ -44,7 +50,11 @@ def build_prompt(species_common: str, species_scientific: str) -> str:
 
 
 def paint(
-    species_common: str, species_scientific: str, *, fal_key: str
+    species_common: str,
+    species_scientific: str,
+    *,
+    fal_key: str,
+    model: str = DEFAULT_MODEL,
 ) -> tuple[bytes, str] | None:
     """Paint one bird. Returns (image_bytes, extension) or None on failure."""
     if not fal_key:
@@ -53,7 +63,7 @@ def paint(
     prompt = build_prompt(species_common, species_scientific)
     try:
         response = httpx.post(
-            FAL_ENDPOINT,
+            f"{FAL_BASE}/{model}",
             headers={"Authorization": f"Key {fal_key}"},
             json={
                 "prompt": prompt,
