@@ -115,6 +115,27 @@ credentials or anything the vendor mints.
 
 ---
 
+## Buying in the Netherlands
+
+Prefer **NL/EU vendors** — post-Brexit, UK shops (Pimoroni, The Pi Hut) add
+customs + import VAT + handling + delay at the border, and Waveshare-direct
+(China) means import clearance and ~2–3 weeks. Everything below is NL/EU with
+VAT included.
+
+| What | Where (NL) | Note |
+|---|---|---|
+| **Waveshare 13.3" Spectra 6 panel** | **Amazon.nl** — get the **"with HAT+ Standard Driver HAT"** SKU (ASIN **B0DPBW2R25**), *not* the raw "without Driver Board" (B0DPBTT286, which needs a separate driver) | The reliable in-stock path. Antratek (Rotterdam, the NL Waveshare distributor) lists it domestically but was **out of stock + raw-panel-only** at time of writing — set a back-in-stock alert there if you'd rather buy domestic, but don't wait on it. |
+| **Raspberry Pi 4B** (2 GB frame + 4 GB recorder), **PSUs, microSD** | **Kiwi Electronics** (kiwi-electronics.com) — official Pi reseller, ships from NL (PostNL/DHL), same-day if ordered before 17:00 | One order covers both Pis + USB-C PSUs + SD cards. Other NL approved resellers: RaspberryStore, SOS Solutions, Antratek, Elektor. |
+| **USB mic (mono) + foam windscreen** | SOS Solutions / Elektronica voor jou (mini USB mic), or bol.com / Amazon.nl | Commodity — cheapest via bol.com/Amazon.nl. Windscreen from bol.com/Amazon.nl. |
+| **microSD (32 GB)** | TinyTronics (tinytronics.nl, cheap) or with the Kiwi order | Either works. |
+| **Deep box frame + mat** | IKEA (Sännahed/Ribba deep frame) + a cut mat; bol.com for a custom mat | Sized to the ~300 × 230 mm panel. |
+
+**Simplest split:** one **Kiwi Electronics** order (both Pis + PSUs + SD) + one
+**Amazon.nl** order (the panel, HAT+ SKU) + an **IKEA/bol.com** run (frame, mic,
+windscreen). All NL/EU, no customs.
+
+---
+
 ## Setup outline (the detail lands in slices #50 / #51)
 
 **Recorder Pi:**
