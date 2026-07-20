@@ -19,8 +19,8 @@ frame client.** Nothing about the pipeline splits.
 
 ```
   ┌─ RECORDER (outside / by a window) ─────────┐        ┌─ FRAME (living room) ──────┐
-  │  Raspberry Pi + USB mic                    │        │  Raspberry Pi Zero 2 W     │
-  │  runs the existing bird-painter app:       │  WiFi  │  + Inky Impression 7.3"    │
+  │  Raspberry Pi + USB mic                    │        │  Raspberry Pi 4B           │
+  │  runs the existing bird-painter app:       │  WiFi  │  + Waveshare 13.3" Spectra6│
   │  capture → BirdNET → fal paint → store     │ ─────▶ │  thin client: GET /wall.png│
   │  + serves /api/live and /wall.png          │        │  every few min → e-paper   │
   └────────────────────────────────────────────┘        └────────────────────────────┘
@@ -37,7 +37,7 @@ frame client.** Nothing about the pipeline splits.
   (unchanged — "local ears, cloud brush").
 
 You can also collapse both roles onto **one** indoor Pi (mic on the windowsill,
-Inky HAT on the same Pi) if you don't want a separate outdoor box — the
+the e-paper HAT on the same Pi) if you don't want a separate outdoor box — the
 software doesn't care. The two-box split is what makes the "recorder outside,
 frame in the living room" concept.
 
@@ -49,26 +49,44 @@ frame in the living room" concept.
 
 | Part | Recommended | ~€ | Why |
 |---|---|---|---|
-| E-paper panel | **Pimoroni Inky Impression 7.3" (2025 Edition)** — Spectra 6, **6-colour**, **800×480**, ~12 s panel refresh (~20–25 s full cycle over SPI), 40-pin HAT, no soldering | ~85 | Full colour is the whole point — our birds are painterly, so a red/black/white or mono panel would gut them. Purpose-built for photo frames; the newer Spectra 6 panel has more saturated colour + faster refresh than the older ACeP one. |
-| Display controller | **Raspberry Pi Zero 2 WH** (with pre-soldered header) | ~20 | The Inky is a HAT — it needs a Pi behind it. The frame only fetches a PNG and pushes it, so a Zero 2 W is plenty. |
-| Storage | microSD 16–32 GB (A1) | ~8 | OS for the Zero. |
-| Power | USB micro-B PSU (5 V/2.5 A) | ~9 | Wall power; the panel only draws while refreshing. |
-| Enclosure | IKEA frame (the board is **174 × 123 mm**, fits a **180 × 130 mm** aperture) or Pimoroni's wooden frame accessory | ~10 | Indoors, so no weatherproofing. |
+| E-paper panel | **Waveshare 13.3" E Ink Spectra 6 (E6)** — **6-colour**, **1600×1200 (~200 PPI)**, SPI, with the HAT+ standard driver (Pi 4B/5) | ~200–260 | The big one on purpose: 5× the pixels of the 7.3" (1600×1200 = 1.92 M px vs 800×480 = 0.38 M). Colour e-paper is 6-colour in the current generation (Spectra 6; the older 7-colour ACeP is discontinued and looked worse), but at ~200 PPI the dithering reads as continuous tone — a fine art-print look that stays true to the naturalist-plate aesthetic, no glow, near-zero idle power. |
+| Display controller | **Raspberry Pi 4 Model B (2 GB)** | ~45 | The 13.3" HAT+ driver targets the Pi 4B/5 40-pin+ header. The frame's own job (fetch a PNG, push over SPI) is trivial — 2 GB is plenty; a Zero 2 W *may* drive the raw panel but the packaged HAT+ is spec'd for Pi 4/5, so a Pi 4 is the safe pick. |
+| Storage | microSD 16–32 GB (A1) | ~8 | OS for the frame Pi. |
+| Power | Official Pi 4 USB-C PSU (5 V/3 A) | ~9 | Wall power; the panel only draws while refreshing. |
+| Enclosure | Deep box frame sized to the ~**300 × 230 mm** panel (13.3" ≈ 270 × 200 mm active area) — an IKEA Ribba/Sannahed deep frame or a custom mat | ~15–25 | Indoors, no weatherproofing. Bigger than the 7.3", so a larger frame + a mat to hide the bezel. |
 
-**Render target for slice #49: 800 × 480, landscape, 6-colour palette** (Spectra
-6: black, white, red, green, blue, yellow — the Inky library handles dithering
-to that palette).
+**Render target for slice #49: 1600 × 1200, landscape, 6-colour palette**
+(Spectra 6: black, white, red, green, blue, yellow — render full-colour at
+1600×1200 and let the panel's driver library dither; don't pre-quantise). The
+extra resolution is what buys the art-print look, so the collage render should
+target the full 1600×1200.
 
-Alternative if you'd rather not run a Pi for the frame: **Pimoroni Inky Frame
-7.3"** — same panel with a Pico 2 W microcontroller aboard, self-contained,
-fetches over WiFi. Trade-off: MicroPython, so our Python client (#50) would be
-reworked; less flexible. The Impression + Zero 2 W is the more hackable path.
+Notes on the bigger panel:
+- **Refresh is slower** than the 7.3" — a 13.3" Spectra 6 full update is on the
+  order of **~25–35 s**. Fine for an ambient frame updated every few minutes;
+  it just means no snappy updates (which we don't want anyway).
+- **Cost/size step up** (~€200+ vs ~€85, and a bigger Pi) — the price of
+  keeping the paper feel *and* getting real resolution. If that's too much, the
+  fallback is a full-colour matte IPS panel running the browser wall directly
+  (drops the `/wall.png` render), at the cost of the paper/no-glow quality —
+  see "Display alternatives" below.
+
+### Display alternatives (considered, not chosen)
+
+- **Full-colour matte IPS + Pi (kiosk browser).** ~10–13" 1920×1200 matte IPS
+  (~€80–120) + a Pi showing the existing wall page in a kiosk browser. Full
+  16-M colour, sharp, and it **drops slice #49 entirely** (the frame loads the
+  real wall). Trade-off: it's a backlit screen — glows, higher power, less
+  "painting on paper." Chosen against because the paper/ambient quality is core
+  to the concept.
+- **Repurposed tablet.** Cheapest; same kiosk-browser approach; most
+  screen-like, plus battery/burn-in caveats.
 
 ### Recorder (outside / by an open window) — the ears
 
 | Part | Recommended | ~€ | Why |
 |---|---|---|---|
-| Computer | **Raspberry Pi 4 Model B, 4 GB** (value) — or **Pi 5, 4 GB** (comfortable) | ~55 / ~65 | BirdNET-Pi officially runs on a Pi 3B+/Zero 2 W and up, but our recorder also paints + serves, so a Pi 4 gives comfortable headroom; Pi 5 runs TF-Lite ~5× faster than Pi 4 for snappier detection. A Zero 2 W (512 MB) works but is slow and RAM-tight — fine for the frame, not ideal for the ears. |
+| Computer | **Raspberry Pi 4 Model B, 4 GB** (value) — or **Pi 5, 4 GB** (comfortable) | ~55 / ~65 | BirdNET-Pi officially runs on a Pi 3B+/Zero 2 W and up, but our recorder also paints + serves, so a Pi 4 gives comfortable headroom; Pi 5 runs TF-Lite ~5× faster than Pi 4 for snappier detection. A Zero 2 W (512 MB) works but is slow and RAM-tight — not ideal for the ears. |
 | Storage | microSD 32 GB (A1/A2) | ~10 | OS + the growing painting archive (see #19-era note: archive is unbounded; a bigger card or a USB SSD if it runs for months). |
 | Microphone | **Plug-and-play USB mic, mono** (e.g. a USB lavalier/omni like a Boya BY-series, or a simple USB mini-mic) + **foam windscreen** | ~15–30 | BirdNET wants sensitivity, not hi-fi — flat-ish to ~12 kHz, no distortion. **Mono** (BirdNET processes mono anyway). Avoid separate USB sound-cards (ground-loop buzz). |
 | USB extension | 1–2 m USB extension cable | ~5 | Move the mic away from the Pi to dodge the Pi's electromagnetic noise, and to reach the window/eave while the Pi stays dry. |
@@ -80,15 +98,15 @@ reworked; less flexible. The Impression + Zero 2 W is the more hackable path.
 ## Procurement checklist (your side)
 
 One batched order. All parts are EU-available; **Kiwi Electronics (kiwi-electronics.com, NL)**
-carries the Pis, Inky, and mics, or split across Pimoroni/The Pi Hut.
+carries the Pis, e-paper panels, and mics, or split across Pimoroni/The Pi Hut.
 
-- [ ] Inky Impression 7.3" 2025 Edition — https://shop.pimoroni.com/products/inky-impression-7-3
-- [ ] Raspberry Pi Zero 2 WH (frame controller) — official reseller
+- [ ] Waveshare 13.3" E Ink Spectra 6 (E6), 1600×1200, with HAT+ driver — https://www.waveshare.com/13.3inch-e-paper-hat-plus-e.htm
+- [ ] Raspberry Pi 4 Model B 2 GB (frame controller) — official reseller
 - [ ] Raspberry Pi 4 Model B 4 GB (recorder) — or Pi 5 4 GB — official reseller
 - [ ] 2× microSD (32 GB) + a card reader
 - [ ] USB mic (mono) + foam windscreen + USB extension cable
-- [ ] PSUs: Pi 4/5 USB-C, Zero micro-B
-- [ ] Picture frame (~180 × 130 mm aperture) for the Inky
+- [ ] PSUs: 2× Pi 4/5 USB-C (frame + recorder)
+- [ ] Deep box frame + mat sized to the ~300 × 230 mm panel
 - [ ] (Recorder) small vented enclosure / under-eave mount
 
 **Paste back to me:** just the panel + recorder models you actually buy (so I
@@ -111,23 +129,22 @@ credentials or anything the vendor mints.
 
 **Frame Pi:**
 1. Flash Raspberry Pi OS Lite, enable SPI.
-2. Install the Inky library (`pip install inky[rpi]`).
+2. Install the panel driver — Waveshare's **`epd13in3E`** driver for the 13.3" Spectra 6 HAT+ (E). NB: that's a different panel from Waveshare's *grayscale* 13.3" (which uses the IT8951 controller) — don't grab the IT8951 lib.
 3. Run the slice-#50 client: fetch `http://<recorder>:8537/wall.png` on a timer
-   (respecting the panel's ~12 s refresh — update every few minutes, not
+   (respecting the panel's ~25–35 s refresh — update every few minutes, not
    seconds) and push to the panel.
 
 ---
 
 ## Open notes / decisions
 
-- **Refresh cadence.** The Inky takes ~12 s to redraw (~20–25 s full cycle over
-  SPI) and colour e-paper
+- **Refresh cadence.** The 13.3" Spectra 6 takes ~25–35 s for a full redraw, and colour e-paper
   shouldn't be hammered — a **few-minutes** update cadence suits an ambient
   frame (the wall's own TTL is hours). The live browser wall keeps its 5 s poll;
   only the frame is slow.
 - **Colour fidelity.** Spectra 6 is 6 fixed colours (black, white, red, green,
   blue, yellow) with dithering — the vintage-cutout birds will read well but
-  won't be photographic. #49 should render at 800×480 and let the Inky library
+  won't be photographic. #49 should render at 1600×1200 and let the panel's driver library
   do the palette dithering (don't pre-quantise).
 - **Outdoor power/rain** is the fiddliest bit — the pragmatic v0 is *mic
   outside, Pi inside*, which sidesteps enclosure/IP concerns entirely.
