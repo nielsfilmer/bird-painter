@@ -80,8 +80,12 @@ test("on a wide screen the cluster stays a compact central clump", () => {
     for (const p of placed) {
       reach = Math.max(reach, Math.abs(p.x) + (p.sizeVmin * vmin) / 2);
     }
+    // Tight clump: the current layout reaches ~0.19·W here; a regression to
+    // the old loose CLUSTER_SPAN (0.86) reaches ~0.30·W. A 0.25·W ceiling sits
+    // between them, so it fails on that regression while the tight layout
+    // passes with margin.
     assert.ok(
-      reach <= W * 0.4,
+      reach <= W * 0.25,
       `seed ${seed}: cluster too wide — reached ${reach.toFixed(0)}px of ${W / 2}px half-width`,
     );
   }

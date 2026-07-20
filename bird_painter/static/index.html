@@ -63,7 +63,25 @@
     -webkit-mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
     mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
   }
-  /* Title chrome — the only text on the wall. Birds carry no per-bird label. */
+  /* Per-bird label, added programmatically (never baked into the image). */
+  .plate figcaption {
+    text-align: center;
+    margin-top: -0.4vmin;
+    line-height: 1.15;
+  }
+  .plate .species {
+    font-variant: small-caps;
+    letter-spacing: 0.06em;
+    font-size: clamp(10px, 1.35vmin, 15px);
+    color: var(--ink);
+  }
+  .plate .heard {
+    font-style: italic;
+    font-size: clamp(8px, 1.05vmin, 12px);
+    color: #6b5e45;
+    margin-top: 0.1vmin;
+  }
+  /* Title chrome at the top of the wall. */
   #header {
     position: fixed;
     top: 4.5vmin;
@@ -117,6 +135,14 @@ const empty = document.getElementById("empty");
 const plates = new Map(); // file -> element
 const FADE_MS = 2300;
 
+function heardText(bornAt) {
+  const mins = Math.round((Date.now() / 1000 - bornAt) / 60);
+  if (mins < 1) return "heard just now";
+  if (mins < 60) return `heard ${mins} min ago`;
+  const h = Math.floor(mins / 60);
+  return `heard ${h}h ${mins % 60}m ago`;
+}
+
 // Apply the pure layout (bird_painter/static/layout.js) to the plate elements.
 // The maths — spiral placement, no-overlap, crowding scale — lives in that
 // module so `node --test` can guard it (layout.test.js).
@@ -132,7 +158,6 @@ function layoutAll() {
     el.style.width = `${p.sizeVmin.toFixed(1)}vmin`;
     el.style.transform =
       `translate(-50%, -50%) translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px)`;
-    el.querySelector("img").style.transform = `rotate(${p.tilt}deg)`;
     el.style.zIndex = String(p.z);
   }
 }
@@ -148,12 +173,18 @@ function makePlate(p) {
   const fig = document.createElement("figure");
   fig.className = "plate";
   fig.dataset.file = p.file;
-  // No visible label — a bare cutout. Species lives only in the img alt for
-  // screen readers.
   const img = document.createElement("img");
   img.src = `/images/${encodeURIComponent(p.file)}`;
   img.alt = `Painting of ${p.species_common}`;
-  fig.appendChild(img);
+  const caption = document.createElement("figcaption");
+  const species = document.createElement("div");
+  species.className = "species";
+  species.textContent = p.species_common;
+  const heard = document.createElement("div");
+  heard.className = "heard";
+  heard.textContent = heardText(p.born_at);
+  caption.append(species, heard);
+  fig.append(img, caption);
   requestAnimationFrame(() => requestAnimationFrame(() => fig.classList.add("shown")));
   return fig;
 }
@@ -177,10 +208,13 @@ async function refresh() {
   // Payload is newest-first; index 0 = newest = center of the collage.
   liveOrder = data.paintings.map(p => p.file);
   for (const p of data.paintings) {
-    if (!plates.has(p.file)) {
-      const el = makePlate(p);
+    let el = plates.get(p.file);
+    if (!el) {
+      el = makePlate(p);
       plates.set(p.file, el);
       wall.appendChild(el);
+    } else {
+      el.querySelector(".heard").textContent = heardText(p.born_at);
     }
   }
   layoutAll(); // existing plates glide to new collision-free spots
