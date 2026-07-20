@@ -279,8 +279,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     across random sets/viewports, determinism, on-screen); run by
     `make test-js` inside `make review-checks`.
   - `__main__.py` — `python -m bird_painter [port]` (port: CLI arg → `BP_PORT`
-    → default 8537; `--list-devices` lists mics; sets up INFO logging so the
-    listener heartbeat surfaces): runs the
+    → default 8537; `--list-devices` lists mics; in a TTY with the listener on
+    and no `BP_INPUT_DEVICE` pinned, prompts to pick the mic — `--no-prompt`
+    skips; sets up INFO logging so the listener heartbeat surfaces): runs the
     whole loop — wall + live mic listener painting heard birds (disable the
     mic with `BP_ENABLE_LISTENER=false` for wall-only / tests / QA).
 - `.gitignore` — excludes `.claude/settings.local.json` (machine-local
