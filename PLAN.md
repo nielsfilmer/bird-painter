@@ -97,16 +97,23 @@ served locally off the same process.
     the paintings live on — painting edges are feathered (CSS mask) and
     multiply-blended into the shared paper so nothing reads as a floating
     rectangle. Placement is a phyllotaxis spiral growing from the middle:
-    newest bird at the center, older ones drifting outward, each with a
-    stable per-painting size (~36–44 vmin — a tight span so no bird renders far
-    smaller than its neighbours) and scatter (hashed from its
-    filename, so layout is deterministic across reloads; birds stand upright —
-    no rotation). Existing plates glide outward as newer ones arrive.
-  - **Framed like a naturalist wall-chart.** A fixed title header sits at the
-    top (small italic eyebrow "birds outside" + letterspaced "heard recently");
-    a **tight** cluster sits centred below it — a central oval sized by the
-    SMALLER viewport axis (and a smaller span fraction), so a wide screen gets
-    a dense clump in the middle, not birds fanned edge-to-edge. Each bird
+    newest bird at the center, older ones spiralling outward, each with a
+    stable per-painting size and scatter (hashed from its filename, so layout
+    is deterministic across reloads; birds stand upright — no rotation).
+    Existing plates glide outward as newer ones arrive.
+  - **Big to start, smaller when crowded.** Plates render at a "big but not
+    huge" natural size (~22–26 vmin, a tight span so no bird renders far
+    smaller than its neighbours) when only a few birds are up; as the wall
+    fills past what the cluster can hold at full size, one global fit-scale
+    drops below 1 and every plate shrinks together — never bigger than the
+    starting size on a near-empty wall.
+  - **Framed like a naturalist wall-chart, filling the screen.** A fixed title
+    header sits at the top (small italic eyebrow "birds outside" + letterspaced
+    "heard recently"); the collage cluster sits centred below it — a central
+    oval filling most of BOTH viewport axes so it uses the whole screen (target:
+    a 16:9 display) rather than huddling in the middle. Its width is capped to a
+    multiple of its height, so a short/ultrawide screen still keeps side margins
+    instead of fanning the birds edge-to-edge into one thin band. Each bird
     carries a **small per-bird label** — species (small-caps) + "heard at
     HH:MM" (italic, 24-hour) — added programmatically as page text, **never
     baked into the image**. The label is a **fixed clock time, not "x min
