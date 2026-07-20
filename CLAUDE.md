@@ -287,6 +287,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 - `.gitignore` — excludes `.claude/settings.local.json` (machine-local
   permission grants; public repo).
 - `CLAUDE.md` — this file: per-repo workflow + context.
+- `docs/hardware.md` — Phase 4 hardware BOM + setup (recorder Pi + mic +
+  Inky Impression e-paper frame; procurement checklist).
 - `PLAN.md` — product/architecture source of truth (concept, pipeline, stack,
   v0 config, scope, risks, decision log).
 - `Makefile` — `make review-checks` (= lint via ruff + test via pytest +

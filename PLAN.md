@@ -215,3 +215,7 @@ whole magic; ship it first.
   + polling). Style: fixed vintage-naturalist. v0 config defaults approved as
   tabled above. Archive browser, location filter, style switcher deferred to
   fast-follows.
+- **2026-07-20** — Phase 4 (hardware) kicked off. Architecture: one app
+  instance on the recorder Pi + a thin e-paper frame client (no pipeline
+  split). Panel recommendation: Inky Impression 7.3" (7-colour, 800×480) —
+  pins the `/wall.png` render target. Full BOM/setup in `docs/hardware.md`.
