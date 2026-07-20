@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # BirdNET's label set (BirdNET_GLOBAL_6K_V2.4) isn't birds-only: alongside
 # ~6400 birds it carries machine/human noise pseudo-classes and ~86 non-bird
-# animals — frogs, toads, crickets, katydids, cicadas, mammals — so the model
+# animals — frogs, toads, crickets, katydids, coneheads, mammals — so the model
 # can report "that wasn't a bird". We paint birds, so drop all of these.
 #
 # Matched on the SCIENTIFIC name (a stable identifier) rather than the common

@@ -69,7 +69,7 @@ served locally off the same process.
   birds it carries 11 machine/human/environment pseudo-classes (Dog, Engine,
   Gun, Siren, Fireworks, Noise, Power tools, Human vocal/non-vocal/whistle,
   Environmental) and ~86 non-bird animals (frogs, toads, crickets, katydids,
-  cicadas, mammals) so it can say "not a bird". The ears drop all of these,
+  coneheads, mammals) so it can say "not a bird". The ears drop all of these,
   matching on the scientific name (common names like "Squirrel Cuckoo" are
   bird traps); only birds reach the wall. A test re-derives the denylist from
   the shipped label file so a birdnetlib upgrade can't silently break it.
