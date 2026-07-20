@@ -65,28 +65,65 @@ test("no two birds ever visibly overlap, across random sets and viewports", () =
   }
 });
 
-test("on a wide screen the cluster stays a compact central clump", () => {
-  // The bug this fixes: spread scaled with viewport WIDTH, so a wide screen
-  // fanned birds edge-to-edge. The cluster should be bounded by the smaller
-  // axis, so on 2400x1000 it occupies the middle, not the full width. Loop
-  // several seeds so it's not a single-arrangement fluke.
-  const [W, H] = [2400, 1000];
+test("a full wall uses most of a 16:9 screen (not a huddle in the middle)", () => {
+  // The collage should fill the screen on a 16:9 display, not huddle in the
+  // centre leaving big empty margins. With a full wall (12 birds) the widest
+  // plate should reach well out toward the edge — but the on-screen guard
+  // (separate test) still keeps it inside the viewport.
+  const [W, H] = [1920, 1080];
   const bandTop = 150;
   const vmin = Math.min(W, H) / 100;
   for (let seed = 1; seed <= 20; seed++) {
-    const files = randomFiles(makeRng(seed), 12);
-    const placed = computeCollage(files, W, H, bandTop);
+    const placed = computeCollage(randomFiles(makeRng(seed), 12), W, H, bandTop);
     let reach = 0;
     for (const p of placed) {
       reach = Math.max(reach, Math.abs(p.x) + (p.sizeVmin * vmin) / 2);
     }
-    // Tight clump: the current layout reaches ~0.23·W here; a regression to
-    // the old loose CLUSTER_SPAN (0.86) reaches ~0.30·W. A 0.25·W ceiling sits
-    // between them, so it fails on that regression while the tight layout
-    // passes with margin.
+    // Uses the screen: reaches past a third of the half-width toward the edge.
+    // A regression to the old tight central clump reached ~0.23·W and fails.
     assert.ok(
-      reach <= W * 0.25,
-      `seed ${seed}: cluster too wide — reached ${reach.toFixed(0)}px of ${W / 2}px half-width`,
+      reach >= W * 0.33,
+      `seed ${seed}: cluster too huddled — only reached ${reach.toFixed(0)}px of ${W / 2}px half-width`,
+    );
+  }
+});
+
+test("on a short wide screen the width cap leaves side margins", () => {
+  // The width cap (CLUSTER_ASPECT × half-height) keeps a short, wide display
+  // from fanning the birds edge-to-edge into one thin full-width band. On
+  // 2400x1000 the cap bites (height-limited), leaving ~7% side margin; without
+  // it the plates would clamp right to the edge (~0.5·W).
+  const [W, H] = [2400, 1000];
+  const bandTop = 150;
+  const vmin = Math.min(W, H) / 100;
+  for (let seed = 1; seed <= 20; seed++) {
+    const placed = computeCollage(randomFiles(makeRng(seed), 12), W, H, bandTop);
+    let reach = 0;
+    for (const p of placed) {
+      reach = Math.max(reach, Math.abs(p.x) + (p.sizeVmin * vmin) / 2);
+    }
+    assert.ok(
+      reach <= W * 0.48,
+      `seed ${seed}: cluster fanned too wide — reached ${reach.toFixed(0)}px of ${W / 2}px half-width`,
+    );
+  }
+});
+
+test("no bird renders far smaller than the largest (minimum-size floor)", () => {
+  // The circled-birds complaint: the small hash bucket looked tiny next to the
+  // big one. All plates share one global scale, so the ratio is purely the
+  // hash-bucket spread — the smallest must stay a healthy fraction of the
+  // largest. Guards against widening SIZE_SPAN back out.
+  const [W, H] = [1600, 1050];
+  const bandTop = 150;
+  for (let seed = 1; seed <= 20; seed++) {
+    const placed = computeCollage(randomFiles(makeRng(seed), 12), W, H, bandTop);
+    if (placed.length < 2) continue;
+    const sizes = placed.map(p => p.sizeVmin);
+    const min = Math.min(...sizes), max = Math.max(...sizes);
+    assert.ok(
+      min >= max * 0.8,
+      `seed ${seed}: smallest bird ${min.toFixed(1)}vmin is under 80% of largest ${max.toFixed(1)}vmin`,
     );
   }
 });

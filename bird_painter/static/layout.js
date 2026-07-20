@@ -11,7 +11,15 @@
 // set can't fit at the current size, all plates shrink together until it does.
 
 const GOLDEN_ANGLE = 2.399963229728653; // radians, 137.5°
-const SIZE_MIN_VMIN = 30, SIZE_SPAN_VMIN = 14;   // plate width 30–44 vmin
+// Per-plate width, hashed from the filename: SIZE_MIN + (hash % SIZE_SPAN),
+// then multiplied by the global fit scale. This is the "big but not huge"
+// starting size: a handful of birds render at (roughly) this size and the
+// scale stays 1; as the wall fills past what the cluster can hold at full
+// size, the fill scale drops below 1 and every plate shrinks together (rule:
+// big to start, smaller when crowded). A tight span keeps a minimum size —
+// the smallest bucket stays ~85% of the largest (22/26) — so no bird renders
+// far smaller than its neighbours.
+const SIZE_MIN_VMIN = 22, SIZE_SPAN_VMIN = 5;    // plate width 22–26 vmin
 const MAX_INDEX = 12;                            // matches the wall's live cap
 const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrait
 // The plate's box also reserves room for the caption below the image (species
@@ -33,13 +41,16 @@ const MAX_TRIES = 220;       // spiral samples per plate before giving up
 const FILL_FACTOR = 0.92;    // plates may claim at most this share of the cluster
 const SHRINK_RETRIES = 8;    // if any plate still couldn't find a free spot,
 const SHRINK_STEP = 0.9;     // shrink everyone by this and lay out again
-// The cluster is a central oval whose size is driven by the SMALLER viewport
-// axis, so it stays a compact clump in the middle instead of fanning out to
-// the edges on a wide screen. CLUSTER_ASPECT lets it be a little wider than
-// tall (like the reference wall-chart). A smaller SPAN packs the birds
-// tighter toward the centre.
-const CLUSTER_SPAN = 0.64;   // cluster fills this fraction of the limiting axis
-const CLUSTER_ASPECT = 1.35; // cluster oval is this much wider than tall
+// The cluster is a central oval the spiral grows into: newest bird at the
+// centre, older ones spiralling outward. It fills most of BOTH viewport axes
+// so the collage uses the whole screen (target: a 16:9 display) instead of
+// huddling in the middle — but the width is also capped to a multiple of the
+// height (CLUSTER_ASPECT). That cap binds whenever the viewport is wider than
+// ~16:9 (including standard 16:9 itself, leaving small side margins) and keeps
+// a short/ultrawide screen from fanning the birds edge-to-edge into one band.
+const CLUSTER_W_FRAC = 0.92; // cluster spans this fraction of the width…
+const CLUSTER_H_FRAC = 0.9;  // …and this fraction of the sub-title band height
+const CLUSTER_ASPECT = 1.7;  // …but never wider than this × its half-height
 
 export function hash(str) {
   let h = 2166136261;
@@ -101,19 +112,20 @@ export function computeCollage(files, W, H, bandTop) {
   const vmin = Math.min(W, H) / 100;
   const bandH = H - bandTop;
   const yOffset = bandTop / 2; // shift the cluster down into the band
-  // Cluster extents: a central oval sized by the smaller axis, so a wide
-  // screen gets a compact clump (not an edge-to-edge fan), capped at the
-  // viewport so it always fits.
-  const span = Math.min(W, bandH) * CLUSTER_SPAN;
-  const halfW = Math.min(W, span * CLUSTER_ASPECT) / 2;
-  const halfH = Math.min(bandH, span) / 2;
+  // Cluster extents: a central oval filling most of BOTH axes, so the collage
+  // uses the whole screen. The width is capped to CLUSTER_ASPECT × the
+  // half-height so an ultrawide display doesn't fan the birds into a thin band.
+  const halfH = (CLUSTER_H_FRAC * bandH) / 2;
+  const halfW = Math.min((CLUSTER_W_FRAC * W) / 2, halfH * CLUSTER_ASPECT);
   const naturalArea = files.reduce((sum, file) => {
     const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
     const imageH = s * PLATE_ASPECT;
     return sum + (s + GAP_VMIN * vmin) * (imageH + captionPx(imageH) + GAP_VMIN * vmin);
   }, 0);
-  // Size plates to fill the cluster oval (not the whole viewport), so they
-  // pack densely in the middle rather than shrinking to dots on a big screen.
+  // Plates render at their natural "big but not huge" size (scale 1) until the
+  // set can't fit the cluster oval at full size; then the scale drops below 1
+  // and everyone shrinks together — so the wall gets smaller as it fills, never
+  // bigger than the starting size on a near-empty wall.
   const clusterArea = Math.PI * halfW * halfH;
   let scale = Math.min(1, Math.sqrt((FILL_FACTOR * clusterArea) / (naturalArea || 1)));
   const boundW = W / 2, boundH = bandH / 2;
