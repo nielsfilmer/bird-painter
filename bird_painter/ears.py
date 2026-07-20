@@ -21,6 +21,34 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# BirdNET's label set (BirdNET_GLOBAL_6K_V2.4) isn't birds-only: it carries
+# noise / human / machine / insect classes so the model can say "that wasn't a
+# bird". We paint birds, so drop these. Matched case-insensitively on the
+# common name. (Update if the model's label set changes.)
+NON_BIRD_COMMON_NAMES = frozenset(
+    name.lower()
+    for name in (
+        "Dog",
+        "Engine",
+        "Environmental",
+        "Fireworks",
+        "Gun",
+        "Human non-vocal",
+        "Human vocal",
+        "Human whistle",
+        "Noise",
+        "Power tools",
+        "Siren",
+        # insects BirdNET also labels — not birds
+        "Gryllus assimilis",
+        "Miogryllus saussurei",
+    )
+)
+
+
+def is_bird(common_name: str) -> bool:
+    return common_name.strip().lower() not in NON_BIRD_COMMON_NAMES
+
 
 @dataclass(frozen=True)
 class Detection:
@@ -74,6 +102,8 @@ class Ears:
                 end_seconds=float(d["end_time"]),
             )
             for d in raw
+            # Drop BirdNET's non-bird noise/human/machine/insect classes.
+            if is_bird(d["common_name"])
         ]
         # BirdNET already filters by min_conf (strict >, and it clamps the
         # floor to [0.01, 0.99]); sort strongest-first for callers.
