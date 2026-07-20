@@ -50,6 +50,55 @@ def test_confidence_floor_clamped_to_valid_range(monkeypatch):
     assert _confidence_floor() == 0.6
 
 
+def test_location_filter_off_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
+    config = load_config()
+    assert config.latitude is None
+    assert config.longitude is None
+
+
+def test_location_filter_parses_both(monkeypatch, tmp_path):
+    monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
+    monkeypatch.setenv("BP_LATITUDE", "52.37")
+    monkeypatch.setenv("BP_LONGITUDE", "4.90")
+    config = load_config()
+    assert config.latitude == 52.37
+    assert config.longitude == 4.90
+
+
+@pytest.mark.parametrize(
+    "lat,lon", [("52.37", None), (None, "4.90")]
+)
+def test_location_filter_requires_both(monkeypatch, tmp_path, lat, lon):
+    monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
+    if lat is not None:
+        monkeypatch.setenv("BP_LATITUDE", lat)
+    if lon is not None:
+        monkeypatch.setenv("BP_LONGITUDE", lon)
+    with pytest.raises(ConfigError, match="must be set together"):
+        load_config()
+
+
+@pytest.mark.parametrize(
+    "lat,lon,bad",
+    [("120", "4.90", "BP_LATITUDE"), ("52.37", "200", "BP_LONGITUDE")],
+)
+def test_location_filter_range_checked(monkeypatch, tmp_path, lat, lon, bad):
+    monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
+    monkeypatch.setenv("BP_LATITUDE", lat)
+    monkeypatch.setenv("BP_LONGITUDE", lon)
+    with pytest.raises(ConfigError, match=bad):
+        load_config()
+
+
+def test_location_filter_rejects_non_numeric(monkeypatch, tmp_path):
+    monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
+    monkeypatch.setenv("BP_LATITUDE", "north")
+    monkeypatch.setenv("BP_LONGITUDE", "4.90")
+    with pytest.raises(ConfigError, match="BP_LATITUDE must be a number"):
+        load_config()
+
+
 def test_load_config_surfaces_config_error(monkeypatch):
     monkeypatch.setenv("BP_MAX_PAINTS_PER_HOUR", "lots")
     with pytest.raises(ConfigError):

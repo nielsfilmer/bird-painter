@@ -38,6 +38,18 @@ def _env_float(name: str, default: float) -> float:
         raise ConfigError(f"{name} must be a number, got: {raw!r}") from None
 
 
+def _env_float_opt(name: str) -> float | None:
+    """A float env var that is genuinely optional: unset/empty → None (the knob
+    is off), rather than a numeric default."""
+    raw = os.environ.get(name)
+    if not raw or not raw.strip():
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        raise ConfigError(f"{name} must be a number, got: {raw!r}") from None
+
+
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if not raw:
@@ -96,6 +108,16 @@ class Config:
         default_factory=lambda: _env_int("BP_PAINT_TTL_SECONDS", 3 * 60 * 60)
     )
     confidence_floor: float = field(default_factory=_confidence_floor)
+    # Location filter: when both a latitude and longitude are set, BirdNET
+    # restricts predictions to species plausible at that place and time of year
+    # (its meta model), cutting implausible detections. Both must be set to
+    # enable it; unset = off (global model). Validated in __post_init__.
+    latitude: float | None = field(
+        default_factory=lambda: _env_float_opt("BP_LATITUDE")
+    )
+    longitude: float | None = field(
+        default_factory=lambda: _env_float_opt("BP_LONGITUDE")
+    )
     analysis_window_seconds: int = field(
         default_factory=lambda: _env_int("BP_ANALYSIS_WINDOW_SECONDS", 15)
     )
@@ -127,6 +149,24 @@ class Config:
     enable_listener: bool = field(
         default_factory=lambda: _env_bool("BP_ENABLE_LISTENER", True)
     )
+
+    def __post_init__(self) -> None:
+        # The location filter keys on a lat/lon pair — one without the other is
+        # a misconfiguration, not a partial filter. Fail loudly rather than
+        # silently ignoring the half that was set.
+        if (self.latitude is None) != (self.longitude is None):
+            raise ConfigError(
+                "BP_LATITUDE and BP_LONGITUDE must be set together (or both "
+                "left unset to disable the location filter)."
+            )
+        if self.latitude is not None and not -90.0 <= self.latitude <= 90.0:
+            raise ConfigError(
+                f"BP_LATITUDE must be between -90 and 90, got: {self.latitude}"
+            )
+        if self.longitude is not None and not -180.0 <= self.longitude <= 180.0:
+            raise ConfigError(
+                f"BP_LONGITUDE must be between -180 and 180, got: {self.longitude}"
+            )
 
 
 def _brush_default_model() -> str:

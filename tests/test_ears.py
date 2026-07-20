@@ -1,10 +1,34 @@
+import datetime
 import importlib.util
 import os
 from pathlib import Path
 
 import pytest
 
-from bird_painter.ears import NON_BIRD_SCIENTIFIC, _silence_load, is_bird
+from bird_painter.ears import NON_BIRD_SCIENTIFIC, Ears, _silence_load, is_bird
+
+
+def _ears_without_model(latitude=None, longitude=None):
+    """An Ears with its location fields set but WITHOUT loading BirdNET (the
+    real __init__ constructs a heavy TF-Lite Analyzer). Exercises the pure
+    location-kwargs logic in isolation."""
+    ears = Ears.__new__(Ears)
+    ears.confidence_floor = 0.6
+    ears.latitude = latitude
+    ears.longitude = longitude
+    return ears
+
+
+def test_location_kwargs_empty_when_no_location():
+    assert _ears_without_model()._location_kwargs() == {}
+
+
+def test_location_kwargs_carries_lat_lon_and_today():
+    ears = _ears_without_model(latitude=52.37, longitude=4.90)
+    kwargs = ears._location_kwargs()
+    assert kwargs["lat"] == 52.37
+    assert kwargs["lon"] == 4.90
+    assert kwargs["date"] == datetime.date.today()
 
 
 def test_real_birds_pass():
