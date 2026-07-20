@@ -24,6 +24,9 @@ def main() -> None:
     if not Path(path).is_file():
         print(f"No such audio file: {path}", file=sys.stderr)
         raise SystemExit(2)
+    # Config supplies the location filter (and the default floor); an explicit
+    # floor arg overrides just the floor, so the demo matches the live system.
+    config = load_config_or_exit()
     if len(sys.argv) > 2:
         try:
             floor = float(sys.argv[2])
@@ -34,14 +37,18 @@ def main() -> None:
             )
             raise SystemExit(2) from None
     else:
-        floor = load_config_or_exit().confidence_floor
+        floor = config.confidence_floor
 
     print(f"Loading BirdNET (floor {floor})…", file=sys.stderr)
     # birdnetlib prints progress to stdout; redirect it to stderr so stdout
     # carries only the detection lines (clean for piping).
     try:
         with contextlib.redirect_stdout(sys.stderr):
-            ears = Ears(confidence_floor=floor)
+            ears = Ears(
+                confidence_floor=floor,
+                latitude=config.latitude,
+                longitude=config.longitude,
+            )
             detections = ears.detect_file(path)
     except Exception as exc:  # noqa: BLE001 — demo CLI: a bad clip shouldn't traceback
         print(f"Could not analyse {path}: {exc}", file=sys.stderr)

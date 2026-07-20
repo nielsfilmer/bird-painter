@@ -41,7 +41,11 @@ def main() -> None:
         flush=True,
     )
     print(f"Loading BirdNET (floor {config.confidence_floor})…", flush=True)
-    ears = Ears(confidence_floor=config.confidence_floor)
+    ears = Ears(
+        confidence_floor=config.confidence_floor,
+        latitude=config.latitude,
+        longitude=config.longitude,
+    )
     listener = MicListener(
         ears,
         window_seconds=config.analysis_window_seconds,

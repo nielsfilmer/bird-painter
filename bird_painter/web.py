@@ -38,15 +38,25 @@ def _start_listener(config: Config, runner: PaintRunner) -> None:
         from .capture import MicListener
         from .ears import Ears
 
-        ears = Ears(confidence_floor=config.confidence_floor)
+        ears = Ears(
+            confidence_floor=config.confidence_floor,
+            latitude=config.latitude,
+            longitude=config.longitude,
+        )
         listener = MicListener(
             ears,
             window_seconds=config.analysis_window_seconds,
             device=config.input_device,
         )
+        location = (
+            f"; location filter {config.latitude}, {config.longitude}"
+            if config.latitude is not None
+            else ""
+        )
         logger.info(
-            "listener: painting birds heard on the mic (floor %.2f)",
+            "listener: painting birds heard on the mic (floor %.2f%s)",
             config.confidence_floor,
+            location,
         )
         listener.listen(runner.on_detections)
     except Exception:  # noqa: BLE001 — the wall must survive a broken listener

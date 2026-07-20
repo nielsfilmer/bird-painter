@@ -155,7 +155,7 @@ the confidence floor (too low → wrong birds on the wall) and the per-hour cap
 | Analysis window | **~15 s rolling** | BirdNET's native chunk; steady detection |
 | Max paints / hour | **20** | hard ceiling so a loud dawn chorus can't run away the API bill |
 | Wall collage | **up to ~12 live** | full but not cramped; overflow → oldest fades first |
-| Location filter (lat/long/week) | **off** | BirdNET can weight by location/season to cut implausible species — nice later, skip for v0 |
+| Location filter (lat/long) | **off (opt-in)** | Set `BP_LATITUDE`+`BP_LONGITUDE` (both, decimal degrees) to restrict BirdNET to species plausible at that place + season (its meta model uses the current date); unset = global model. Cuts implausible detections |
 
 **Trigger rule, precisely:** a BirdNET detection with confidence ≥ floor paints
 the species **iff** (a) it's been at least TTL since that species was last
@@ -175,7 +175,8 @@ whole magic; ship it first.
 **Fast-follows (post-v0):**
 - Archive browser view (scroll everything ever painted — the archive already
   exists from v0).
-- Location/season filter on (cut implausible species).
+- ~~Location/season filter on (cut implausible species).~~ **Shipped** — opt-in
+  via `BP_LATITUDE`/`BP_LONGITUDE` (see the v0 config table).
 - Style switcher; `dev`/`pro` quality tier.
 - Per-bird metadata richness (confidence, sonogram, time-of-day trends).
 
@@ -220,6 +221,11 @@ whole magic; ship it first.
   + polling). Style: fixed vintage-naturalist. v0 config defaults approved as
   tabled above. Archive browser, location filter, style switcher deferred to
   fast-follows.
+- **2026-07-20** — Location filter shipped (fast-follow off the v0 table).
+  Opt-in via `BP_LATITUDE`+`BP_LONGITUDE` (both-or-neither, range-validated);
+  threaded into `birdnetlib`'s `Recording`/`RecordingBuffer` as `lat`/`lon`/
+  `date` (date = now, so the species list tracks the season). Unset = global
+  model (unchanged v0 behaviour).
 - **2026-07-20** — Phase 4 (hardware) kicked off. Architecture: one app
   instance on the recorder Pi + a thin e-paper frame client (no pipeline
   split). Panel recommendation: Waveshare 13.3" Spectra 6 (6-colour, 1600×1200) —
