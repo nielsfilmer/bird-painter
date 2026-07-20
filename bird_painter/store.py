@@ -10,11 +10,15 @@ metadata, so it survives restarts.
 from __future__ import annotations
 
 import json
+import logging
 import re
+import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Image types the /images endpoint may serve; keeps meta.jsonl (and anything
 # else that lands in the archive dir) unreachable from the web.
@@ -35,17 +39,41 @@ def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "bird"
 
 
+_PAINTING_FIELDS = {f.name for f in fields(Painting)}
+
+
+def _painting_from_record(record: dict) -> Painting | None:
+    """Build a Painting from a meta.jsonl record, tolerating schema drift:
+    keys added by a newer version are ignored; a record missing a field the
+    current Painting needs is skipped with a warning rather than crashing boot
+    on a TypeError."""
+    known = {k: v for k, v in record.items() if k in _PAINTING_FIELDS}
+    missing = _PAINTING_FIELDS - known.keys()
+    if missing:
+        logger.warning("store: skipping meta record missing %s", sorted(missing))
+        return None
+    return Painting(**known)
+
+
 class Store:
-    """Single-process only: the in-memory painting list is the source of the
-    live view, so running uvicorn with --workers N would give each worker its
-    own diverging store. The app runs with the default single worker; sync
-    endpoints hit the threadpool but list appends/reads are GIL-safe here."""
+    """Single-process, single-worker only. The in-memory painting list is the
+    source of the live view, so running uvicorn with --workers N would give
+    each worker its own diverging store (and a per-worker meta.jsonl race) —
+    correctness depends on `--workers 1`, which is the app's default.
+
+    Within the one process there ARE two writer threads (the mic listener and
+    any /dev/paint request), so `add` is guarded by a lock: the file append
+    and the list append happen atomically, so concurrent adds can't interleave
+    partial lines in meta.jsonl. Reads (live/last_painted_at) iterate the list
+    under the GIL, which is safe for a list (no 'changed size during
+    iteration')."""
 
     def __init__(self, archive_dir: Path, ttl_seconds: int):
         self.archive_dir = archive_dir
         self.ttl_seconds = ttl_seconds
         self.meta_path = archive_dir / "meta.jsonl"
         self.archive_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._paintings: list[Painting] = self._load()
 
     def _load(self) -> list[Painting]:
@@ -53,8 +81,16 @@ class Store:
             return []
         paintings = []
         for line in self.meta_path.read_text().splitlines():
-            if line.strip():
-                paintings.append(Painting(**json.loads(line)))
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                logger.warning("store: skipping unparseable meta line")
+                continue
+            painting = _painting_from_record(record)
+            if painting is not None:
+                paintings.append(painting)
         return paintings
 
     def add(
@@ -82,9 +118,12 @@ class Store:
             born_at=born_at,
             source=source,
         )
-        with self.meta_path.open("a") as f:
-            f.write(json.dumps(asdict(painting)) + "\n")
-        self._paintings.append(painting)
+        # Serialize the two writers (mic thread + /dev/paint) so their meta
+        # lines and list appends never interleave.
+        with self._lock:
+            with self.meta_path.open("a") as f:
+                f.write(json.dumps(asdict(painting)) + "\n")
+            self._paintings.append(painting)
         return painting
 
     def live(self, now: float | None = None) -> list[Painting]:
