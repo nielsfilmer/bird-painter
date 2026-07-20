@@ -102,3 +102,10 @@ def test_dev_paint_uses_the_real_brush_when_a_key_is_set(monkeypatch, config):
         assert response.json()["source"] == "dev"
         live = client.get("/api/live").json()["paintings"]
         assert [p["species_common"] for p in live] == ["Song Thrush"]
+
+
+def test_layout_js_is_served_as_a_module(client):
+    response = client.get("/layout.js")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/javascript")
+    assert "computeCollage" in response.text

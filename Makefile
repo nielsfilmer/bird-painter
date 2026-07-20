@@ -17,8 +17,10 @@ test:
 # node --test so a density/overlap regression fails here, not by hand.
 # Skips gracefully if node isn't installed (Python checks still run).
 test-js:
-	@command -v node >/dev/null 2>&1 \
-		&& node --test bird_painter/static/*.test.js \
-		|| echo "test-js: node not found — skipping JS layout tests"
+	@if command -v node >/dev/null 2>&1; then \
+		node --test bird_painter/static/*.test.js; \
+	else \
+		echo "test-js: node not found — skipping JS layout tests"; \
+	fi
 
 review-checks: lint test test-js
