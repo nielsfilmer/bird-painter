@@ -56,3 +56,17 @@ def test_render_missing_file_does_not_crash(tmp_path):
     ]
     png = render_wall_png(paintings, tmp_path, 500, 400)
     assert _open(png).size == (500, 400)
+
+
+def test_render_falls_back_when_no_serif_font_exists(tmp_path, monkeypatch):
+    # On a host without any of the candidate serif faces, captions must fall
+    # back to Pillow's bundled font rather than crash. Force that by emptying
+    # the candidate lists (so discovery finds nothing).
+    from bird_painter import render
+
+    monkeypatch.setattr(render, "_SERIF", [])
+    monkeypatch.setattr(render, "_SERIF_ITALIC", [])
+    _make_image(tmp_path / "b.png")
+    paintings = [{"file": "b.png", "species_common": "Wren", "born_at": 1784570000}]
+    png = render_wall_png(paintings, tmp_path, 500, 400)
+    assert _open(png).size == (500, 400)

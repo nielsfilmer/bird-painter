@@ -30,7 +30,16 @@ FILES = [
     "1783800000_chaffinch_aabbccdd.jpg",
     "1783700000_chiffchaff_eeff0011.jpg",
 ]
-CASES = [(1600, 1200, 168), (1920, 1080, 150), (375, 812, 120), (2400, 1000, 150)]
+# (width, height, band_top, n): also vary the count so parity is checked for
+# sparse walls (where the fit-scale pins at 1) and dense ones (where it shrinks
+# and the spiral packs tightly), not only the 12-bird maximum.
+CASES = [
+    (1600, 1200, 168, 12),
+    (1920, 1080, 150, 1),
+    (1920, 1080, 150, 4),
+    (375, 812, 120, 7),
+    (2400, 1000, 150, 12),
+]
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
@@ -39,10 +48,7 @@ def test_python_layout_matches_javascript():
 import {{ computeCollage }} from {json.dumps(LAYOUT_JS.as_uri())};
 const files = {json.dumps(FILES)};
 const cases = {json.dumps(CASES)};
-const out = {{}};
-for (const [W, H, B] of cases) {{
-  out[`${{W}}x${{H}}x${{B}}`] = computeCollage(files, W, H, B);
-}}
+const out = cases.map(([W, H, B, n]) => computeCollage(files.slice(0, n), W, H, B));
 console.log(JSON.stringify(out));
 """
     node = shutil.which("node")
@@ -53,10 +59,9 @@ console.log(JSON.stringify(out));
         check=True,
     )
     js = json.loads(result.stdout)
-    for w, h, band_top in CASES:
-        js_placed = js[f"{w}x{h}x{band_top}"]
-        py_placed = compute_collage(FILES, w, h, band_top)
-        assert len(js_placed) == len(py_placed), f"count differs at {w}x{h}"
+    for (w, h, band_top, n), js_placed in zip(CASES, js, strict=True):
+        py_placed = compute_collage(FILES[:n], w, h, band_top)
+        assert len(js_placed) == len(py_placed), f"count differs at {w}x{h} n={n}"
         for a, b in zip(js_placed, py_placed, strict=True):
             assert a["file"] == b.file
             assert abs(a["x"] - b.x) < 1e-6, f"x differs for {b.file} at {w}x{h}"
