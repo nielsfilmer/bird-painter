@@ -15,6 +15,8 @@ dependencies = [
     "librosa>=0.10",
     "tensorflow>=2.16",
     "sounddevice>=0.4",  # live mic capture (PortAudio)
+    "pillow>=10",        # server-side /wall.png collage render (e-paper frame)
+    "numpy>=1.24",       # feather-mask maths for the /wall.png render
 ]
 
 [project.optional-dependencies]

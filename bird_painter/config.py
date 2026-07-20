@@ -127,6 +127,22 @@ class Config:
     wall_max_live: int = field(
         default_factory=lambda: _env_int("BP_WALL_MAX_LIVE", 12)
     )
+    # Server-rendered /wall.png size (the e-paper frame fetches this). Default
+    # is the Waveshare 13.3" Spectra 6 panel's native 1600×1200 landscape;
+    # override for a different panel. Optional serif font paths for the render
+    # (defaults auto-discover DejaVu/Georgia; see render.py).
+    wall_png_width: int = field(
+        default_factory=lambda: _env_int("BP_WALL_PNG_WIDTH", 1600)
+    )
+    wall_png_height: int = field(
+        default_factory=lambda: _env_int("BP_WALL_PNG_HEIGHT", 1200)
+    )
+    wall_font: str | None = field(
+        default_factory=lambda: os.environ.get("BP_WALL_FONT") or None
+    )
+    wall_font_italic: str | None = field(
+        default_factory=lambda: os.environ.get("BP_WALL_FONT_ITALIC") or None
+    )
     port: int = field(default_factory=lambda: _env_int("BP_PORT", 8537))
     # Mic input device: a numeric index or a name substring (see
     # `python -m bird_painter --list-devices`). None = system default input.
