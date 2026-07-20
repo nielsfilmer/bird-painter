@@ -18,24 +18,14 @@ import uvicorn
 from .config import load_config
 
 
-def _list_devices() -> None:
-    import sounddevice as sd
-
-    default_in = sd.default.device[0]
-    print("Input devices (use the index or a name substring as BP_INPUT_DEVICE):")
-    for index, dev in enumerate(sd.query_devices()):
-        if dev["max_input_channels"] > 0:
-            marker = "  <- default" if index == default_in else ""
-            rate = int(dev["default_samplerate"])
-            print(f"  {index}: {dev['name']} ({rate} Hz){marker}")
-
-
 def main() -> None:
     flags = [a for a in sys.argv[1:] if a.startswith("-")]
     positional = [a for a in sys.argv[1:] if not a.startswith("-")]
 
     if "--list-devices" in flags:
-        _list_devices()
+        from .capture import list_input_devices
+
+        list_input_devices()
         return
 
     # Surface bird_painter's own INFO logs (startup, listener heartbeat) — they
