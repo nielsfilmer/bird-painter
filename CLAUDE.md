@@ -256,9 +256,13 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `detect_cli.py` — `python -m bird_painter.detect_cli <clip> [floor]`,
     prints detections (demo/verify the ears).
   - `capture.py` — `MicListener`: records rolling 48 kHz mono windows from
-    the mic and feeds each to the ears; soft-failure loop.
+    the mic and feeds each to the ears; soft-failure loop. Also
+    `device_name()` / `list_input_devices()` — the shared mic-device helpers
+    (used by both CLIs).
   - `listen_cli.py` — `python -m bird_painter.listen_cli`, live mic →
-    printed detections (ears + mic only, no painting).
+    printed detections (ears + mic only, no painting); prints the selected
+    input device + how to change it (`BP_INPUT_DEVICE`), and
+    `--list-devices` lists mics.
   - `gate.py` — `TriggerGate`: the paint-or-not decision — per-species TTL
     cooldown (via the store) + rolling per-hour cap.
   - `runner.py` — `PaintRunner`: detections → gate → brush → store; the

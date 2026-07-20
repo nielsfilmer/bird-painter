@@ -29,6 +29,27 @@ BIRDNET_SAMPLERATE = 48000
 ERROR_BACKOFF_SECONDS = 1.0
 
 
+def device_name(device: int | str | None) -> str:
+    """Human-readable name of an input device (index, name substring, or None
+    for the system default). Best-effort — never raises."""
+    try:
+        return sd.query_devices(device, "input")["name"]
+    except Exception:  # noqa: BLE001 — naming is best-effort diagnostics
+        return "default input" if device is None else str(device)
+
+
+def list_input_devices() -> None:
+    """Print the available mic input devices with their indices, marking the
+    system default — the values usable as BP_INPUT_DEVICE."""
+    default_in = sd.default.device[0]
+    print("Input devices (use the index or a name substring as BP_INPUT_DEVICE):")
+    for index, dev in enumerate(sd.query_devices()):
+        if dev["max_input_channels"] > 0:
+            marker = "  <- default" if index == default_in else ""
+            rate = int(dev["default_samplerate"])
+            print(f"  {index}: {dev['name']} ({rate} Hz){marker}")
+
+
 class MicListener:
     def __init__(
         self,
@@ -44,10 +65,7 @@ class MicListener:
         self.device = device
 
     def _device_name(self) -> str:
-        try:
-            return sd.query_devices(self.device, "input")["name"]
-        except Exception:  # noqa: BLE001 — naming is best-effort diagnostics
-            return "default input" if self.device is None else str(self.device)
+        return device_name(self.device)
 
     def _record_window(self) -> np.ndarray:
         frames = int(self.window_seconds * self.samplerate)
