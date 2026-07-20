@@ -74,21 +74,70 @@ def device_name(device: int | str | None) -> str:
         return "default input" if device is None else str(device)
 
 
+def _input_devices() -> tuple[list[tuple[int, dict]], int | None]:
+    """(input devices as (index, info), system default input index). Best
+    effort — returns ([], None) if the audio backend can't be queried."""
+    try:
+        default_in = sd.default.device[0]
+        devices = [
+            (i, d) for i, d in enumerate(sd.query_devices())
+            if d["max_input_channels"] > 0
+        ]
+        return devices, default_in
+    except Exception as exc:  # noqa: BLE001 — no audio backend / PortAudio error
+        print(f"Could not query audio devices: {exc}")
+        return [], None
+
+
 def list_input_devices() -> None:
     """Print the available mic input devices with their indices, marking the
     system default — the values usable as BP_INPUT_DEVICE."""
-    try:
-        default_in = sd.default.device[0]
-        devices = list(enumerate(sd.query_devices()))
-    except Exception as exc:  # noqa: BLE001 — no audio backend / PortAudio error
-        print(f"Could not query audio devices: {exc}")
+    devices, default_in = _input_devices()
+    if not devices:
         return
     print("Input devices (use the index or a name substring as BP_INPUT_DEVICE):")
     for index, dev in devices:
-        if dev["max_input_channels"] > 0:
-            marker = "  <- default" if index == default_in else ""
-            rate = int(dev["default_samplerate"])
-            print(f"  {index}: {dev['name']} ({rate} Hz){marker}")
+        marker = "  <- default" if index == default_in else ""
+        rate = int(dev["default_samplerate"])
+        print(f"  {index}: {dev['name']} ({rate} Hz){marker}")
+
+
+def resolve_device_choice(raw: str, valid_indices: set[int]) -> int | None:
+    """Map a picker answer to a device index: blank → None (system default);
+    a listed index → that int; anything else → None (fall back to default)."""
+    raw = raw.strip()
+    if raw == "":
+        return None
+    if raw.isdigit() and int(raw) in valid_indices:
+        return int(raw)
+    return None
+
+
+def select_input_device() -> int | None:
+    """Interactively pick a mic. Returns the chosen device index, or None to
+    mean 'system default'. Falls back to None if there's nothing to choose or
+    the input can't be read."""
+    devices, default_in = _input_devices()
+    if not devices:
+        return None
+    print("Select the microphone to listen on:")
+    for index, dev in devices:
+        marker = " (default)" if index == default_in else ""
+        print(f"  [{index}] {dev['name']}{marker}")
+    prompt = f"Device index [Enter for default {default_in}]: "
+    try:
+        raw = input(prompt)
+    except EOFError:  # stdin closed / piped-empty — fall back to default
+        return None
+    except KeyboardInterrupt:  # Ctrl-C at the picker aborts the launch cleanly
+        print()
+        raise SystemExit(130) from None
+    chosen = resolve_device_choice(raw, {i for i, _ in devices})
+    if raw.strip() and chosen is None:
+        print(f"'{raw.strip()}' isn't a listed index — using the default.")
+    if chosen is not None:
+        print(f"Listening on: {device_name(chosen)}")
+    return chosen
 
 
 class MicListener:
