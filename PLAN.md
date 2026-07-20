@@ -33,7 +33,10 @@ sitting between recognize and generate:
              local        local                                   cloud API          local web page
 ```
 
-1. **Capture** — read audio from the machine's microphone in rolling windows.
+1. **Capture** — a continuous `sounddevice.InputStream` (PortAudio's own
+   thread) fills a ring buffer; the listen loop pulls rolling windows off it.
+   Capture and analysis run on separate threads, so audio arriving during an
+   analysis is buffered, not dropped — gapless windows.
 2. **Recognize** — run BirdNET locally on each window; emit `(species,
    confidence, time)` for detections above a confidence floor.
 3. **Trigger gate** — a detection paints a bird only if that species is off
