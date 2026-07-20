@@ -272,7 +272,13 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
   - `web.py` — FastAPI app via `create_app(config)` factory (no import-time
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
-    `/images/*`, `/dev/paint/*`.
+    `/wall.png`, `/images/*`, `/dev/paint/*`.
+  - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
+    (the collage placement maths), so `/wall.png` places birds identically to
+    the live wall. A parity test keeps the two in sync.
+  - `render.py` — `render_wall_png(...)`: composites the collage to a PNG
+    server-side (Pillow) for the e-paper frame — cream paper + feather-masked
+    multiply-blended birds + captions + header; full-colour (the panel dithers).
   - `static/index.html` — the wall (polling, fade in/out); imports the layout
     module and applies it to the plate DOM.
   - `static/layout.js` — pure collage-layout maths (`computeCollage`): spiral
@@ -297,8 +303,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   test-js via `node --test` for the wall layout); the deterministic-check
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
-- `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API;
-  import-purity regression). Always injects absolute tmp archive dirs.
+- `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API,
+  wall-layout port + JS-parity, /wall.png render; import-purity regression).
+  Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
   milestones/issues (backs the `/status` skill).
 - `.claude/settings.json` — project permission allowlist.

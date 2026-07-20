@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import brush
 from .config import Config, load_config
@@ -110,6 +110,31 @@ def create_app(config: Config | None = None) -> FastAPI:
                 ],
             }
         )
+
+    @app.get("/wall.png")
+    def wall_png() -> Response:
+        """The collage rendered server-side to a PNG — what the e-paper frame
+        (Phase 4) fetches, since it can't run the browser wall. Same live set,
+        same layout maths, so it mirrors the on-screen wall."""
+        from .render import render_wall_png
+
+        paintings = [
+            {
+                "file": p.file,
+                "species_common": p.species_common,
+                "born_at": p.born_at,
+            }
+            for p in store.live()[: config.wall_max_live]
+        ]
+        png = render_wall_png(
+            paintings,
+            config.archive_dir,
+            config.wall_png_width,
+            config.wall_png_height,
+            font=config.wall_font,
+            italic_font=config.wall_font_italic,
+        )
+        return Response(content=png, media_type="image/png")
 
     @app.get("/images/{filename}")
     def image(filename: str) -> FileResponse:

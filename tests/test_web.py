@@ -63,6 +63,31 @@ def test_live_caps_at_wall_max_live(config):
         assert len(client.get("/api/live").json()["paintings"]) == 2
 
 
+def test_wall_png_renders_at_configured_size(config):
+    small = dataclasses.replace(config, wall_png_width=320, wall_png_height=240)
+    app = create_app(small)
+    with TestClient(app) as client:
+        client.post("/dev/paint/robin")  # a (placeholder-SVG) plate to render
+        response = client.get("/wall.png")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        import io
+
+        from PIL import Image
+
+        assert Image.open(io.BytesIO(response.content)).size == (320, 240)
+
+
+def test_wall_png_renders_when_empty(config):
+    app = create_app(
+        dataclasses.replace(config, wall_png_width=200, wall_png_height=150)
+    )
+    with TestClient(app) as client:
+        response = client.get("/wall.png")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+
+
 def test_importing_web_has_no_side_effects(tmp_path: Path):
     """Regression for PR #28: `import bird_painter.web` must not create the
     default data/ archive (Config.archive_dir is a relative path)."""

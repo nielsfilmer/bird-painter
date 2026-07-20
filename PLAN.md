@@ -238,3 +238,14 @@ whole magic; ship it first.
   instance on the recorder Pi + a thin e-paper frame client (no pipeline
   split). Panel recommendation: Waveshare 13.3" Spectra 6 (6-colour, 1600×1200) —
   pins the `/wall.png` render target. Full BOM/setup in `docs/hardware.md`.
+- **2026-07-20** — Phase 4 slice 2: `/wall.png` server-side collage render
+  shipped. The e-paper frame can't run the browser wall, so the collage is
+  rastered server-side (Pillow) and served at `/wall.png`, default 1600×1200
+  full-colour (the panel driver dithers to 6 colours). Placement reuses the
+  layout maths via a Python port of `static/layout.js` (`wall_layout.py`), kept
+  in lockstep by a node-vs-Python parity test — so bird positions/sizes are
+  identical to the live wall. The raster closely *mirrors* the wall rather than
+  being a pixel-identical browser screenshot: it lays the cluster into a
+  slightly shorter box (a bottom inset so captions clear the panel edge) and
+  hand-matches the header/caption typography from the CSS. Size + caption fonts
+  are env-configurable.

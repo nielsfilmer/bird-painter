@@ -45,7 +45,10 @@ model, …) are environment variables — see [`.env.example`](.env.example) and
 ## Hardware
 
 To run it as a standalone installation (a recorder + an e-paper frame), see the
-generic hardware BOM & setup guide in [`docs/hardware.md`](docs/hardware.md).
+generic hardware BOM & setup guide in [`docs/hardware.md`](docs/hardware.md). The
+frame can't run the browser wall, so the app also serves the collage rendered
+server-side as a PNG at `/wall.png` (default 1600×1200, configurable) for a thin
+client to fetch and display.
 
 ## Development
 
