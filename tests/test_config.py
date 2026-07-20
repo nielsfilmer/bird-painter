@@ -1,5 +1,6 @@
 import pytest
 
+from bird_painter.__main__ import _parse_port_arg
 from bird_painter.config import (
     CONFIDENCE_FLOOR_MAX,
     CONFIDENCE_FLOOR_MIN,
@@ -8,6 +9,7 @@ from bird_painter.config import (
     _env_bool,
     _env_int,
     load_config,
+    load_config_or_exit,
 )
 
 
@@ -52,3 +54,22 @@ def test_load_config_surfaces_config_error(monkeypatch):
     monkeypatch.setenv("BP_MAX_PAINTS_PER_HOUR", "lots")
     with pytest.raises(ConfigError):
         load_config()
+
+
+def test_parse_port_arg_accepts_number_and_rejects_junk():
+    assert _parse_port_arg([]) is None
+    assert _parse_port_arg(["8600"]) == 8600
+    with pytest.raises(ConfigError, match="port must be a number"):
+        _parse_port_arg(["zzz"])
+
+
+def test_load_config_or_exit_exits_2_on_bad_env(monkeypatch):
+    monkeypatch.setenv("BP_MAX_PAINTS_PER_HOUR", "lots")
+    with pytest.raises(SystemExit) as exc:
+        load_config_or_exit()
+    assert exc.value.code == 2
+
+
+def test_load_config_or_exit_returns_config_when_clean(monkeypatch, tmp_path):
+    monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
+    assert load_config_or_exit().max_paints_per_hour == 20

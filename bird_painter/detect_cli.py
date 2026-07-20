@@ -12,7 +12,7 @@ import contextlib
 import sys
 from pathlib import Path
 
-from .config import ConfigError, load_config
+from .config import load_config_or_exit
 from .ears import Ears
 
 
@@ -34,11 +34,7 @@ def main() -> None:
             )
             raise SystemExit(2) from None
     else:
-        try:
-            floor = load_config().confidence_floor
-        except ConfigError as exc:
-            print(exc, file=sys.stderr)
-            raise SystemExit(2) from None
+        floor = load_config_or_exit().confidence_floor
 
     print(f"Loading BirdNET (floor {floor})…", file=sys.stderr)
     # birdnetlib prints progress to stdout; redirect it to stderr so stdout

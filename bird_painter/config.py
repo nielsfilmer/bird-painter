@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -123,3 +124,13 @@ class Config:
 
 def load_config() -> Config:
     return Config()
+
+
+def load_config_or_exit() -> Config:
+    """load_config() for CLI entrypoints: a bad env value prints its message
+    and exits 2 instead of tracebacking."""
+    try:
+        return load_config()
+    except ConfigError as exc:
+        print(exc, file=sys.stderr)
+        raise SystemExit(2) from None
