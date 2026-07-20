@@ -91,6 +91,25 @@ test("on a wide screen the cluster stays a compact central clump", () => {
   }
 });
 
+test("no bird renders far smaller than the largest (minimum-size floor)", () => {
+  // The circled-birds complaint: the small hash bucket looked tiny next to the
+  // big one. All plates share one global scale, so the ratio is purely the
+  // hash-bucket spread — the smallest must stay a healthy fraction of the
+  // largest. Guards against widening SIZE_SPAN back out.
+  const [W, H] = [1600, 1050];
+  const bandTop = 150;
+  for (let seed = 1; seed <= 20; seed++) {
+    const placed = computeCollage(randomFiles(makeRng(seed), 12), W, H, bandTop);
+    if (placed.length < 2) continue;
+    const sizes = placed.map(p => p.sizeVmin);
+    const min = Math.min(...sizes), max = Math.max(...sizes);
+    assert.ok(
+      min >= max * 0.8,
+      `seed ${seed}: smallest bird ${min.toFixed(1)}vmin is under 80% of largest ${max.toFixed(1)}vmin`,
+    );
+  }
+});
+
 test("layout is deterministic for the same files + viewport", () => {
   const files = randomFiles(makeRng(7), 9);
   const a = computeCollage(files, 1280, 800, 120);

@@ -11,7 +11,12 @@
 // set can't fit at the current size, all plates shrink together until it does.
 
 const GOLDEN_ANGLE = 2.399963229728653; // radians, 137.5°
-const SIZE_MIN_VMIN = 30, SIZE_SPAN_VMIN = 14;   // plate width 30–44 vmin
+// Per-plate width, hashed from the filename: SIZE_MIN + (hash % SIZE_SPAN),
+// then multiplied by the global shrink-to-fit scale. A tight span keeps a
+// minimum size — the smallest bucket stays ~82% of the largest — so no bird
+// renders far smaller than its neighbours on a full wall. (Was 30–44: a 47%
+// spread that left the small bucket looking tiny once the wall scaled down.)
+const SIZE_MIN_VMIN = 36, SIZE_SPAN_VMIN = 8;    // plate width 36–44 vmin
 const MAX_INDEX = 12;                            // matches the wall's live cap
 const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrait
 // The plate's box also reserves room for the caption below the image (species

@@ -98,7 +98,8 @@ served locally off the same process.
     multiply-blended into the shared paper so nothing reads as a floating
     rectangle. Placement is a phyllotaxis spiral growing from the middle:
     newest bird at the center, older ones drifting outward, each with a
-    stable per-painting size (~30–44 vmin) and scatter (hashed from its
+    stable per-painting size (~36–44 vmin — a tight span so no bird renders far
+    smaller than its neighbours) and scatter (hashed from its
     filename, so layout is deterministic across reloads; birds stand upright —
     no rotation). Existing plates glide outward as newer ones arrive.
   - **Framed like a naturalist wall-chart.** A fixed title header sits at the
