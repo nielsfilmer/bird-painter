@@ -13,9 +13,9 @@ No app. No buttons. Nothing to check. The garden writes the artwork.
 
 ![The wall: a collage of vintage-naturalist bird paintings on aged cream paper, each labelled with the species and the time it was heard](docs/wall.png)
 
-<sub>Real output — every bird above was heard on a microphone, identified by
-BirdNET, and painted on the spot. Assembled from a full day's detections; a
-live wall holds a few hours' worth at a time.</sub>
+<sub>An actual wall, one summer evening — every bird above was heard on a
+microphone between 19:38 and 20:43, identified by BirdNET, and painted on the
+spot.</sub>
 
 ---
 
