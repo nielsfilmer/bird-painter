@@ -297,6 +297,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 - `CLAUDE.md` — this file: per-repo workflow + context.
 - `docs/hardware.md` — Phase 4 hardware BOM + setup (recorder Pi + mic +
   Inky Impression e-paper frame; procurement checklist).
+- `docs/wall.png` — README hero image: the app's own `/wall.png` render of a
+  set of real mic detections (regenerate with `render_wall_png` if the wall's
+  look changes materially).
 - `PLAN.md` — product/architecture source of truth (concept, pipeline, stack,
   v0 config, scope, risks, decision log).
 - `Makefile` — `make review-checks` (= lint via ruff + test via pytest +
