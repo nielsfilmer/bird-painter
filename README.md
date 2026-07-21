@@ -14,14 +14,15 @@ No app. No buttons. Nothing to check. The garden writes the artwork.
 ![The wall: a collage of vintage-naturalist bird paintings on aged cream paper, each labelled with the species and the time it was heard](docs/wall.png)
 
 <sub>Real output — every bird above was heard on a microphone, identified by
-BirdNET, and painted on the spot.</sub>
+BirdNET, and painted on the spot. Assembled from a full day's detections; a
+live wall holds a few hours' worth at a time.</sub>
 
 ---
 
 ## Why it's nice to live with
 
-- **It's a window, not a feed.** The wall reflects the ten minutes you just
-  lived through, not an algorithm's idea of your attention.
+- **It's a window, not a feed.** The wall reflects the last few hours you
+  actually lived through, not an algorithm's idea of your attention.
 - **It rewards paying attention.** You start noticing the jackdaw at 08:35
   because you saw it appear.
 - **It's genuinely local.** Audio never leaves the house — recognition runs on
@@ -63,9 +64,16 @@ cp .env.example .env          # then put your fal.ai key in FAL_KEY
 Open **http://127.0.0.1:8537** and leave it running on a spare screen.
 
 On first run it will offer to pick your microphone (`--list-devices` lists
-them). Without a `FAL_KEY` it still runs, drawing simple placeholder plates —
-handy for trying the wall before signing up for anything. To run the wall
-without the microphone at all, set `BP_ENABLE_LISTENER=false`.
+them). To run the wall without the microphone at all, set
+`BP_ENABLE_LISTENER=false`.
+
+A fal.ai key is what does the painting, so **without `FAL_KEY` the wall serves
+but stays empty** — heard birds are recognised and then quietly skipped. To see
+the collage before signing up for anything, drop in placeholder plates by hand:
+
+```bash
+curl -X POST http://127.0.0.1:8537/dev/paint/eurasian-jay
+```
 
 ## Make it yours
 
@@ -78,7 +86,8 @@ Everything is an environment variable — see [`.env.example`](.env.example):
 | `BP_MAX_PAINTS_PER_HOUR` | 20 | hard ceiling on image generation, so a dawn chorus can't run away |
 | `BP_WALL_MAX_LIVE` | 12 | how many birds the collage holds at once |
 | `BP_LATITUDE` / `BP_LONGITUDE` | off | restrict BirdNET to species plausible where (and when) you are |
-| `BP_FAL_MODEL` | `fal-ai/flux/schnell` | switch to `fal-ai/flux/dev` for noticeably better paintings |
+| `BP_INPUT_DEVICE` | system default | which microphone to listen on (index or name); essential on a headless box |
+| `BP_FAL_MODEL` | `fal-ai/flux/schnell` | `fal-ai/flux/dev` follows the house-style prompt more faithfully, at a higher price |
 
 ## Hang it on the wall for real
 
@@ -95,8 +104,11 @@ Parts list and setup notes: [`docs/hardware.md`](docs/hardware.md).
 - **BirdNET mishears sometimes**, especially through glass or over traffic. A
   confidence floor and the optional location filter are your friends; a
   surprise macaw is part of the charm.
-- **The painter takes artistic licence.** It won't render all ~6000 species
+- **The painter takes artistic licence.** It won't render all ~6400 species
   faithfully — rare birds get an impression rather than a portrait.
+- **A painting can just not arrive.** If the image service is slow, down, or
+  out of credit, that bird is skipped and logged — nothing crashes, and the
+  species simply paints the next time it's heard.
 - **The archive grows forever.** Every painting is kept on disk; there's no
   pruning yet.
 
