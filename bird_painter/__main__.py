@@ -9,6 +9,10 @@ Port resolution (first wins): CLI arg → BP_PORT env → default 8537.
 8537 is an uncommon high port chosen to avoid colliding with other local
 dev servers; override it if it's taken.
 
+By default it serves on all interfaces (0.0.0.0) so the e-paper frame and
+other devices on your network can reach the wall / `/wall.png`; set
+BP_HOST=127.0.0.1 to restrict it to this machine.
+
 When run in a terminal with the listener on and no mic pinned, it prompts
 you to pick the input device. Pin one non-interactively with BP_INPUT_DEVICE
 (index or name substring; see --list-devices) to skip the prompt.
@@ -79,7 +83,7 @@ def main() -> None:
 
     port = port_override if port_override is not None else config.port
     uvicorn.run(
-        "bird_painter.web:create_app", factory=True, host="127.0.0.1", port=port
+        "bird_painter.web:create_app", factory=True, host=config.host, port=port
     )
 
 

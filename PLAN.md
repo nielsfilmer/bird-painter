@@ -249,3 +249,8 @@ whole magic; ship it first.
   slightly shorter box (a bottom inset so captions clear the panel edge) and
   hand-matches the header/caption typography from the CSS. Size + caption fonts
   are env-configurable.
+- **2026-07-23** — The app binds **0.0.0.0 by default** (`BP_HOST`), so the
+  e-paper frame and other devices on the LAN can reach the wall / `/wall.png`.
+  Surfaced during the real two-box install: the previous hardcoded
+  `127.0.0.1` bind made the recorder unreachable from the frame. `127.0.0.1`
+  remains available via `BP_HOST` for a single-machine setup.

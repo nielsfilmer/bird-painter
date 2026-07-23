@@ -92,6 +92,12 @@ def _confidence_floor() -> float:
     return clamped
 
 
+def _host() -> str:
+    # Default all-interfaces so the frame + LAN devices reach the wall; set
+    # BP_HOST=127.0.0.1 to restrict to this machine.
+    return os.environ.get("BP_HOST") or "0.0.0.0"  # noqa: S104 — intentional LAN bind
+
+
 def _resolve_device(raw: str | None) -> int | str | None:
     """A device given as a numeric string is a device index; anything else is
     a name substring sounddevice matches; empty/None means the default."""
@@ -144,6 +150,9 @@ class Config:
         default_factory=lambda: os.environ.get("BP_WALL_FONT_ITALIC") or None
     )
     port: int = field(default_factory=lambda: _env_int("BP_PORT", 8537))
+    # Bind address (see _host): all-interfaces by default so the e-paper frame
+    # and other devices on the LAN can reach the wall / /wall.png.
+    host: str = field(default_factory=lambda: _host())
     # Mic input device: a numeric index or a name substring (see
     # `python -m bird_painter --list-devices`). None = system default input.
     input_device: int | str | None = field(
