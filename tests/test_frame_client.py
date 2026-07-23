@@ -112,6 +112,55 @@ def test_refresh_keeps_last_frame_on_fetch_failure(monkeypatch):
     assert panel.displays == 0
 
 
+def _fake_epd_module(inits):
+    import types
+
+    module = types.ModuleType("epd13in3E")
+
+    class EPD:
+        def Init(self):
+            inits.append(True)
+
+    module.EPD = EPD
+    return module, EPD
+
+
+def test_load_panel_prefers_the_flat_driver_module(monkeypatch):
+    # The Spectra 6 driver is a flat `epd13in3E` module (not the waveshare_epd
+    # package). load_panel must import it, add the driver dir to the path, and
+    # Init() the panel.
+    import sys
+
+    monkeypatch.setattr(sys, "path", list(sys.path))  # so the insert can't leak
+    inits = []
+    module, EPD = _fake_epd_module(inits)
+    monkeypatch.setitem(sys.modules, "epd13in3E", module)
+    monkeypatch.setenv("BP_FRAME_DRIVER_PATH", "/some/driver/lib")
+    epd = fc.load_panel()
+    assert isinstance(epd, EPD)
+    assert inits == [True]
+    assert "/some/driver/lib" in sys.path
+
+
+def test_load_panel_falls_back_to_the_package_layout(monkeypatch):
+    # When the flat module is absent, fall back to `from waveshare_epd import
+    # epd13in3E` (the mono/3-colour panels' layout).
+    import sys
+    import types
+
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.delitem(sys.modules, "epd13in3E", raising=False)  # flat absent
+    inits = []
+    submodule, EPD = _fake_epd_module(inits)
+    package = types.ModuleType("waveshare_epd")
+    package.epd13in3E = submodule
+    monkeypatch.setitem(sys.modules, "waveshare_epd", package)
+    monkeypatch.setitem(sys.modules, "waveshare_epd.epd13in3E", submodule)
+    epd = fc.load_panel()
+    assert isinstance(epd, EPD)
+    assert inits == [True]
+
+
 def test_importing_frame_client_needs_no_hardware_driver():
     # The module must import without the Waveshare lib (it's a manual install on
     # the frame Pi); the driver import lives inside load_panel, called at run.

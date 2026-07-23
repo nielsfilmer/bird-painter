@@ -26,6 +26,11 @@ Config via environment:
                              portrait instead (set BP_WALL_PNG_WIDTH/HEIGHT on
                              the recorder + BP_FRAME_WIDTH/HEIGHT to match).
   BP_FRAME_TIMEOUT_SECONDS   HTTP fetch timeout (default 30).
+  BP_FRAME_DRIVER_PATH       dir to add to sys.path to find the Waveshare
+                             driver. The Spectra 6 (E) driver ships as a flat
+                             `epd13in3E` module under the panel's own
+                             `…/13.3inch_e-Paper_E/RaspberryPi/python/lib`, not
+                             in the `waveshare_epd` package; point this there.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ import hashlib
 import io
 import logging
 import os
+import sys
 import time
 
 import httpx
@@ -108,12 +114,25 @@ def fetch_image(
             client.close()
 
 
-def load_panel():  # pragma: no cover - hardware-only
+def load_panel():
     """Import + initialise the Waveshare 13.3" Spectra 6 driver. Only present on
-    the frame Pi with the driver installed (`epd13in3E`); raises ImportError
-    elsewhere, which is why the import is here and not at module top."""
-    from waveshare_epd import epd13in3E
-
+    the frame Pi with the driver installed, which is why the import is here and
+    not at module top. The Spectra 6 (E) driver ships as a *flat* `epd13in3E`
+    module (Waveshare's separate-program tree), unlike the mono/3-colour panels
+    which use the `waveshare_epd` package — so try the flat layout first, then
+    the package. `BP_FRAME_DRIVER_PATH` puts the driver's `lib` dir on the path."""
+    driver_path = os.environ.get("BP_FRAME_DRIVER_PATH")
+    if driver_path and driver_path not in sys.path:
+        sys.path.insert(0, driver_path)
+    try:
+        import epd13in3E  # flat module (Spectra 6 separate-program lib)
+    except ModuleNotFoundError as exc:
+        # Only fall back when the flat module itself is absent — if it's present
+        # but its own dep (e.g. spidev) is missing, surface that real error
+        # instead of a misleading "no module named waveshare_epd".
+        if exc.name != "epd13in3E":
+            raise
+        from waveshare_epd import epd13in3E  # packaged layout (other panels)
     epd = epd13in3E.EPD()
     epd.Init()
     return epd
