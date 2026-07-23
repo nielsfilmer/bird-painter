@@ -279,6 +279,11 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `render.py` — `render_wall_png(...)`: composites the collage to a PNG
     server-side (Pillow) for the e-paper frame — cream paper + feather-masked
     multiply-blended birds + captions + header; full-colour (the panel dithers).
+  - `frame_client.py` — `python -m bird_painter.frame_client`: the thin e-paper
+    frame client (runs on the frame Pi). Fetches the recorder's `/wall.png` on
+    a slow timer, dithers to the Spectra 6 six-colour palette, pushes to the
+    panel via the Waveshare `epd13in3E` driver (imported lazily — hardware-only,
+    so the module imports/tests without it); redraws only when the wall changed.
   - `static/index.html` — the wall (polling, fade in/out); imports the layout
     module and applies it to the plate DOM.
   - `static/layout.js` — pure collage-layout maths (`computeCollage`): spiral
