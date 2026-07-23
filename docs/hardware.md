@@ -129,26 +129,89 @@ Notes on the bigger panel:
 
 ---
 
-## Setup outline (the detail lands in slices #50 / #51)
+## Setup
 
-**Recorder Pi:**
-1. Flash Raspberry Pi OS Lite (64-bit) — headless, SSH + WiFi preconfigured via
-   Raspberry Pi Imager.
-2. `sudo apt install python3-venv libportaudio2`, clone the repo,
-   `pip install -e .` (birdnetlib pulls a TF-Lite wheel — #51 verifies the ARM
-   wheel installs; a Pi build may need `tflite-runtime`).
-3. Pick the mic: `python -m bird_painter --list-devices`, set `BP_INPUT_DEVICE`.
-4. Put `FAL_KEY` (and optional `BP_FAL_MODEL=fal-ai/flux/dev`) in `.env`.
-   (Note: `flux/dev` is a non-commercial model — see the repo's Licenses
-   section; `flux/schnell` is Apache-2.0.)
-5. Autostart via a `systemd` unit (`bird_painter.service`) so it runs on boot.
+### Recorder Pi (the ears)
 
-**Frame Pi:**
-1. Flash Raspberry Pi OS Lite, enable SPI.
-2. Install the panel driver — Waveshare's **`epd13in3E`** driver for the 13.3" Spectra 6 HAT+ (E). NB: that's a different panel from Waveshare's *grayscale* 13.3" (which uses the IT8951 controller) — don't grab the IT8951 lib.
-3. Run the slice-#50 client: fetch `http://<recorder>:8537/wall.png` on a timer
-   (respecting the panel's ~25–35 s refresh — update every few minutes, not
-   seconds) and push to the panel.
+1. Flash **Raspberry Pi OS Lite (64-bit)** with
+   [Raspberry Pi Imager](https://www.raspberrypi.com/software/) — in its
+   settings, set the hostname (e.g. `birdrecorder`), enable SSH, and
+   preconfigure your WiFi + user. Boot and `ssh` in.
+2. Install system deps and the app:
+   ```bash
+   sudo apt update && sudo apt install -y git python3-venv python3-dev libportaudio2
+   git clone https://github.com/nielsfilmer/bird-painter && cd bird-painter
+   python3 -m venv .venv && .venv/bin/pip install -e .
+   ```
+   `birdnetlib` pulls TensorFlow/TF-Lite. If the `tensorflow` wheel won't
+   install on your Pi, install `tflite-runtime` instead — this is exactly what
+   slice **#51** verifies on real ARM hardware.
+3. Plug in the USB mic (via the extension cable), then pick it:
+   ```bash
+   .venv/bin/python -m bird_painter --list-devices
+   ```
+   Put the index (or a name substring) in `.env` as `BP_INPUT_DEVICE`.
+4. Fill in `.env` (copy `.env.example` first): `FAL_KEY=…`, and optionally
+   `BP_FAL_MODEL=fal-ai/flux/dev` for nicer paintings (**non-commercial** — see
+   Licenses; `schnell` is Apache-2.0) and `BP_LATITUDE`/`BP_LONGITUDE` to filter
+   to local species.
+5. Smoke-test in the foreground, then browse to `http://birdrecorder.local:8537`
+   from your laptop and confirm birds paint as they're heard:
+   ```bash
+   .venv/bin/python -m bird_painter --no-prompt
+   ```
+6. Autostart on boot with a `systemd` unit — `/etc/systemd/system/bird-painter.service`:
+   ```ini
+   [Unit]
+   Description=bird-painter recorder
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   User=pi
+   WorkingDirectory=/home/pi/bird-painter
+   ExecStart=/home/pi/bird-painter/.venv/bin/python -m bird_painter --no-prompt
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   Then `sudo systemctl enable --now bird-painter`. (Adjust `User`/paths if not
+   the default `pi` user.)
+
+### Frame Pi (the display)
+
+1. Flash **Raspberry Pi OS Lite (64-bit)** (hostname e.g. `birdframe`, SSH +
+   WiFi as above). `ssh` in.
+2. **Power the Pi off**, seat the 13.3" Spectra 6 HAT+ on the 40-pin header,
+   power back on. Enable SPI: `sudo raspi-config nonint do_spi 0`, then reboot.
+3. Install the app + the **Waveshare `epd13in3E`** driver for the Spectra 6
+   HAT+ (E) — follow the panel's own
+   [product wiki](https://www.waveshare.com/wiki/13.3inch_e-Paper_HAT+_(E)) for
+   the driver and its SPI/GPIO deps.
+   > ⚠️ Get the right driver: the Spectra 6 (6-colour) uses `epd13in3E`. Do
+   > **not** install the IT8951 library — that's Waveshare's *grayscale* 13.3"
+   > panel, a different product.
+   ```bash
+   sudo apt update && sudo apt install -y git python3-venv python3-dev
+   git clone https://github.com/nielsfilmer/bird-painter && cd bird-painter
+   python3 -m venv --system-site-packages .venv && .venv/bin/pip install -e .
+   ```
+   (`--system-site-packages` so the venv can see the system-installed Waveshare
+   driver + its GPIO libs.) Verify the panel first with Waveshare's own
+   `epd_13in3E_test.py` demo — that proves the wiring before our client runs.
+4. Point the frame client at the recorder and run it:
+   ```bash
+   BP_FRAME_SOURCE=http://birdrecorder.local:8537/wall.png \
+   BP_FRAME_INTERVAL_SECONDS=300 \
+   .venv/bin/python -m bird_painter.frame_client
+   ```
+   It fetches `/wall.png` every few minutes (the panel takes ~25–35 s per full
+   redraw, so don't go faster), dithers it to the six panel colours, and only
+   redraws when the wall actually changed. Autostart it with its own `systemd`
+   unit (`bird-painter-frame.service`, same shape as above but
+   `ExecStart=…/.venv/bin/python -m bird_painter.frame_client` and the
+   `BP_FRAME_*` values as `Environment=` lines).
 
 ---
 
