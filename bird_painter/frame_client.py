@@ -126,7 +126,12 @@ def load_panel():
         sys.path.insert(0, driver_path)
     try:
         import epd13in3E  # flat module (Spectra 6 separate-program lib)
-    except ImportError:
+    except ModuleNotFoundError as exc:
+        # Only fall back when the flat module itself is absent — if it's present
+        # but its own dep (e.g. spidev) is missing, surface that real error
+        # instead of a misleading "no module named waveshare_epd".
+        if exc.name != "epd13in3E":
+            raise
         from waveshare_epd import epd13in3E  # packaged layout (other panels)
     epd = epd13in3E.EPD()
     epd.Init()
