@@ -148,7 +148,11 @@ class Config:
     # an installation meant to be viewed from other devices — the e-paper frame
     # fetches /wall.png over the LAN, and you browse the wall from a laptop or
     # phone. Set BP_HOST=127.0.0.1 to restrict it to the local machine only.
-    host: str = field(default_factory=lambda: os.environ.get("BP_HOST") or "0.0.0.0")
+    host: str = field(
+        # S104: binding all interfaces is intentional — this is a LAN
+        # installation the frame + other devices must reach; BP_HOST restricts.
+        default_factory=lambda: os.environ.get("BP_HOST") or "0.0.0.0"  # noqa: S104
+    )
     # Mic input device: a numeric index or a name substring (see
     # `python -m bird_painter --list-devices`). None = system default input.
     input_device: int | str | None = field(

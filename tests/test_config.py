@@ -129,6 +129,6 @@ def test_host_defaults_to_all_interfaces_and_is_overridable(monkeypatch, tmp_pat
     # bind is all-interfaces; BP_HOST can restrict it.
     monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
     monkeypatch.delenv("BP_HOST", raising=False)
-    assert load_config().host == "0.0.0.0"
+    assert load_config().host == "0.0.0.0"  # noqa: S104 — the documented default
     monkeypatch.setenv("BP_HOST", "127.0.0.1")
     assert load_config().host == "127.0.0.1"
