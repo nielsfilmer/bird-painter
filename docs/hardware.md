@@ -185,33 +185,45 @@ Notes on the bigger panel:
    WiFi as above). `ssh` in.
 2. **Power the Pi off**, seat the 13.3" Spectra 6 HAT+ on the 40-pin header,
    power back on. Enable SPI: `sudo raspi-config nonint do_spi 0`, then reboot.
-3. Install the app + the **Waveshare `epd13in3E`** driver for the Spectra 6
-   HAT+ (E) — follow the panel's own
-   [product wiki](https://www.waveshare.com/wiki/13.3inch_e-Paper_HAT+_(E)) for
-   the driver and its SPI/GPIO deps.
-   > ⚠️ Get the right driver: the Spectra 6 (6-colour) uses `epd13in3E`. Do
-   > **not** install the IT8951 library — that's Waveshare's *grayscale* 13.3"
-   > panel, a different product.
+3. Install the app (frame side only needs `httpx`/`pillow`/`numpy`, **not** the
+   BirdNET/TF stack), plus the Waveshare driver + its GPIO deps:
    ```bash
-   sudo apt update && sudo apt install -y git python3-venv python3-dev
+   sudo apt update && sudo apt install -y git python3-venv python3-dev python3-pip
    git clone https://github.com/nielsfilmer/bird-painter && cd bird-painter
-   python3 -m venv --system-site-packages .venv && .venv/bin/pip install -e .
+   python3 -m venv --system-site-packages .venv
+   .venv/bin/pip install --no-deps -e . && .venv/bin/pip install httpx pillow numpy
+   .venv/bin/pip install spidev gpiozero lgpio          # GPIO stack (Bookworm)
+   git clone https://github.com/waveshareteam/e-Paper ~/e-Paper
    ```
-   (`--system-site-packages` so the venv can see the system-installed Waveshare
-   driver + its GPIO libs.) Verify the panel first with Waveshare's own
-   `epd_13in3E_test.py` demo — that proves the wiring before our client runs.
+   > ⚠️ **The Spectra 6 (E) driver is NOT in the main `waveshare_epd` package.**
+   > That package only ships `epd13in3b` (3-colour) and `epd13in3k` (mono). The
+   > 6-colour Spectra 6 driver is a **flat `epd13in3E` module** under
+   > `e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python/lib`.
+   > (And it's a different panel from the *grayscale* 13.3", which uses the
+   > IT8951 lib — don't grab that.)
+
+   Set `BP_FRAME_DRIVER_PATH` to that `lib` dir so the client can find it, and
+   verify the wiring first with Waveshare's own demo:
+   ```bash
+   DRV=~/e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python
+   PYTHONPATH=$DRV/lib .venv/bin/python $DRV/examples/epd_13in3E_test.py
+   ```
+   If that draws the demo, the panel + SPI are good.
 4. Point the frame client at the recorder and run it:
    ```bash
+   DRV=~/e-Paper/E-paper_Separate_Program/13.3inch_e-Paper_E/RaspberryPi/python
    BP_FRAME_SOURCE=http://birdrecorder.local:8537/wall.png \
    BP_FRAME_INTERVAL_SECONDS=300 \
+   BP_FRAME_DRIVER_PATH=$DRV/lib \
    .venv/bin/python -m bird_painter.frame_client
    ```
    It fetches `/wall.png` every few minutes (the panel takes ~25–35 s per full
    redraw, so don't go faster), dithers it to the six panel colours, and only
    redraws when the wall actually changed. Autostart it with its own `systemd`
-   unit (`bird-painter-frame.service`, same shape as above but
+   unit (`bird-painter-frame.service`, same shape as the recorder's but
    `ExecStart=…/.venv/bin/python -m bird_painter.frame_client` and the
-   `BP_FRAME_*` values as `Environment=` lines).
+   `BP_FRAME_*` values — including `BP_FRAME_DRIVER_PATH` — as `Environment=`
+   lines).
 
 ---
 

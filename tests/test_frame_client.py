@@ -112,6 +112,28 @@ def test_refresh_keeps_last_frame_on_fetch_failure(monkeypatch):
     assert panel.displays == 0
 
 
+def test_load_panel_prefers_the_flat_driver_module(monkeypatch):
+    # The Spectra 6 driver is a flat `epd13in3E` module (not the waveshare_epd
+    # package). load_panel must import it and Init() the panel.
+    import sys
+    import types
+
+    inits = []
+    fake = types.ModuleType("epd13in3E")
+
+    class EPD:
+        def Init(self):
+            inits.append(True)
+
+    fake.EPD = EPD
+    monkeypatch.setitem(sys.modules, "epd13in3E", fake)
+    monkeypatch.setenv("BP_FRAME_DRIVER_PATH", "/some/driver/lib")
+    epd = fc.load_panel()
+    assert isinstance(epd, EPD)
+    assert inits == [True]
+    assert "/some/driver/lib" in sys.path
+
+
 def test_importing_frame_client_needs_no_hardware_driver():
     # The module must import without the Waveshare lib (it's a manual install on
     # the frame Pi); the driver import lives inside load_panel, called at run.
