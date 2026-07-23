@@ -144,6 +144,11 @@ class Config:
         default_factory=lambda: os.environ.get("BP_WALL_FONT_ITALIC") or None
     )
     port: int = field(default_factory=lambda: _env_int("BP_PORT", 8537))
+    # Bind address. Defaults to 0.0.0.0 (all interfaces) because bird-painter is
+    # an installation meant to be viewed from other devices — the e-paper frame
+    # fetches /wall.png over the LAN, and you browse the wall from a laptop or
+    # phone. Set BP_HOST=127.0.0.1 to restrict it to the local machine only.
+    host: str = field(default_factory=lambda: os.environ.get("BP_HOST") or "0.0.0.0")
     # Mic input device: a numeric index or a name substring (see
     # `python -m bird_painter --list-devices`). None = system default input.
     input_device: int | str | None = field(

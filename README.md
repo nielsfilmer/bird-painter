@@ -61,7 +61,10 @@ cp .env.example .env          # then put your fal.ai key in FAL_KEY
 .venv/bin/python -m bird_painter
 ```
 
-Open **http://127.0.0.1:8537** and leave it running on a spare screen.
+Open **http://127.0.0.1:8537** and leave it running on a spare screen. It
+serves on your whole network by default, so you can also watch it from a phone
+or another machine (or the e-paper frame) at `http://<that-machine>:8537` — set
+`BP_HOST=127.0.0.1` if you'd rather keep it to the local machine only.
 
 On first run it will offer to pick your microphone (`--list-devices` lists
 them). To run the wall without the microphone at all, set
