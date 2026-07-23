@@ -238,11 +238,6 @@ whole magic; ship it first.
   instance on the recorder Pi + a thin e-paper frame client (no pipeline
   split). Panel recommendation: Waveshare 13.3" Spectra 6 (6-colour, 1600×1200) —
   pins the `/wall.png` render target. Full BOM/setup in `docs/hardware.md`.
-- **2026-07-23** — The app binds **0.0.0.0 by default** (`BP_HOST`), so the
-  e-paper frame and other devices on the LAN can reach the wall / `/wall.png`.
-  Surfaced during the real two-box install: the previous hardcoded
-  `127.0.0.1` bind made the recorder unreachable from the frame. `127.0.0.1`
-  remains available via `BP_HOST` for a single-machine setup.
 - **2026-07-20** — Phase 4 slice 2: `/wall.png` server-side collage render
   shipped. The e-paper frame can't run the browser wall, so the collage is
   rastered server-side (Pillow) and served at `/wall.png`, default 1600×1200
@@ -254,3 +249,8 @@ whole magic; ship it first.
   slightly shorter box (a bottom inset so captions clear the panel edge) and
   hand-matches the header/caption typography from the CSS. Size + caption fonts
   are env-configurable.
+- **2026-07-23** — The app binds **0.0.0.0 by default** (`BP_HOST`), so the
+  e-paper frame and other devices on the LAN can reach the wall / `/wall.png`.
+  Surfaced during the real two-box install: the previous hardcoded
+  `127.0.0.1` bind made the recorder unreachable from the frame. `127.0.0.1`
+  remains available via `BP_HOST` for a single-machine setup.
