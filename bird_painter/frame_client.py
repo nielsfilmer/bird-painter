@@ -19,7 +19,13 @@ Config via environment:
                              shouldn't be hammered — keep this minutes, not
                              seconds.
   BP_FRAME_WIDTH/HEIGHT      panel size (default 1600x1200, the Spectra 6).
-  BP_FRAME_ROTATE            0|90|180|270 to match the frame's orientation.
+  BP_FRAME_ROTATE            0|90|180|270 to match the frame's orientation. NB:
+                             0/180 preserve the wall's aspect; 90/270 rotate a
+                             landscape render onto a fixed landscape panel and
+                             so stretch it — for a portrait hang, render
+                             portrait instead (set BP_WALL_PNG_WIDTH/HEIGHT on
+                             the recorder + BP_FRAME_WIDTH/HEIGHT to match).
+  BP_FRAME_TIMEOUT_SECONDS   HTTP fetch timeout (default 30).
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCE = "http://birdrecorder.local:8537/wall.png"
 DEFAULT_INTERVAL_SECONDS = 300
+DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_SIZE = (1600, 1200)
 
 # The Spectra 6 fixed palette: black, white, red, green, blue, yellow. The
@@ -81,11 +88,17 @@ def dither_to_panel(
     return quantized.convert("RGB")
 
 
-def fetch_image(url: str, client: httpx.Client | None = None) -> bytes:
+def fetch_image(
+    url: str,
+    client: httpx.Client | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> bytes:
     """Fetch the recorder's /wall.png bytes. Raises on a non-2xx or transport
-    error — the caller treats a failed fetch as 'keep the current frame'."""
+    error — the caller treats a failed fetch as 'keep the current frame'.
+    `timeout` applies only to a client we create here (a passed-in client
+    carries its own)."""
     owned = client is None
-    client = client or httpx.Client(timeout=30.0)
+    client = client or httpx.Client(timeout=timeout)
     try:
         response = client.get(url)
         response.raise_for_status()
@@ -119,6 +132,7 @@ def refresh_once(
     rotate: int,
     last_hash: str | None,
     *,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
     client: httpx.Client | None = None,
     panel_factory=load_panel,
     push=_push,
@@ -129,7 +143,7 @@ def refresh_once(
     on any error it logs and returns `last_hash` unchanged (keep the current
     frame, retry next tick)."""
     try:
-        data = fetch_image(url, client=client)
+        data = fetch_image(url, client=client, timeout=timeout)
     except Exception:  # noqa: BLE001 — a bad fetch must not kill the loop
         logger.exception("frame: fetch failed; keeping the current image")
         return last_hash
@@ -170,13 +184,14 @@ def main() -> None:
         _int_env("BP_FRAME_HEIGHT", DEFAULT_SIZE[1]),
     )
     rotate = _int_env("BP_FRAME_ROTATE", 0) % 360
+    timeout = _int_env("BP_FRAME_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)
     logger.info(
         "frame client: %s every %ds -> %dx%d panel (rotate %d)",
         url, interval, size[0], size[1], rotate,
     )
     last_hash: str | None = None
     while True:
-        last_hash = refresh_once(url, size, rotate, last_hash)
+        last_hash = refresh_once(url, size, rotate, last_hash, timeout=timeout)
         time.sleep(interval)
 
 

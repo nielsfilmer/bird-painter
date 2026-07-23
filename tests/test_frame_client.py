@@ -64,7 +64,7 @@ class _FakePanel:
 
 def test_refresh_draws_then_skips_when_image_unchanged(monkeypatch):
     png = _png_bytes()
-    monkeypatch.setattr(fc, "fetch_image", lambda url, client=None: png)
+    monkeypatch.setattr(fc, "fetch_image", lambda url, client=None, timeout=None: png)
     panel = _FakePanel()
     calls = []
 
@@ -86,7 +86,9 @@ def test_refresh_draws_then_skips_when_image_unchanged(monkeypatch):
 
 def test_refresh_redraws_when_image_changes(monkeypatch):
     state = {"png": _png_bytes((10, 20, 30))}
-    monkeypatch.setattr(fc, "fetch_image", lambda url, client=None: state["png"])
+    monkeypatch.setattr(
+        fc, "fetch_image", lambda url, client=None, timeout=None: state["png"]
+    )
     panel = _FakePanel()
     factory = lambda: panel  # noqa: E731
     push = lambda p, image: p.display(p.getbuffer(image))  # noqa: E731
@@ -98,7 +100,7 @@ def test_refresh_redraws_when_image_changes(monkeypatch):
 
 
 def test_refresh_keeps_last_frame_on_fetch_failure(monkeypatch):
-    def boom(url, client=None):
+    def boom(url, client=None, timeout=None):
         raise httpx.ConnectError("recorder unreachable")
 
     monkeypatch.setattr(fc, "fetch_image", boom)
