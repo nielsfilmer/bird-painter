@@ -11,7 +11,6 @@ from .config import Config
 from .ears import Detection
 from .gate import TriggerGate
 from .store import Store
-from .trim import trim_to_bird
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +40,6 @@ class PaintRunner:
             # cap slot consumed — the species retries on its next detection.
             return
         image_bytes, extension = result
-        # Crop the flat-white margin so the bird fills its plate on the wall.
-        image_bytes = trim_to_bird(image_bytes, extension)
         self.store.add(
             image_bytes=image_bytes,
             extension=extension,
