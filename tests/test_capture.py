@@ -55,3 +55,61 @@ def test_returned_window_is_safe_for_the_caller_to_mutate():
     assert second is not None
     # second holds 5..14; the shared 5..9 region must be the real values
     assert list(second[:5]) == [5, 6, 7, 8, 9]
+
+
+class _FakeEars:
+    pass
+
+
+def test_persistent_stream_failure_backs_off_exponentially(monkeypatch):
+    """A permanently absent mic must not retry once a second forever — that
+    floods the recorder Pi's journal (thousands of tracebacks an hour on an SD
+    card). Consecutive failures back off up to the ceiling."""
+    from bird_painter import capture
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(capture.time, "sleep", lambda s: sleeps.append(s))
+
+    listener = capture.MicListener(_FakeEars(), window_seconds=15)
+    calls = {"n": 0}
+
+    def always_fails(_on_detections):
+        calls["n"] += 1
+        if calls["n"] > 8:
+            raise KeyboardInterrupt  # stop the loop
+        raise OSError("no such device")
+
+    monkeypatch.setattr(listener, "_stream_once", always_fails)
+    listener.listen(lambda d: None)
+
+    assert sleeps[:4] == [1.0, 2.0, 4.0, 8.0]  # exponential, not flat
+    assert max(sleeps) <= capture.MAX_ERROR_BACKOFF_SECONDS  # capped
+
+
+def test_backoff_resets_after_the_stream_recovers(monkeypatch):
+    """A transient fault must still recover fast: once a stream runs, the next
+    failure starts from the short backoff again."""
+    from bird_painter import capture
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(capture.time, "sleep", lambda s: sleeps.append(s))
+
+    listener = capture.MicListener(_FakeEars(), window_seconds=15)
+    script = ["fail", "fail", "fail", "ok", "fail", "stop"]
+    calls = {"n": 0}
+
+    def scripted(_on_detections):
+        step = script[calls["n"]]
+        calls["n"] += 1
+        if step == "stop":
+            raise KeyboardInterrupt
+        if step == "fail":
+            raise OSError("no such device")
+        return  # "ok": the stream ran and returned
+
+    monkeypatch.setattr(listener, "_stream_once", scripted)
+    listener.listen(lambda d: None)
+
+    # 3 failures escalate, the good run resets, so the next failure is short.
+    assert sleeps[:3] == [1.0, 2.0, 4.0]
+    assert sleeps[-1] == 1.0

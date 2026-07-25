@@ -33,6 +33,15 @@ BIRDNET_SAMPLERATE = 48000
 # Backoff after a failed window / stream fault, so a persistent fault (mic
 # unplugged, bad rate) can't spin the loop at 100% CPU flooding the log.
 ERROR_BACKOFF_SECONDS = 1.0
+# A *transient* fault should recover fast, so retries start at the backoff
+# above — but a *permanent* one (no mic plugged in at all) would then log a
+# traceback every second forever, which on the recorder Pi means thousands of
+# journal writes an hour onto an SD card. So consecutive failures back off
+# exponentially up to a ceiling, and the backoff resets as soon as a stream
+# runs. After the first few, the traceback collapses to a single line.
+MAX_ERROR_BACKOFF_SECONDS = 60.0
+ERROR_BACKOFF_GROWTH = 2.0
+TRACEBACK_FAILURES = 3
 
 # Cap the block queue so a wedged analyzer can't grow memory without bound;
 # when full we drop the OLDEST block (stale audio is the least useful).
@@ -207,14 +216,37 @@ class MicListener:
             self.window_seconds,
             self.samplerate,
         )
+        backoff = ERROR_BACKOFF_SECONDS
+        failures = 0
         while True:
             try:
                 self._stream_once(on_detections)
+                # The stream ran (it returns when it faults silent), so the
+                # device is there — drop back to fast retries.
+                backoff = ERROR_BACKOFF_SECONDS
+                failures = 0
             except KeyboardInterrupt:
                 logger.info("listening stopped")
                 return
-            except Exception:  # noqa: BLE001 — a stream fault must not kill the
-                logger.exception("capture: stream error; reopening")  # listener
+            except Exception as exc:  # noqa: BLE001 — a fault must not kill the
+                failures += 1  # listener
+                if failures <= TRACEBACK_FAILURES:
+                    logger.exception(
+                        "capture: stream error; reopening in %.0fs", backoff
+                    )
+                else:
+                    # Persistent fault (usually: no mic attached). One line, not
+                    # a traceback, so months of running can't fill the journal.
+                    logger.error(
+                        "capture: still failing after %d attempts (%s); "
+                        "retrying in %.0fs",
+                        failures,
+                        exc,
+                        backoff,
+                    )
+                time.sleep(backoff)
+                backoff = min(backoff * ERROR_BACKOFF_GROWTH, MAX_ERROR_BACKOFF_SECONDS)
+                continue
             time.sleep(ERROR_BACKOFF_SECONDS)
 
     def _stream_once(self, on_detections: Callable[[list[Detection]], None]) -> None:
