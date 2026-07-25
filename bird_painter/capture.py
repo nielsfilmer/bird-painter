@@ -41,7 +41,9 @@ ERROR_BACKOFF_SECONDS = 1.0
 # runs. After the first few, the traceback collapses to a single line.
 MAX_ERROR_BACKOFF_SECONDS = 60.0
 ERROR_BACKOFF_GROWTH = 2.0
-TRACEBACK_FAILURES = 3
+# How many consecutive failures still log a full traceback before collapsing
+# to a one-line message.
+TRACEBACK_ATTEMPTS = 3
 
 # Cap the block queue so a wedged analyzer can't grow memory without bound;
 # when full we drop the OLDEST block (stale audio is the least useful).
@@ -149,6 +151,21 @@ def select_input_device() -> int | None:
     return chosen
 
 
+def _log_stream_failure(exc: Exception, failures: int, backoff: float) -> None:
+    """First few consecutive failures get a full traceback (a real fault worth
+    diagnosing); after that it's almost always 'no mic attached', so collapse to
+    one line — months of running must not fill the recorder's journal."""
+    if failures <= TRACEBACK_ATTEMPTS:
+        logger.exception("capture: stream error; reopening in %.0fs", backoff)
+    else:
+        logger.error(
+            "capture: still failing after %d attempts (%s); retrying in %.0fs",
+            failures,
+            exc,
+            backoff,
+        )
+
+
 class MicListener:
     def __init__(
         self,
@@ -223,31 +240,23 @@ class MicListener:
                 self._stream_once(on_detections)
                 # The stream ran (it returns when it faults silent), so the
                 # device is there — drop back to fast retries.
-                backoff = ERROR_BACKOFF_SECONDS
-                failures = 0
+                backoff, failures = ERROR_BACKOFF_SECONDS, 0
+                delay = ERROR_BACKOFF_SECONDS
             except KeyboardInterrupt:
                 logger.info("listening stopped")
                 return
-            except Exception as exc:  # noqa: BLE001 — a fault must not kill the
-                failures += 1  # listener
-                if failures <= TRACEBACK_FAILURES:
-                    logger.exception(
-                        "capture: stream error; reopening in %.0fs", backoff
-                    )
-                else:
-                    # Persistent fault (usually: no mic attached). One line, not
-                    # a traceback, so months of running can't fill the journal.
-                    logger.error(
-                        "capture: still failing after %d attempts (%s); "
-                        "retrying in %.0fs",
-                        failures,
-                        exc,
-                        backoff,
-                    )
-                time.sleep(backoff)
+            except Exception as exc:  # noqa: BLE001 — a fault must not kill it
+                failures += 1
+                _log_stream_failure(exc, failures, backoff)
+                delay = backoff
                 backoff = min(backoff * ERROR_BACKOFF_GROWTH, MAX_ERROR_BACKOFF_SECONDS)
-                continue
-            time.sleep(ERROR_BACKOFF_SECONDS)
+            try:
+                time.sleep(delay)
+            except KeyboardInterrupt:
+                # With no mic the loop spends nearly all its time here, so
+                # Ctrl-C must stop cleanly from the sleep too, not traceback.
+                logger.info("listening stopped")
+                return
 
     def _stream_once(self, on_detections: Callable[[list[Detection]], None]) -> None:
         """Open the stream and analyse windows until it faults or falls silent
