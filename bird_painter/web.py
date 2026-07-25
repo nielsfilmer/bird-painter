@@ -156,6 +156,9 @@ def create_app(config: Config | None = None) -> FastAPI:
         )
         if result is not None:
             image_bytes, extension = result
+            from .trim import trim_to_bird
+
+            image_bytes = trim_to_bird(image_bytes, extension)
             source = "dev"
         elif not config.fal_key:
             image_bytes, extension = placeholder_svg(common, scientific), "svg"

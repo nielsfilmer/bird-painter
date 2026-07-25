@@ -20,22 +20,23 @@ import math
 from dataclasses import dataclass
 
 GOLDEN_ANGLE = 2.399963229728653  # radians, 137.5°
-SIZE_MIN_VMIN = 22
-SIZE_SPAN_VMIN = 5  # plate width 22–26 vmin
+SIZE_MIN_VMIN = 16
+SIZE_SPAN_VMIN = 5  # plate width 16–20 vmin
 MAX_INDEX = 12  # matches the wall's live cap
 PLATE_ASPECT = 5 / 4  # painted image is 4:5 portrait
 CAPTION_ALLOWANCE = 1.1
 CAPTION_FLOOR_PX = 26
 TOP_Z = 200
-GAP_VMIN = 0.5
+GAP_VMIN = 0.2
 SPIRAL_STEP = 0.22
 MAX_TRIES = 220
-FILL_FACTOR = 0.92
+GROW_FACTOR = 1.12  # widen-to-fit: widen the oval by this per step…
+GROW_STEPS = 24  # …up to this many, until the set fits (or caps out)
+FILL_FACTOR = 0.92  # when width-capped: plates claim at most this share
 SHRINK_RETRIES = 8
 SHRINK_STEP = 0.9
-CLUSTER_W_FRAC = 0.92
-CLUSTER_H_FRAC = 0.9
-CLUSTER_ASPECT = 1.7
+CLUSTER_W_FRAC = 0.92  # oval may widen to at most this fraction of the width
+CLUSTER_H_FRAC = 0.88  # oval height: this fraction of the sub-title band
 
 _U32 = 0xFFFFFFFF
 
@@ -88,8 +89,9 @@ def _compute_layout(files, scale, vmin, half_w, half_h, bound_w, bound_h):
         box_w = size_px + GAP_VMIN * vmin
         box_h = image_h + caption_px(image_h) + GAP_VMIN * vmin
         jitter_a = (((h >> 8) % 100) / 100 - 0.5) * 0.5  # ±0.25 rad
-        clamp_x = max(0.0, bound_w - size_px / 2)
-        clamp_y = max(0.0, bound_h - (image_h + caption_px(image_h)) / 2)
+        # Clamp plate centres to the oval extents AND on screen (see layout.js).
+        clamp_x = min(half_w, max(0.0, bound_w - size_px / 2))
+        clamp_y = min(half_h, max(0.0, bound_h - (image_h + caption_px(image_h)) / 2))
         best = None
         best_overlap = math.inf
         t = index
@@ -122,8 +124,6 @@ def compute_collage(files, w: float, h: float, band_top: float) -> list[Placemen
     vmin = min(w, h) / 100
     band_h = h - band_top
     y_offset = band_top / 2
-    half_h = (CLUSTER_H_FRAC * band_h) / 2
-    half_w = min((CLUSTER_W_FRAC * w) / 2, half_h * CLUSTER_ASPECT)
     natural_area = 0.0
     for file in files:
         s = (SIZE_MIN_VMIN + (hash_str(file) % SIZE_SPAN_VMIN)) * vmin
@@ -131,19 +131,44 @@ def compute_collage(files, w: float, h: float, band_top: float) -> list[Placemen
         natural_area += (s + GAP_VMIN * vmin) * (
             image_h + caption_px(image_h) + GAP_VMIN * vmin
         )
-    cluster_area = math.pi * half_w * half_h
-    scale = min(1.0, math.sqrt((FILL_FACTOR * cluster_area) / (natural_area or 1)))
+    # Full height first, widen-to-fit, shrink only when the screen is full —
+    # mirrors computeCollage in static/layout.js.
+    half_h = (CLUSTER_H_FRAC * band_h) / 2
+    max_half_w = (CLUSTER_W_FRAC * w) / 2
     bound_w, bound_h = w / 2, band_h / 2
-    placed, fallbacks = _compute_layout(
-        files, scale, vmin, half_w, half_h, bound_w, bound_h
-    )
-    i = 0
-    while i < SHRINK_RETRIES and fallbacks > 0:
-        scale *= SHRINK_STEP
+    # Start as narrow as the widest single plate — a one-plate-wide column — so
+    # the group stacks vertically (fills the height) before it widens.
+    max_box_w = 1.0
+    for file in files:
+        s = (SIZE_MIN_VMIN + (hash_str(file) % SIZE_SPAN_VMIN)) * vmin
+        max_box_w = max(max_box_w, s + GAP_VMIN * vmin)
+    half_w0 = min(max_half_w, max_box_w / 2)
+    scale = 1.0
+    half_w = half_w0
+    placed: list = []
+    fallbacks = 0
+    k = 1.0
+    for _ in range(GROW_STEPS):
+        half_w = min(max_half_w, half_w0 * k)
         placed, fallbacks = _compute_layout(
             files, scale, vmin, half_w, half_h, bound_w, bound_h
         )
-        i += 1
+        if fallbacks == 0 or half_w >= max_half_w:
+            break
+        k *= GROW_FACTOR
+    if fallbacks > 0:
+        cluster_area = math.pi * half_w * half_h
+        scale = min(1.0, math.sqrt((FILL_FACTOR * cluster_area) / (natural_area or 1)))
+        placed, fallbacks = _compute_layout(
+            files, scale, vmin, half_w, half_h, bound_w, bound_h
+        )
+        i = 0
+        while i < SHRINK_RETRIES and fallbacks > 0:
+            scale *= SHRINK_STEP
+            placed, fallbacks = _compute_layout(
+                files, scale, vmin, half_w, half_h, bound_w, bound_h
+            )
+            i += 1
     return [
         Placement(
             file=p["file"],
