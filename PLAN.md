@@ -303,5 +303,6 @@ whole magic; ship it first.
 - **2026-07-27** — **Shelf-anchored placement** (owner rule, corrected same
   day): the three OLDEST live birds hold a horizontal row at the band centre
   permanently; newer birds stack vertically around it. Two-phase layout: the
-  row lays out in a ~zero-height oval, then newer birds spiral the full-height
-  oval with the shelf as obstacles; one shared widen/shrink loop.
+  shelf is PACKED (oldest→newest, left→right, centred), then newer birds
+  spiral the full-height oval with the shelf as obstacles and a vertical
+  clearance (never level with it); one shared widen/shrink loop.
