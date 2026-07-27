@@ -361,6 +361,7 @@ const archivePanel = document.getElementById("archive");
 const archiveGrid = document.getElementById("archive-grid");
 const archiveMore = document.getElementById("archive-more");
 let archiveOffset = 0;
+let archiveLoading = false; // double-clicking "more" must not duplicate cards
 
 function whenText(bornAt) {
   const t = new Date(bornAt * 1000);
@@ -369,12 +370,18 @@ function whenText(bornAt) {
 }
 
 async function loadArchivePage() {
+  if (archiveLoading) return;
+  archiveLoading = true;
   let data;
   try {
     const res = await fetch(`/api/archive?offset=${archiveOffset}&limit=60`);
     if (!res.ok) return;
     data = await res.json();
-  } catch { return; }
+  } catch {
+    return;
+  } finally {
+    archiveLoading = false;
+  }
   for (const p of data.paintings) {
     const card = document.createElement("figure");
     card.className = "arch-card";
