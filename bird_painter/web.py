@@ -106,6 +106,9 @@ def create_app(config: Config | None = None) -> FastAPI:
                         "species_common": p.species_common,
                         "species_scientific": p.species_scientific,
                         "born_at": p.born_at,
+                        # The detection clip, when one was archived — the wall
+                        # makes such plates clickable to replay the sound.
+                        "audio": store.audio_file_for(p.file),
                     }
                     for p in paintings
                 ],
@@ -136,6 +139,15 @@ def create_app(config: Config | None = None) -> FastAPI:
             italic_font=config.wall_font_italic,
         )
         return Response(content=png, media_type="image/png")
+
+    @app.get("/audio/{filename}")
+    def audio(filename: str) -> FileResponse:
+        """The archived detection clip behind a painting (see /api/live's
+        `audio` field). 404 for birds painted without one."""
+        path = store.audio_path(filename)
+        if path is None:
+            raise HTTPException(status_code=404)
+        return FileResponse(path, media_type="audio/wav")
 
     @app.get("/images/{filename}")
     def image(filename: str) -> FileResponse:
