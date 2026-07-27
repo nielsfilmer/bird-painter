@@ -237,6 +237,11 @@ async function refresh() {
   for (const [file, el] of plates) {
     if (!liveFiles.has(file)) {
       plates.delete(file);
+      // A bird leaving the wall takes its song with it.
+      if (nowPlaying && nowPlaying.fig === el) {
+        nowPlaying.audio.pause();
+        nowPlaying = null;
+      }
       el.classList.add("dying");
       setTimeout(() => el.remove(), FADE_MS);
     }
