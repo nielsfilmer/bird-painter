@@ -77,7 +77,9 @@ def overlap_area(a: dict, b: dict) -> float:
     return max(0.0, w) * max(0.0, h)
 
 
-def _compute_layout(entries, scale, vmin, half_w, half_h, bound_w, bound_h, placed):
+def _compute_layout(
+    entries, scale, vmin, half_w, half_h, bound_w, bound_h, placed, clear_half_h=0.0
+):
     """One layout pass for a batch of (file, index) entries — mirrors
     computeLayout in static/layout.js: spiral by LOCAL batch position, avoid
     everything already in `placed` (appended to). Returns fallbacks."""
@@ -103,6 +105,12 @@ def _compute_layout(entries, scale, vmin, half_w, half_h, bound_w, bound_h, plac
             y = math.sin(angle) * reach * half_h
             x = max(-clamp_x, min(clamp_x, x))
             y = max(-clamp_y, min(clamp_y, y))
+            if clear_half_h > 0:
+                # Owner rule: newer birds go ABOVE or BELOW the shelf, never
+                # level with it (see layout.js).
+                min_y = min(clear_half_h + box_h / 2, clamp_y)
+                if abs(y) < min_y:
+                    y = -min_y if (y < 0 or (y == 0 and math.sin(angle) < 0)) else min_y
             box = {"x": x, "y": y, "w": box_w, "h": box_h}
             overlap = sum(overlap_area(box, o["box"]) for o in placed)
             if overlap == 0:
@@ -150,13 +158,47 @@ def compute_collage(files, w: float, h: float, band_top: float) -> list[Placemen
     tall_entries = entries[: len(entries) - row_count]
     full_half_h = (CLUSTER_H_FRAC * band_h) / 2
 
+    def place_row(entries, scale, placed):
+        # The shelf is PACKED, not spiralled: oldest→newest runs left→right,
+        # centred as a block — members never swap sides as the wall grows.
+        # Wider-than-screen counts as fallbacks so the shrink loop engages.
+        boxes = []
+        for file, index in entries:
+            size_px = (SIZE_MIN_VMIN + (hash_str(file) % SIZE_SPAN_VMIN)) * scale * vmin
+            image_h = size_px * PLATE_ASPECT
+            boxes.append(
+                {
+                    "file": file, "index": index, "size_px": size_px,
+                    "box_w": size_px + GAP_VMIN * vmin,
+                    "box_h": image_h + caption_px(image_h) + GAP_VMIN * vmin,
+                }
+            )
+        ordered = list(reversed(boxes))  # entries slice is newest-first
+        total_w = sum(b["box_w"] for b in ordered)
+        fallbacks = 0
+        cursor = -total_w / 2
+        for b in ordered:
+            x = cursor + b["box_w"] / 2
+            cursor += b["box_w"]
+            if abs(x) + b["size_px"] / 2 > bound_w:
+                fallbacks += 1
+            placed.append(
+                {
+                    "box": {"x": x, "y": 0, "w": b["box_w"], "h": b["box_h"]},
+                    "file": b["file"],
+                    "size_vmin": b["size_px"] / vmin,
+                    "index": b["index"],
+                }
+            )
+        return fallbacks
+
     def layout_pass(scale, half_w):
         placed: list = []
-        fallbacks = _compute_layout(
-            row_entries, scale, vmin, half_w, 1, bound_w, bound_h, placed
-        )
+        fallbacks = place_row(row_entries, scale, placed)
+        row_clear_half = max((p["box"]["h"] / 2 for p in placed), default=0.0)
         fallbacks += _compute_layout(
-            tall_entries, scale, vmin, half_w, full_half_h, bound_w, bound_h, placed
+            tall_entries, scale, vmin, half_w, full_half_h, bound_w, bound_h,
+            placed, row_clear_half,
         )
         return placed, fallbacks
 

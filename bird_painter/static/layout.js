@@ -79,7 +79,7 @@ export function overlapArea(a, b) {
 // central oval (halfW x halfH), clamped to stay on screen (boundW/boundH are
 // the viewport half-extents), avoiding everything already in `placed`
 // (appended to). Returns how many plates had to settle for an overlap.
-function computeLayout(entries, scale, vmin, halfW, halfH, boundW, boundH, placed) {
+function computeLayout(entries, scale, vmin, halfW, halfH, boundW, boundH, placed, clearHalfH = 0) {
   let fallbacks = 0;
   entries.forEach(({ file, index }, local) => {
     const h = hash(file);
@@ -101,6 +101,13 @@ function computeLayout(entries, scale, vmin, halfW, halfH, boundW, boundH, place
       let y = Math.sin(angle) * reach * halfH;
       x = Math.max(-clampX, Math.min(clampX, x));
       y = Math.max(-clampY, Math.min(clampY, y));
+      if (clearHalfH > 0) {
+        // Owner rule: newer birds go ABOVE or BELOW the shelf, never level
+        // with it — push the centre out of the shelf band (its half-height
+        // plus this plate's), screen bounds permitting.
+        const minY = Math.min(clearHalfH + boxH / 2, clampY);
+        if (Math.abs(y) < minY) y = (y < 0 || (y === 0 && Math.sin(angle) < 0)) ? -minY : minY;
+      }
       const box = { x, y, w: boxW, h: boxH };
       const overlap = placed.reduce((s, o) => s + overlapArea(box, o.box), 0);
       if (overlap === 0) { best = box; bestOverlap = 0; break; }
@@ -144,14 +151,46 @@ export function computeCollage(files, W, H, bandTop) {
   const tallEntries = entries.slice(0, entries.length - rowCount);
   const fullHalfH = (CLUSTER_H_FRAC * bandH) / 2;
 
-  // Two phases per pass: the row lays out in a ~zero-height oval (centres
-  // pinned to the row axis), then the newer birds spiral in the full-height
-  // oval with the row plates as obstacles — so they land above/below the
-  // shelf and expand vertically, per the current rules.
+  // The shelf is PACKED, not spiralled: oldest→newest runs left→right,
+  // centred as a block — so its members never swap sides as the wall grows
+  // (the oval's width doesn't touch it). A shelf wider than the screen counts
+  // as fallbacks so the shared shrink loop scales everyone down.
+  function placeRow(entries, scale, placed) {
+    const boxes = entries.map(({ file, index }) => {
+      const sizePx = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * scale * vmin;
+      const imageH = sizePx * PLATE_ASPECT;
+      return {
+        file, index, sizePx,
+        boxW: sizePx + GAP_VMIN * vmin,
+        boxH: imageH + captionPx(imageH) + GAP_VMIN * vmin,
+      };
+    });
+    // entries is a slice of the newest-first list; oldest-last. Reverse so the
+    // shelf reads oldest→newest, left→right.
+    const ordered = boxes.slice().reverse();
+    const totalW = ordered.reduce((sum, b) => sum + b.boxW, 0);
+    let fallbacks = 0;
+    let cursor = -totalW / 2;
+    for (const b of ordered) {
+      const x = cursor + b.boxW / 2;
+      cursor += b.boxW;
+      if (Math.abs(x) + b.sizePx / 2 > boundW) fallbacks++;
+      placed.push({
+        box: { x, y: 0, w: b.boxW, h: b.boxH },
+        file: b.file, sizeVmin: b.sizePx / vmin, index: b.index,
+      });
+    }
+    return fallbacks;
+  }
+
+  // Two phases per pass: the shelf packs onto the row axis, then the newer
+  // birds spiral the full-height oval with the shelf as obstacles AND a
+  // vertical clearance (they must sit fully above or below it — never level).
   function layoutPass(scale, halfW) {
     const placed = [];
-    let fallbacks = computeLayout(rowEntries, scale, vmin, halfW, 1, boundW, boundH, placed);
-    fallbacks += computeLayout(tallEntries, scale, vmin, halfW, fullHalfH, boundW, boundH, placed);
+    let fallbacks = placeRow(rowEntries, scale, placed);
+    const rowClearHalf = placed.reduce((m, p) => Math.max(m, p.box.h / 2), 0);
+    fallbacks += computeLayout(tallEntries, scale, vmin, halfW, fullHalfH, boundW, boundH, placed, rowClearHalf);
     return { placed, fallbacks };
   }
 

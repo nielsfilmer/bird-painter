@@ -99,29 +99,38 @@ test("the first three birds form a single horizontal row", () => {
 
 test("newer birds stack vertically around the anchored shelf", () => {
   // The corrected rule: the three OLDEST birds keep the horizontal row at the
-  // band centre for good; every newer bird lands clear of the row, above or
-  // below, growing the group vertically.
+  // band centre for good; every newer bird sits fully above or below it —
+  // never level with it (the n=12 case regressed this once: birds slotted
+  // into lateral shelf gaps on a full wall).
   const [W, H] = [1920, 1080];
   const bandTop = 150;
   for (let seed = 1; seed <= 20; seed++) {
-    for (const n of [4, 6, 8]) {
+    for (const n of [4, 6, 8, 12]) {
       const placed = computeCollage(randomFiles(makeRng(seed), n), W, H, bandTop);
-      const row = placed.slice(n - 3); // input is newest-first; oldest = tail
-      for (const p of row) {
+      const shelf = placed.slice(n - 3); // input is newest-first; oldest = tail
+      for (const p of shelf) {
         assert.ok(
-          Math.abs(p.y - bandTop / 2) <= 3,
+          Math.abs(p.y - bandTop / 2) <= 1,
           `seed ${seed} n=${n}: shelf bird drifted ${p.y.toFixed(1)}`,
+        );
+      }
+      // The shelf's horizontal order is FIXED: oldest→newest, left→right —
+      // members must never swap sides as the wall grows.
+      for (let i = 0; i + 1 < shelf.length; i++) {
+        assert.ok(
+          shelf[shelf.length - 1 - i].x < shelf[shelf.length - 2 - i].x,
+          `seed ${seed} n=${n}: shelf order reshuffled`,
         );
       }
       for (const p of placed.slice(0, n - 3)) {
         assert.ok(
-          Math.abs(p.y - bandTop / 2) >= 100,
-          `seed ${seed} n=${n}: newer bird sitting on the shelf (y=${p.y.toFixed(0)})`,
+          Math.abs(p.y - bandTop / 2) >= 200,
+          `seed ${seed} n=${n}: newer bird level with the shelf (y=${p.y.toFixed(0)})`,
         );
       }
       const ys = placed.map(p => p.y);
       assert.ok(
-        Math.max(...ys) - Math.min(...ys) >= (n >= 6 ? 450 : 250),
+        Math.max(...ys) - Math.min(...ys) >= (n >= 6 ? 450 : 200),
         `seed ${seed} n=${n}: group not growing vertically`,
       );
     }

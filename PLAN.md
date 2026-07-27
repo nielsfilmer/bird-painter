@@ -111,9 +111,12 @@ the clip never reaches any cloud service.
     is deterministic across reloads; birds stand upright — no rotation).
     Existing plates glide outward as newer ones arrive.
   - **A shelf first, then vertical growth around it.** The three OLDEST live
-    birds keep a single horizontal ROW across the band centre for good (a
-    neat shelf); every newer bird spirals into the full-height oval with the
-    shelf as an obstacle, so the group grows vertically above and below it. A few birds form a tall, horizontally-compact group in the middle
+    birds hold a single horizontal ROW across the band centre for good — a
+    packed shelf, oldest→newest reading left→right, whose members never move
+    or swap sides as the wall changes. Every newer bird spirals into the
+    full-height oval with the shelf as an obstacle AND a vertical clearance
+    (it must sit fully above or below the shelf, never level with it), so the
+    group grows vertically. A few birds form a tall, horizontally-compact group in the middle
     at their natural size (~16–20 vmin, a tight span so no bird renders far
     smaller than its neighbours); as more arrive the oval widens (widen-to-fit,
     starting one plate wide) until it hits the viewport cap, and only then does
