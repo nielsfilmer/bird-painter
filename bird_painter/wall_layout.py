@@ -37,6 +37,7 @@ SHRINK_RETRIES = 8
 SHRINK_STEP = 0.9
 CLUSTER_W_FRAC = 0.92  # oval may widen to at most this fraction of the width
 CLUSTER_H_FRAC = 0.88  # oval height: this fraction of the sub-title band
+ROW_LIMIT = 3  # up to this many birds: one horizontal row (see layout.js)
 
 _U32 = 0xFFFFFFFF
 
@@ -131,17 +132,24 @@ def compute_collage(files, w: float, h: float, band_top: float) -> list[Placemen
         natural_area += (s + GAP_VMIN * vmin) * (
             image_h + caption_px(image_h) + GAP_VMIN * vmin
         )
-    # Full height first, widen-to-fit, shrink only when the screen is full —
-    # mirrors computeCollage in static/layout.js.
-    half_h = (CLUSTER_H_FRAC * band_h) / 2
+    # Row-first, then full height, widen-to-fit, shrink only when the screen
+    # is full — mirrors computeCollage in static/layout.js.
     max_half_w = (CLUSTER_W_FRAC * w) / 2
     bound_w, bound_h = w / 2, band_h / 2
     # Start as narrow as the widest single plate — a one-plate-wide column — so
     # the group stacks vertically (fills the height) before it widens.
     max_box_w = 1.0
+    max_box_h = 1.0
     for file in files:
         s = (SIZE_MIN_VMIN + (hash_str(file) % SIZE_SPAN_VMIN)) * vmin
+        image_h = s * PLATE_ASPECT
         max_box_w = max(max_box_w, s + GAP_VMIN * vmin)
+        max_box_h = max(max_box_h, image_h + caption_px(image_h) + GAP_VMIN * vmin)
+    # Row mode (≤ ROW_LIMIT birds): oval gets ~no height so the widen loop lays
+    # one horizontal row; the shrink seed keeps the row's real height.
+    row_mode = len(files) <= ROW_LIMIT
+    half_h = 1.0 if row_mode else (CLUSTER_H_FRAC * band_h) / 2
+    seed_half_h = max_box_h / 2 if row_mode else half_h
     half_w0 = min(max_half_w, max_box_w / 2)
     scale = 1.0
     half_w = half_w0
@@ -157,7 +165,7 @@ def compute_collage(files, w: float, h: float, band_top: float) -> list[Placemen
             break
         k *= GROW_FACTOR
     if fallbacks > 0:
-        cluster_area = math.pi * half_w * half_h
+        cluster_area = math.pi * half_w * seed_half_h
         scale = min(1.0, math.sqrt((FILL_FACTOR * cluster_area) / (natural_area or 1)))
         placed, fallbacks = _compute_layout(
             files, scale, vmin, half_w, half_h, bound_w, bound_h

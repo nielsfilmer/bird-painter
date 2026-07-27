@@ -110,8 +110,10 @@ the clip never reaches any cloud service.
     stable per-painting size and scatter (hashed from its filename, so layout
     is deterministic across reloads; birds stand upright — no rotation).
     Existing plates glide outward as newer ones arrive.
-  - **Full height first, widen with count, shrink only when full.** The
-    cluster oval's HEIGHT is fixed to the sub-title band; only its width
+  - **A shelf first, then full height, widen with count, shrink only when
+    full.** The first three birds sit in a single horizontal ROW (a wall
+    starting its day reads as a neat shelf); from the fourth bird the cluster
+    oval's HEIGHT opens to the sub-title band and only its width
     adapts. A few birds form a tall, horizontally-compact group in the middle
     at their natural size (~16–20 vmin, a tight span so no bird renders far
     smaller than its neighbours); as more arrive the oval widens (widen-to-fit,
@@ -296,3 +298,7 @@ whole magic; ship it first.
   everything retention has kept, newest first, paginated, clips playable. The
   e-paper `/wall.png` never shows it (server raster has no DOM; test pins the
   split).
+- **2026-07-27** — **Row-first placement** (owner rule): the first three birds
+  form a single horizontal row; from the fourth, the full-height-first rule
+  takes over. Implemented as a near-zero-height oval for ≤3 birds (same widen
+  loop), shrink seed keeps the row's real height.

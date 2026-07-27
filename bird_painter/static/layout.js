@@ -51,6 +51,10 @@ const SHRINK_STEP = 0.9;     // shrink every plate by this and lay out again
 // only when the screen is full.
 const CLUSTER_W_FRAC = 0.92; // oval may widen to at most this fraction of width
 const CLUSTER_H_FRAC = 0.88; // oval height: this fraction of the sub-title band
+// The first few birds sit in a single horizontal ROW (a wall starting its day
+// reads as a neat shelf); once a fourth arrives the oval opens to the full
+// band height and the usual full-height-first rule takes over.
+const ROW_LIMIT = 3;         // up to this many birds: one horizontal row
 
 export function hash(str) {
   let h = 2166136261;
@@ -124,7 +128,6 @@ export function computeCollage(files, W, H, bandTop) {
   // (ellipse area = π·halfW·halfH) and widen until every plate finds a free
   // spot — so a few birds form a tall, horizontally-compact group at full size,
   // and the group widens as birds arrive.
-  const halfH = (CLUSTER_H_FRAC * bandH) / 2;
   const maxHalfW = (CLUSTER_W_FRAC * W) / 2;
   const boundW = W / 2, boundH = bandH / 2;
   // Start as narrow as the widest single plate — a one-plate-wide column — so
@@ -133,6 +136,18 @@ export function computeCollage(files, W, H, bandTop) {
     const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
     return Math.max(m, s + GAP_VMIN * vmin);
   }, 1);
+  const maxBoxH = files.reduce((m, file) => {
+    const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
+    const imageH = s * PLATE_ASPECT;
+    return Math.max(m, imageH + captionPx(imageH) + GAP_VMIN * vmin);
+  }, 1);
+  // Row mode (≤ ROW_LIMIT birds): pin plate centres to the row axis by giving
+  // the oval ~no height, so the widen loop lays a single horizontal row. The
+  // shrink seed still needs the row's REAL occupied height (one plate), else
+  // a near-zero oval area would collapse the scale.
+  const rowMode = files.length <= ROW_LIMIT;
+  const halfH = rowMode ? 1 : (CLUSTER_H_FRAC * bandH) / 2;
+  const seedHalfH = rowMode ? maxBoxH / 2 : halfH;
   const halfW0 = Math.min(maxHalfW, maxBoxW / 2);
   let scale = 1, halfW = halfW0, result;
   for (let step = 0, k = 1; step < GROW_STEPS; step++, k *= GROW_FACTOR) {
@@ -143,7 +158,7 @@ export function computeCollage(files, W, H, bandTop) {
   // Width capped and still overlapping → the screen is full: now (and only
   // now) shrink the plates together until the set fits.
   if (result.fallbacks > 0) {
-    const clusterArea = Math.PI * halfW * halfH;
+    const clusterArea = Math.PI * halfW * seedHalfH;
     scale = Math.min(1, Math.sqrt((FILL_FACTOR * clusterArea) / (naturalArea || 1)));
     result = computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH);
     for (let i = 0; i < SHRINK_RETRIES && result.fallbacks > 0; i++) {

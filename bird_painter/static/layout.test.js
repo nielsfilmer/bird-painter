@@ -65,6 +65,38 @@ test("no two birds ever visibly overlap, across random sets and viewports", () =
   }
 });
 
+test("the first three birds form a single horizontal row", () => {
+  // Placement rule: a wall starting its day reads as a neat shelf — up to
+  // ROW_LIMIT birds sit in one horizontal row (centres level), and the row
+  // must never fan to the screen edges.
+  const [W, H] = [1920, 1080];
+  const bandTop = 150;
+  const vmin = Math.min(W, H) / 100;
+  for (let seed = 1; seed <= 20; seed++) {
+    for (const n of [1, 2, 3]) {
+      const placed = computeCollage(randomFiles(makeRng(seed), n), W, H, bandTop);
+      const ys = placed.map(p => p.y);
+      const ySpread = Math.max(...ys) - Math.min(...ys);
+      assert.ok(
+        ySpread <= 3,
+        `seed ${seed} n=${n}: not a row — y spread ${ySpread.toFixed(1)}px`,
+      );
+      let xReach = 0;
+      for (const p of placed) {
+        xReach = Math.max(xReach, Math.abs(p.x) + (p.sizeVmin * vmin) / 2);
+      }
+      assert.ok(xReach <= W * 0.35, `seed ${seed} n=${n}: row too wide`);
+    }
+    // The fourth bird ends row mode: vertical span opens up.
+    const four = computeCollage(randomFiles(makeRng(seed), 4), W, H, bandTop);
+    const ys4 = four.map(p => p.y);
+    assert.ok(
+      Math.max(...ys4) - Math.min(...ys4) > 100,
+      `seed ${seed}: 4 birds still flat`,
+    );
+  }
+});
+
 test("a sparse wall is a tall central group: full height first, narrow width", () => {
   // The placement rule: the group always uses the sub-title band's height and
   // only widens as birds arrive — so a few birds must form a tall,
