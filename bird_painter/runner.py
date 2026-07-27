@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
+
+from .audio import detection_clip_wav
 from .brush import paint as paint_species
 from .config import Config
 from .ears import Detection
@@ -22,11 +25,21 @@ class PaintRunner:
         self.store = store
         self.gate = gate
 
-    def on_detections(self, detections: list[Detection]) -> None:
+    def on_detections(
+        self,
+        detections: list[Detection],
+        window: np.ndarray | None = None,
+        samplerate: int | None = None,
+    ) -> None:
         for detection in detections:
-            self._maybe_paint(detection)
+            self._maybe_paint(detection, window, samplerate)
 
-    def _maybe_paint(self, detection: Detection) -> None:
+    def _maybe_paint(
+        self,
+        detection: Detection,
+        window: np.ndarray | None = None,
+        samplerate: int | None = None,
+    ) -> None:
         species = detection.species_common
         if not self.gate.allows(species):
             return
@@ -43,6 +56,19 @@ class PaintRunner:
         image_bytes, extension = result
         # Crop the flat-white margin so the bird fills its plate on the wall.
         image_bytes = trim_to_bird(image_bytes, extension)
+        # Archive the sound behind the painting so the wall can replay it.
+        # Best-effort: a clip failure must never cost the painting.
+        audio_bytes = None
+        if window is not None and samplerate:
+            try:
+                audio_bytes = detection_clip_wav(
+                    window,
+                    samplerate,
+                    detection.start_seconds,
+                    detection.end_seconds,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("clip failed for %s; painting without audio", species)
         self.store.add(
             image_bytes=image_bytes,
             extension=extension,
@@ -50,6 +76,7 @@ class PaintRunner:
             species_scientific=detection.species_scientific,
             confidence=detection.confidence,
             source="detection",
+            audio_bytes=audio_bytes,
         )
         self.gate.record()
         logger.info("painted %s (%.2f)", species, detection.confidence)

@@ -19,7 +19,9 @@ from .config import load_config_or_exit
 from .ears import Detection, Ears
 
 
-def _print_detections(detections: list[Detection]) -> None:
+def _print_detections(detections: list[Detection], _window=None, _rate=None) -> None:
+    # The listener callback also carries the analysed window + samplerate (so
+    # the app can archive detection clips); this CLI only prints.
     for d in detections:
         print(
             f"{d.confidence:.2f}  {d.species_common} ({d.species_scientific})",

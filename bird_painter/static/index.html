@@ -52,6 +52,13 @@
   }
   .plate.shown { opacity: 1; }
   .plate.dying { opacity: 0; }
+  /* Birds with an archived detection clip replay it on click. */
+  .plate.has-audio { cursor: pointer; }
+  .plate.playing img { animation: sing 1.1s ease-in-out infinite; }
+  @keyframes sing {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+  }
   .plate img {
     width: 100%;
     aspect-ratio: 4 / 5;
@@ -170,10 +177,38 @@ window.addEventListener("resize", () => {
   resizeTimer = setTimeout(layoutAll, 150);
 });
 
+let nowPlaying = null; // one clip at a time; clicking another stops the first
+
+function playClip(fig, audioFile) {
+  if (nowPlaying) {
+    nowPlaying.audio.pause();
+    nowPlaying.fig.classList.remove("playing");
+    const wasSame = nowPlaying.fig === fig;
+    nowPlaying = null;
+    if (wasSame) return; // second click on the same bird = stop
+  }
+  const audio = new Audio(`/audio/${encodeURIComponent(audioFile)}`);
+  nowPlaying = { audio, fig };
+  fig.classList.add("playing");
+  const done = () => {
+    fig.classList.remove("playing");
+    if (nowPlaying && nowPlaying.fig === fig) nowPlaying = null;
+  };
+  audio.addEventListener("ended", done);
+  audio.addEventListener("error", done);
+  audio.play().catch(done); // autoplay policy or a 404 — fail quiet
+}
+
 function makePlate(p) {
   const fig = document.createElement("figure");
   fig.className = "plate";
   fig.dataset.file = p.file;
+  if (p.audio) {
+    // Replay the actual sound this painting was made from.
+    fig.classList.add("has-audio");
+    fig.addEventListener("click", () => playClip(fig, p.audio));
+    fig.title = "click to hear the song that painted this bird";
+  }
   const img = document.createElement("img");
   img.src = `/images/${encodeURIComponent(p.file)}`;
   img.alt = `Painting of ${p.species_common}`;
@@ -202,6 +237,11 @@ async function refresh() {
   for (const [file, el] of plates) {
     if (!liveFiles.has(file)) {
       plates.delete(file);
+      // A bird leaving the wall takes its song with it.
+      if (nowPlaying && nowPlaying.fig === el) {
+        nowPlaying.audio.pause();
+        nowPlaying = null;
+      }
       el.classList.add("dying");
       setTimeout(() => el.remove(), FADE_MS);
     }

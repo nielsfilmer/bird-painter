@@ -105,6 +105,7 @@ class Store:
         species_scientific: str,
         confidence: float,
         source: str,
+        audio_bytes: bytes | None = None,
     ) -> Painting:
         born_at = time.time()
         # uuid suffix: same-species-same-second paints must never overwrite an
@@ -113,6 +114,10 @@ class Store:
             f"{int(born_at)}_{slugify(species_common)}_{uuid.uuid4().hex[:8]}.{extension}"
         )
         (self.archive_dir / filename).write_bytes(image_bytes)
+        if audio_bytes is not None:
+            # The detection clip lives beside its painting, same stem: a click
+            # on the wall replays the sound that produced the bird.
+            (self.archive_dir / f"{Path(filename).stem}.wav").write_bytes(audio_bytes)
         painting = Painting(
             file=filename,
             species_common=species_common,
@@ -145,6 +150,19 @@ class Store:
             if p.species_common == species_common
         ]
         return max(times) if times else None
+
+    def audio_file_for(self, painting_file: str) -> str | None:
+        """The painting's clip filename (same stem, .wav) if one exists —
+        old and dev-painted birds have none."""
+        name = f"{Path(painting_file).stem}.wav"
+        return name if (self.archive_dir / name).is_file() else None
+
+    def audio_path(self, filename: str) -> Path | None:
+        """Resolve an archived clip safely (no traversal, .wav only)."""
+        if filename != Path(filename).name or Path(filename).suffix.lower() != ".wav":
+            return None
+        path = self.archive_dir / filename
+        return path if path.is_file() else None
 
     def image_path(self, filename: str) -> Path | None:
         """Resolve an archived image safely (no traversal, images only)."""

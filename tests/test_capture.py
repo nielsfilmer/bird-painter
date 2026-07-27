@@ -163,3 +163,32 @@ def test_failure_count_resets_so_a_new_fault_logs_a_traceback(monkeypatch, caplo
     # failure — which must carry a traceback again, not a "still failing" line.
     kinds = [bool(r.exc_info) for r in caplog.records]
     assert kinds == [True, True, True, False, True]
+
+
+def test_analyse_window_passes_window_and_rate_to_the_callback(monkeypatch):
+    """The callback contract is (detections, window, samplerate) — pin it, and
+    pin that listen_cli's printer accepts that arity (it silently printed
+    nothing when this drifted)."""
+    import numpy as np
+
+    from bird_painter import capture, listen_cli
+    from bird_painter.ears import Detection
+
+    listener = capture.MicListener(_FakeEars(), window_seconds=15)
+    det = Detection("Robin", "E. rubecula", 0.9, 0.0, 3.0)
+    monkeypatch.setattr(
+        listener, "ears",
+        type("E", (), {"detect_samples": lambda self, w, r: [det]})(),
+    )
+    got = {}
+
+    def callback(detections, window, samplerate):
+        got.update(detections=detections, window=window, samplerate=samplerate)
+
+    win = np.zeros(10, dtype="float32")
+    listener._analyse_window(win, callback)
+    assert got["detections"] == [det]
+    assert got["samplerate"] == listener.samplerate
+    assert got["window"] is win
+    # listen_cli's callback must accept the same shape without raising.
+    listen_cli._print_detections([det], win, listener.samplerate)

@@ -27,6 +27,10 @@ from .ears import Detection, Ears
 
 logger = logging.getLogger(__name__)
 
+# The detection callback receives the analysed window + samplerate alongside
+# the detections, so it can archive the audio clip of a bird it paints.
+DetectionCallback = Callable[[list[Detection], "np.ndarray", int], None]
+
 # BirdNET's fixed input rate; do not change without adding resampling.
 BIRDNET_SAMPLERATE = 48000
 
@@ -190,7 +194,7 @@ class MicListener:
     def _analyse_window(
         self,
         window: np.ndarray,
-        on_detections: Callable[[list[Detection]], None],
+        on_detections: DetectionCallback,
     ) -> None:
         try:
             level = float(np.abs(window).max())
@@ -217,11 +221,13 @@ class MicListener:
         # A raising callback (the gate's paint) must not kill listening either
         # — the loop is the durable part.
         try:
-            on_detections(detections)
+            # The window rides along so the callback can archive the clip of
+            # the detection it decides to paint.
+            on_detections(detections, window, self.samplerate)
         except Exception:  # noqa: BLE001
             logger.exception("capture: on_detections callback failed")
 
-    def listen(self, on_detections: Callable[[list[Detection]], None]) -> None:
+    def listen(self, on_detections: DetectionCallback) -> None:
         """Stream → window → detect → callback, forever. Ctrl-C stops it
         cleanly. Capture runs continuously in PortAudio's thread, so no audio
         is dropped while a window is being analysed. If the stream faults or

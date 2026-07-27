@@ -56,6 +56,12 @@ local TF-Lite model). The only thing that leaves the house is the image-
 generation call — a stateless REST request to a hosted model. The wall is
 served locally off the same process.
 
+Audio is analysed and discarded — with ONE deliberate exception: the few
+seconds around a detection that actually painted are archived as a WAV beside
+the painting (~0.5 MB each) and served on the LAN at `/audio/*`, so clicking a
+bird on the wall replays the song that painted it. Nothing leaves the house;
+the clip never reaches any cloud service.
+
 - **One Python process** on the mic machine runs the whole loop: capture →
   BirdNET → trigger/debounce → image API call → archive + live set → serves the
   wall web page.
@@ -217,9 +223,10 @@ whole magic; ship it first.
   on the next detection). No painting simply means no new bird on the wall — a
   soft failure, never a crash.
 - **Archive disk growth** — the permanent on-disk archive grows unbounded (every
-  bird ever painted is kept). Trivial for a personal toy at 20 paints/hour, but
-  name it: no retention/pruning in v0; add an archive cap or size-based prune as
-  a fast-follow if it ever matters.
+  bird ever painted is kept, plus ~0.5 MB of detection clip per painted bird).
+  Trivial for a personal toy at 20 paints/hour, but name it: no retention/
+  pruning in v0. A 1-month retention purge is planned (owner request
+  2026-07-27), which will bound this.
 
 ## Decision log
 
@@ -264,3 +271,9 @@ whole magic; ship it first.
   centres clamped to the oval), and paintings are **trimmed to the bird** at
   store time so the bird fills its plate. Supersedes the 2026-07-20 "fills
   both axes / big-to-start" rule from PR #59.
+- **2026-07-27** — **Detection clips archived + replayable** (owner feature
+  request). The pipeline still discards audio by design, except the seconds
+  around a painted detection: stored as WAV beside the painting, served on the
+  LAN at `/audio/*`, replayed by clicking the bird on the browser wall. The
+  clip stays inside the house (never sent to any cloud). Growth bounded by the
+  planned 1-month retention purge.

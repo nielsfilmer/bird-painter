@@ -134,3 +134,31 @@ def test_layout_js_is_served_as_a_module(client):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/javascript")
     assert "computeCollage" in response.text
+
+
+def test_audio_endpoint_serves_clip_and_api_live_links_it(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        client.post("/dev/paint/robin")  # placeholder path: no audio
+        live = client.get("/api/live").json()["paintings"]
+        assert live[0]["audio"] is None  # dev birds have no clip
+
+        # A painting stored WITH audio surfaces it in /api/live and /audio.
+        store = app.state.store
+        painting = store.add(
+            image_bytes=b"<svg/>",
+            extension="svg",
+            species_common="Wren",
+            species_scientific="T. troglodytes",
+            confidence=0.9,
+            source="detection",
+            audio_bytes=b"RIFFfake",
+        )
+        live = client.get("/api/live").json()["paintings"]
+        wren = next(p for p in live if p["species_common"] == "Wren")
+        assert wren["audio"] == painting.file.rsplit(".", 1)[0] + ".wav"
+        response = client.get(f"/audio/{wren['audio']}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/wav"
+        assert client.get("/audio/nope.wav").status_code == 404
+        assert client.get("/audio/..%2Fmeta.jsonl").status_code == 404
