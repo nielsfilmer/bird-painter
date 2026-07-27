@@ -65,34 +65,39 @@ test("no two birds ever visibly overlap, across random sets and viewports", () =
   }
 });
 
-test("a full wall uses most of a 16:9 screen (not a huddle in the middle)", () => {
-  // The collage should fill the screen on a 16:9 display, not huddle in the
-  // centre leaving big empty margins. With a full wall (12 birds) the widest
-  // plate should reach well out toward the edge — but the on-screen guard
-  // (separate test) still keeps it inside the viewport.
+test("a sparse wall is a tall central group: full height first, narrow width", () => {
+  // The placement rule: the group always uses the sub-title band's height and
+  // only widens as birds arrive — so a few birds must form a tall,
+  // horizontally-compact group in the middle, never a wide row.
   const [W, H] = [1920, 1080];
   const bandTop = 150;
+  const bandH = H - bandTop;
   const vmin = Math.min(W, H) / 100;
   for (let seed = 1; seed <= 20; seed++) {
-    const placed = computeCollage(randomFiles(makeRng(seed), 12), W, H, bandTop);
-    let reach = 0;
+    const placed = computeCollage(randomFiles(makeRng(seed), 4), W, H, bandTop);
+    let xReach = 0, yMin = Infinity, yMax = -Infinity;
     for (const p of placed) {
-      reach = Math.max(reach, Math.abs(p.x) + (p.sizeVmin * vmin) / 2);
+      const imageH = p.sizeVmin * vmin * PLATE_ASPECT;
+      xReach = Math.max(xReach, Math.abs(p.x) + (p.sizeVmin * vmin) / 2);
+      yMin = Math.min(yMin, p.y - imageH / 2);
+      yMax = Math.max(yMax, p.y + imageH / 2);
     }
-    // Uses the screen: reaches past a third of the half-width toward the edge.
-    // A regression to the old tight central clump reached ~0.23·W and fails.
+    // Narrow: stays within ~a quarter of the width. Tall: spans most of the band.
     assert.ok(
-      reach >= W * 0.33,
-      `seed ${seed}: cluster too huddled — only reached ${reach.toFixed(0)}px of ${W / 2}px half-width`,
+      xReach <= W * 0.25,
+      `seed ${seed}: sparse wall too wide — reached ${xReach.toFixed(0)}px`,
+    );
+    assert.ok(
+      yMax - yMin >= bandH * 0.55,
+      `seed ${seed}: sparse wall too flat — spans ${(yMax - yMin).toFixed(0)}px of ${bandH}px band`,
     );
   }
 });
 
 test("on a short wide screen the width cap leaves side margins", () => {
-  // The width cap (CLUSTER_ASPECT × half-height) keeps a short, wide display
-  // from fanning the birds edge-to-edge into one thin full-width band. On
-  // 2400x1000 the cap bites (height-limited), leaving ~7% side margin; without
-  // it the plates would clamp right to the edge (~0.5·W).
+  // The width cap (CLUSTER_W_FRAC of the viewport) keeps a short, wide
+  // display from fanning the birds edge-to-edge into one full-width band —
+  // the widen-to-fit loop stops at that cap, leaving side margins.
   const [W, H] = [2400, 1000];
   const bandTop = 150;
   const vmin = Math.min(W, H) / 100;

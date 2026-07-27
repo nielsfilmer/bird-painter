@@ -12,14 +12,13 @@
 
 const GOLDEN_ANGLE = 2.399963229728653; // radians, 137.5°
 // Per-plate width, hashed from the filename: SIZE_MIN + (hash % SIZE_SPAN),
-// then multiplied by the global fit scale. This is the "big but not huge"
-// starting size: a handful of birds render at (roughly) this size and the
-// scale stays 1; as the wall fills past what the cluster can hold at full
-// size, the fill scale drops below 1 and every plate shrinks together (rule:
-// big to start, smaller when crowded). A tight span keeps a minimum size —
-// the smallest bucket stays ~85% of the largest (22/26) — so no bird renders
-// far smaller than its neighbours.
-const SIZE_MIN_VMIN = 22, SIZE_SPAN_VMIN = 5;    // plate width 22–26 vmin
+// then multiplied by the global fit scale. Sized so ~3 plates stack in the
+// sub-title band on a 4:3/16:9 screen — the "full height first" rule needs
+// vertical stacking to be possible at full size; the scale drops below 1 only
+// once the whole screen is full. A tight span keeps a minimum size — the
+// smallest bucket stays 80% of the largest (16/20) — so no bird renders far
+// smaller than its neighbours.
+const SIZE_MIN_VMIN = 16, SIZE_SPAN_VMIN = 5;    // plate width 16–20 vmin
 const MAX_INDEX = 12;                            // matches the wall's live cap
 const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrait
 // The plate's box also reserves room for the caption below the image (species
@@ -35,22 +34,23 @@ function captionPx(imageHeightPx) {
   return Math.max(CAPTION_FLOOR_PX, imageHeightPx * (CAPTION_ALLOWANCE - 1));
 }
 const TOP_Z = 200;
-const GAP_VMIN = 0.5;        // tight spacing — a dense cutout cluster
+const GAP_VMIN = 0.2;        // tight spacing between plates
 const SPIRAL_STEP = 0.22;    // how far along the spiral each retry walks
 const MAX_TRIES = 220;       // spiral samples per plate before giving up
-const FILL_FACTOR = 0.92;    // plates may claim at most this share of the cluster
-const SHRINK_RETRIES = 8;    // if any plate still couldn't find a free spot,
-const SHRINK_STEP = 0.9;     // shrink everyone by this and lay out again
-// The cluster is a central oval the spiral grows into: newest bird at the
-// centre, older ones spiralling outward. It fills most of BOTH viewport axes
-// so the collage uses the whole screen (target: a 16:9 display) instead of
-// huddling in the middle — but the width is also capped to a multiple of the
-// height (CLUSTER_ASPECT). That cap binds whenever the viewport is wider than
-// ~16:9 (including standard 16:9 itself, leaving small side margins) and keeps
-// a short/ultrawide screen from fanning the birds edge-to-edge into one band.
-const CLUSTER_W_FRAC = 0.92; // cluster spans this fraction of the width…
-const CLUSTER_H_FRAC = 0.9;  // …and this fraction of the sub-title band height
-const CLUSTER_ASPECT = 1.7;  // …but never wider than this × its half-height
+const GROW_FACTOR = 1.12;    // widen-to-fit: widen the oval by this per step…
+const GROW_STEPS = 24;       // …up to this many, until the set fits (or caps out)
+const FILL_FACTOR = 0.92;    // when width-capped: plates claim at most this share
+const SHRINK_RETRIES = 8;    // if the set still can't fit at the max oval,
+const SHRINK_STEP = 0.9;     // shrink every plate by this and lay out again
+// The cluster is a central oval the spiral fills: newest bird at the centre,
+// older ones spiralling outward. Its HEIGHT is fixed — the group always uses
+// the full sub-title band — and its WIDTH tracks the content: a few birds form
+// a tall, horizontally-compact group in the middle; as more arrive the oval
+// widens (widen-to-fit) until it hits the viewport cap, and only then do the
+// plates shrink together. So: full height first, expand horizontally, smaller
+// only when the screen is full.
+const CLUSTER_W_FRAC = 0.92; // oval may widen to at most this fraction of width
+const CLUSTER_H_FRAC = 0.88; // oval height: this fraction of the sub-title band
 
 export function hash(str) {
   let h = 2166136261;
@@ -84,8 +84,10 @@ function computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH) {
     const boxW = sizePx + GAP_VMIN * vmin;
     const boxH = imageH + captionPx(imageH) + GAP_VMIN * vmin;
     const jitterA = (((h >>> 8) % 100) / 100 - 0.5) * 0.5; // ±0.25 rad
-    const clampX = Math.max(0, boundW - sizePx / 2);
-    const clampY = Math.max(0, boundH - (imageH + captionPx(imageH)) / 2);
+    // Clamp plate centres to the oval extents (the spiral's reach can exceed
+    // 1, and an unbounded x lets birds leak sideways into a row) AND on screen.
+    const clampX = Math.min(halfW, Math.max(0, boundW - sizePx / 2));
+    const clampY = Math.min(halfH, Math.max(0, boundH - (imageH + captionPx(imageH)) / 2));
     let best = null, bestOverlap = Infinity;
     for (let t = index, tries = 0; tries < MAX_TRIES; tries++, t += SPIRAL_STEP) {
       const angle = t * GOLDEN_ANGLE + jitterA;
@@ -112,27 +114,42 @@ export function computeCollage(files, W, H, bandTop) {
   const vmin = Math.min(W, H) / 100;
   const bandH = H - bandTop;
   const yOffset = bandTop / 2; // shift the cluster down into the band
-  // Cluster extents: a central oval filling most of BOTH axes, so the collage
-  // uses the whole screen. The width is capped to CLUSTER_ASPECT × the
-  // half-height so an ultrawide display doesn't fan the birds into a thin band.
-  const halfH = (CLUSTER_H_FRAC * bandH) / 2;
-  const halfW = Math.min((CLUSTER_W_FRAC * W) / 2, halfH * CLUSTER_ASPECT);
   const naturalArea = files.reduce((sum, file) => {
     const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
     const imageH = s * PLATE_ASPECT;
     return sum + (s + GAP_VMIN * vmin) * (imageH + captionPx(imageH) + GAP_VMIN * vmin);
   }, 0);
-  // Plates render at their natural "big but not huge" size (scale 1) until the
-  // set can't fit the cluster oval at full size; then the scale drops below 1
-  // and everyone shrinks together — so the wall gets smaller as it fills, never
-  // bigger than the starting size on a near-empty wall.
-  const clusterArea = Math.PI * halfW * halfH;
-  let scale = Math.min(1, Math.sqrt((FILL_FACTOR * clusterArea) / (naturalArea || 1)));
+  // Full height first: the oval's height is fixed to the sub-title band; only
+  // its width adapts. Start from the width the content's own area implies
+  // (ellipse area = π·halfW·halfH) and widen until every plate finds a free
+  // spot — so a few birds form a tall, horizontally-compact group at full size,
+  // and the group widens as birds arrive.
+  const halfH = (CLUSTER_H_FRAC * bandH) / 2;
+  const maxHalfW = (CLUSTER_W_FRAC * W) / 2;
   const boundW = W / 2, boundH = bandH / 2;
-  let result = computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH);
-  for (let i = 0; i < SHRINK_RETRIES && result.fallbacks > 0; i++) {
-    scale *= SHRINK_STEP;
+  // Start as narrow as the widest single plate — a one-plate-wide column — so
+  // the group stacks vertically (fills the height) before it widens.
+  const maxBoxW = files.reduce((m, file) => {
+    const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
+    return Math.max(m, s + GAP_VMIN * vmin);
+  }, 1);
+  const halfW0 = Math.min(maxHalfW, maxBoxW / 2);
+  let scale = 1, halfW = halfW0, result;
+  for (let step = 0, k = 1; step < GROW_STEPS; step++, k *= GROW_FACTOR) {
+    halfW = Math.min(maxHalfW, halfW0 * k);
     result = computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH);
+    if (result.fallbacks === 0 || halfW >= maxHalfW) break;
+  }
+  // Width capped and still overlapping → the screen is full: now (and only
+  // now) shrink the plates together until the set fits.
+  if (result.fallbacks > 0) {
+    const clusterArea = Math.PI * halfW * halfH;
+    scale = Math.min(1, Math.sqrt((FILL_FACTOR * clusterArea) / (naturalArea || 1)));
+    result = computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH);
+    for (let i = 0; i < SHRINK_RETRIES && result.fallbacks > 0; i++) {
+      scale *= SHRINK_STEP;
+      result = computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH);
+    }
   }
   return result.placed.map(({ box, file, sizeVmin, index }) => ({
     file,
