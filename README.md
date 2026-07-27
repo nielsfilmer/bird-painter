@@ -29,7 +29,7 @@ spot.</sub>
   your own machine. The only thing that goes out is a text prompt for the
   painting.
 - **It ages well.** Birds fade after a few hours, so the wall is never a
-  cluttered museum. Every painting is kept on disk regardless.
+  cluttered museum; the archive keeps a rolling month behind it.
 
 ## How it works
 
