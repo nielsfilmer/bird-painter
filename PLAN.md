@@ -110,15 +110,19 @@ the clip never reaches any cloud service.
     stable per-painting size and scatter (hashed from its filename, so layout
     is deterministic across reloads; birds stand upright — no rotation).
     Existing plates glide outward as newer ones arrive.
-  - **Full height first, widen with count, shrink only when full.** The
-    cluster oval's HEIGHT is fixed to the sub-title band; only its width
-    adapts. A few birds form a tall, horizontally-compact group in the middle
-    at their natural size (~16–20 vmin, a tight span so no bird renders far
-    smaller than its neighbours); as more arrive the oval widens (widen-to-fit,
-    starting one plate wide) until it hits the viewport cap, and only then does
-    one global fit-scale drop below 1 so every plate shrinks together. Plate
-    centres are clamped to the oval (the spiral's reach can exceed it — an
-    unbounded x used to flatten the group into a row).
+  - **A shelf first, then vertical growth around it.** The three OLDEST live
+    birds hold a single horizontal ROW across the band centre for good — a
+    packed shelf, oldest→newest reading left→right, whose members never move
+    or swap sides as the wall changes. Every newer bird spirals into the
+    full-height oval with the shelf as an obstacle AND a vertical clearance
+    (it must sit fully above or below the shelf, never level with it), so the
+    group grows vertically. Birds render at their natural size (~16–20 vmin, a
+    tight span so no bird renders far smaller than its neighbours); as more
+    arrive the oval widens (widen-to-fit, starting one plate wide) until it
+    hits the viewport cap, and only then does one global fit-scale drop below
+    1 so every plate shrinks together. Plate centres are clamped to the oval
+    (the spiral's reach can exceed it — an unbounded x used to flatten the
+    group into a row).
   - **Paintings are trimmed to the bird.** FLUX paints the bird small on a
     large flat-white canvas; at store time the white margin is cropped off
     (bounding-box + a small breathing margin, padded back to the plate's 4:5)
@@ -296,3 +300,9 @@ whole magic; ship it first.
   everything retention has kept, newest first, paginated, clips playable. The
   e-paper `/wall.png` never shows it (server raster has no DOM; test pins the
   split).
+- **2026-07-27** — **Shelf-anchored placement** (owner rule, corrected same
+  day): the three OLDEST live birds hold a horizontal row at the band centre
+  permanently; newer birds stack vertically around it. Two-phase layout: the
+  shelf is PACKED (oldest→newest, left→right, centred), then newer birds
+  spiral the full-height oval with the shelf as obstacles and a vertical
+  clearance (never level with it); one shared widen/shrink loop.

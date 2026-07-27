@@ -37,6 +37,7 @@ SHRINK_RETRIES = 8
 SHRINK_STEP = 0.9
 CLUSTER_W_FRAC = 0.92  # oval may widen to at most this fraction of the width
 CLUSTER_H_FRAC = 0.88  # oval height: this fraction of the sub-title band
+ROW_LIMIT = 3  # up to this many birds: one horizontal row (see layout.js)
 
 _U32 = 0xFFFFFFFF
 
@@ -76,12 +77,14 @@ def overlap_area(a: dict, b: dict) -> float:
     return max(0.0, w) * max(0.0, h)
 
 
-def _compute_layout(files, scale, vmin, half_w, half_h, bound_w, bound_h):
-    """One layout pass at a given scale — the phyllotaxis spiral bounded to a
-    central oval, clamped on screen. Returns (placed, fallbacks)."""
-    placed = []
+def _compute_layout(
+    entries, scale, vmin, half_w, half_h, bound_w, bound_h, placed, clear_half_h=0.0
+):
+    """One layout pass for a batch of (file, index) entries — mirrors
+    computeLayout in static/layout.js: spiral by LOCAL batch position, avoid
+    everything already in `placed` (appended to). Returns fallbacks."""
     fallbacks = 0
-    for index, file in enumerate(files):
+    for local, (file, index) in enumerate(entries):
         h = hash_str(file)
         size_vmin = (SIZE_MIN_VMIN + (h % SIZE_SPAN_VMIN)) * scale
         size_px = size_vmin * vmin
@@ -94,7 +97,7 @@ def _compute_layout(files, scale, vmin, half_w, half_h, bound_w, bound_h):
         clamp_y = min(half_h, max(0.0, bound_h - (image_h + caption_px(image_h)) / 2))
         best = None
         best_overlap = math.inf
-        t = index
+        t = local
         for _ in range(MAX_TRIES):
             angle = t * GOLDEN_ANGLE + jitter_a
             reach = math.sqrt(t) / math.sqrt(MAX_INDEX)
@@ -102,6 +105,12 @@ def _compute_layout(files, scale, vmin, half_w, half_h, bound_w, bound_h):
             y = math.sin(angle) * reach * half_h
             x = max(-clamp_x, min(clamp_x, x))
             y = max(-clamp_y, min(clamp_y, y))
+            if clear_half_h > 0:
+                # Owner rule: newer birds go ABOVE or BELOW the shelf, never
+                # level with it (see layout.js).
+                min_y = min(clear_half_h + box_h / 2, clamp_y)
+                if abs(y) < min_y:
+                    y = -min_y if (y < 0 or (y == 0 and math.sin(angle) < 0)) else min_y
             box = {"x": x, "y": y, "w": box_w, "h": box_h}
             overlap = sum(overlap_area(box, o["box"]) for o in placed)
             if overlap == 0:
@@ -115,7 +124,7 @@ def _compute_layout(files, scale, vmin, half_w, half_h, bound_w, bound_h):
         placed.append(
             {"box": best, "file": file, "size_vmin": size_vmin, "index": index}
         )
-    return placed, fallbacks
+    return fallbacks
 
 
 def compute_collage(files, w: float, h: float, band_top: float) -> list[Placement]:
@@ -131,17 +140,68 @@ def compute_collage(files, w: float, h: float, band_top: float) -> list[Placemen
         natural_area += (s + GAP_VMIN * vmin) * (
             image_h + caption_px(image_h) + GAP_VMIN * vmin
         )
-    # Full height first, widen-to-fit, shrink only when the screen is full —
-    # mirrors computeCollage in static/layout.js.
-    half_h = (CLUSTER_H_FRAC * band_h) / 2
     max_half_w = (CLUSTER_W_FRAC * w) / 2
     bound_w, bound_h = w / 2, band_h / 2
-    # Start as narrow as the widest single plate — a one-plate-wide column — so
-    # the group stacks vertically (fills the height) before it widens.
     max_box_w = 1.0
+    max_box_h = 1.0
     for file in files:
         s = (SIZE_MIN_VMIN + (hash_str(file) % SIZE_SPAN_VMIN)) * vmin
+        image_h = s * PLATE_ASPECT
         max_box_w = max(max_box_w, s + GAP_VMIN * vmin)
+        max_box_h = max(max_box_h, image_h + caption_px(image_h) + GAP_VMIN * vmin)
+    # The rule (mirrors static/layout.js): the up-to-ROW_LIMIT OLDEST birds
+    # keep a single horizontal row across the band centre for good; every
+    # newer bird stacks vertically around that shelf.
+    entries = [(file, index) for index, file in enumerate(files)]
+    row_count = min(ROW_LIMIT, len(entries))
+    row_entries = entries[len(entries) - row_count :]
+    tall_entries = entries[: len(entries) - row_count]
+    full_half_h = (CLUSTER_H_FRAC * band_h) / 2
+
+    def place_row(entries, scale, placed):
+        # The shelf is PACKED, not spiralled: oldest→newest runs left→right,
+        # centred as a block — members never swap sides as the wall grows.
+        # Wider-than-screen counts as fallbacks so the shrink loop engages.
+        boxes = []
+        for file, index in entries:
+            size_px = (SIZE_MIN_VMIN + (hash_str(file) % SIZE_SPAN_VMIN)) * scale * vmin
+            image_h = size_px * PLATE_ASPECT
+            boxes.append(
+                {
+                    "file": file, "index": index, "size_px": size_px,
+                    "box_w": size_px + GAP_VMIN * vmin,
+                    "box_h": image_h + caption_px(image_h) + GAP_VMIN * vmin,
+                }
+            )
+        ordered = list(reversed(boxes))  # entries slice is newest-first
+        total_w = sum(b["box_w"] for b in ordered)
+        fallbacks = 0
+        cursor = -total_w / 2
+        for b in ordered:
+            x = cursor + b["box_w"] / 2
+            cursor += b["box_w"]
+            if abs(x) + b["size_px"] / 2 > bound_w:
+                fallbacks += 1
+            placed.append(
+                {
+                    "box": {"x": x, "y": 0, "w": b["box_w"], "h": b["box_h"]},
+                    "file": b["file"],
+                    "size_vmin": b["size_px"] / vmin,
+                    "index": b["index"],
+                }
+            )
+        return fallbacks
+
+    def layout_pass(scale, half_w):
+        placed: list = []
+        fallbacks = place_row(row_entries, scale, placed)
+        row_clear_half = max((p["box"]["h"] / 2 for p in placed), default=0.0)
+        fallbacks += _compute_layout(
+            tall_entries, scale, vmin, half_w, full_half_h, bound_w, bound_h,
+            placed, row_clear_half,
+        )
+        return placed, fallbacks
+
     half_w0 = min(max_half_w, max_box_w / 2)
     scale = 1.0
     half_w = half_w0
@@ -150,25 +210,22 @@ def compute_collage(files, w: float, h: float, band_top: float) -> list[Placemen
     k = 1.0
     for _ in range(GROW_STEPS):
         half_w = min(max_half_w, half_w0 * k)
-        placed, fallbacks = _compute_layout(
-            files, scale, vmin, half_w, half_h, bound_w, bound_h
-        )
+        placed, fallbacks = layout_pass(scale, half_w)
         if fallbacks == 0 or half_w >= max_half_w:
             break
         k *= GROW_FACTOR
     if fallbacks > 0:
-        cluster_area = math.pi * half_w * half_h
+        seed_half_h = full_half_h if len(tall_entries) > 0 else max_box_h / 2
+        cluster_area = math.pi * half_w * seed_half_h
         scale = min(1.0, math.sqrt((FILL_FACTOR * cluster_area) / (natural_area or 1)))
-        placed, fallbacks = _compute_layout(
-            files, scale, vmin, half_w, half_h, bound_w, bound_h
-        )
+        placed, fallbacks = layout_pass(scale, half_w)
         i = 0
         while i < SHRINK_RETRIES and fallbacks > 0:
             scale *= SHRINK_STEP
-            placed, fallbacks = _compute_layout(
-                files, scale, vmin, half_w, half_h, bound_w, bound_h
-            )
+            placed, fallbacks = layout_pass(scale, half_w)
             i += 1
+    # Preserve the input (newest-first) order in the result.
+    placed.sort(key=lambda p: p["index"])
     return [
         Placement(
             file=p["file"],
