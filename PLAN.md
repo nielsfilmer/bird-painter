@@ -101,19 +101,23 @@ served locally off the same process.
     stable per-painting size and scatter (hashed from its filename, so layout
     is deterministic across reloads; birds stand upright — no rotation).
     Existing plates glide outward as newer ones arrive.
-  - **Big to start, smaller when crowded.** Plates render at a "big but not
-    huge" natural size (~22–26 vmin, a tight span so no bird renders far
-    smaller than its neighbours) when only a few birds are up; as the wall
-    fills past what the cluster can hold at full size, one global fit-scale
-    drops below 1 and every plate shrinks together — never bigger than the
-    starting size on a near-empty wall.
-  - **Framed like a naturalist wall-chart, filling the screen.** A fixed title
-    header sits at the top (small italic eyebrow "birds outside" + letterspaced
-    "heard recently"); the collage cluster sits centred below it — a central
-    oval filling most of BOTH viewport axes so it uses the whole screen (target:
-    a 16:9 display) rather than huddling in the middle. Its width is capped to a
-    multiple of its height, so a short/ultrawide screen still keeps side margins
-    instead of fanning the birds edge-to-edge into one thin band. Each bird
+  - **Full height first, widen with count, shrink only when full.** The
+    cluster oval's HEIGHT is fixed to the sub-title band; only its width
+    adapts. A few birds form a tall, horizontally-compact group in the middle
+    at their natural size (~16–20 vmin, a tight span so no bird renders far
+    smaller than its neighbours); as more arrive the oval widens (widen-to-fit,
+    starting one plate wide) until it hits the viewport cap, and only then does
+    one global fit-scale drop below 1 so every plate shrinks together. Plate
+    centres are clamped to the oval (the spiral's reach can exceed it — an
+    unbounded x used to flatten the group into a row).
+  - **Paintings are trimmed to the bird.** FLUX paints the bird small on a
+    large flat-white canvas; at store time the white margin is cropped off
+    (bounding-box + a small breathing margin, padded back to the plate's 4:5)
+    so the bird fills its plate. Fail-soft: SVG placeholders and unreadable
+    files are stored untouched. The archive keeps the trimmed painting.
+  - **Framed like a naturalist wall-chart.** A fixed title header sits at the
+    top (small italic eyebrow "birds outside" + letterspaced "heard recently");
+    the collage cluster sits centred below it. Each bird
     carries a **small per-bird label** — species (small-caps) + "heard at
     HH:MM" (italic, 24-hour) — added programmatically as page text, **never
     baked into the image**. The label is a **fixed clock time, not "x min
@@ -254,3 +258,9 @@ whole magic; ship it first.
   Surfaced during the real two-box install: the previous hardcoded
   `127.0.0.1` bind made the recorder unreachable from the frame. `127.0.0.1`
   remains available via `BP_HOST` for a single-machine setup.
+- **2026-07-27** — Wall look reworked after live-preview sign-off (user ran it
+  on the frame from 2026-07-25): placement is now **full height first → widen
+  with count → shrink only when the screen is full** (plates 16–20 vmin,
+  centres clamped to the oval), and paintings are **trimmed to the bird** at
+  store time so the bird fills its plate. Supersedes the 2026-07-20 "fills
+  both axes / big-to-start" rule from PR #59.

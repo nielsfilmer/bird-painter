@@ -270,6 +270,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `runner.py` — `PaintRunner`: detections → gate → brush → store; the
     callback the mic feeds. Only a successful paint consumes a cap slot.
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
+  - `trim.py` — `trim_to_bird(...)`: crops the flat-white margin off a painting
+    at store time (padded back to 4:5) so the bird fills its plate; fail-soft
+    on SVG placeholders/unreadable files.
   - `web.py` — FastAPI app via `create_app(config)` factory (no import-time
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
     `/wall.png`, `/images/*`, `/dev/paint/*`.
@@ -312,7 +315,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
 - `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API,
-  wall-layout port + JS-parity, /wall.png render; import-purity regression).
+  wall-layout port + JS-parity, /wall.png render, painting trim; import-purity
+  regression).
   Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
   milestones/issues (backs the `/status` skill).
