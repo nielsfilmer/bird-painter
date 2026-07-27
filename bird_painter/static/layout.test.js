@@ -95,10 +95,9 @@ test("a sparse wall is a tall central group: full height first, narrow width", (
 });
 
 test("on a short wide screen the width cap leaves side margins", () => {
-  // The width cap (CLUSTER_ASPECT × half-height) keeps a short, wide display
-  // from fanning the birds edge-to-edge into one thin full-width band. On
-  // 2400x1000 the cap bites (height-limited), leaving ~7% side margin; without
-  // it the plates would clamp right to the edge (~0.5·W).
+  // The width cap (CLUSTER_W_FRAC of the viewport) keeps a short, wide
+  // display from fanning the birds edge-to-edge into one full-width band —
+  // the widen-to-fit loop stops at that cap, leaving side margins.
   const [W, H] = [2400, 1000];
   const bandTop = 150;
   const vmin = Math.min(W, H) / 100;
