@@ -281,7 +281,7 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     on SVG placeholders/unreadable files.
   - `web.py` — FastAPI app via `create_app(config)` factory (no import-time
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
-    `/wall.png`, `/images/*`, `/dev/paint/*`.
+    `/api/archive`, `/wall.png`, `/images/*`, `/audio/*`, `/dev/paint/*`.
   - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
     (the collage placement maths), so `/wall.png` places birds identically to
     the live wall. A parity test keeps the two in sync.

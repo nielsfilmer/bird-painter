@@ -194,8 +194,8 @@ repaint cooldown — one knob, not two.
 whole magic; ship it first.
 
 **Fast-follows (post-v0):**
-- Archive browser view (scroll everything ever painted — the archive already
-  exists from v0).
+- ~~Archive browser view~~ — shipped 2026-07-27 ("heard this month" overlay,
+  browser wall only; the archive is a rolling month under retention).
 - ~~Location/season filter on (cut implausible species).~~ **Shipped** — opt-in
   via `BP_LATITUDE`/`BP_LONGITUDE` (see the v0 config table).
 - Style switcher; `dev`/`pro` quality tier.
@@ -291,3 +291,8 @@ whole magic; ship it first.
   deleted — the archive is a rolling month, superseding v0's "archived
   forever" stance. Purge runs at boot + throttled from the read path, and
   compacts meta.jsonl atomically.
+- **2026-07-27** — **Archive browser shipped** (fast-follow): a muted "archive"
+  button on the browser wall opens a full-screen "heard this month" overlay —
+  everything retention has kept, newest first, paginated, clips playable. The
+  e-paper `/wall.png` never shows it (server raster has no DOM; test pins the
+  split).
