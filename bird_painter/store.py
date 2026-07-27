@@ -1,10 +1,12 @@
-"""Painting store: permanent disk archive + ephemeral live view.
+"""Painting store: rolling disk archive + ephemeral live view.
 
-Every painting is archived forever (image file + a metadata line in
-meta.jsonl). The wall only shows paintings younger than the TTL; expiry hides,
-never deletes. The per-species last_painted_at map — the repaint-cooldown key,
-independent of wall presence (PLAN.md trigger rule) — is derived from the same
-metadata, so it survives restarts.
+Every painting is archived (image file + optional detection clip + a metadata
+line in meta.jsonl) and kept for a rolling month (BP_RETENTION_DAYS; the purge
+below). The wall only shows paintings younger than the TTL; TTL expiry hides
+without deleting — deletion is the retention purge's job. The per-species
+last_painted_at map — the repaint-cooldown key, independent of wall presence
+(PLAN.md trigger rule) — is derived from the same metadata, so it survives
+restarts.
 """
 
 from __future__ import annotations
@@ -165,7 +167,7 @@ class Store:
     ) -> Painting:
         born_at = time.time()
         # uuid suffix: same-species-same-second paints must never overwrite an
-        # archived file ("archived forever" — PLAN.md).
+        # archived file (the archive is append-only until the retention purge).
         filename = (
             f"{int(born_at)}_{slugify(species_common)}_{uuid.uuid4().hex[:8]}.{extension}"
         )

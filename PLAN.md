@@ -44,9 +44,9 @@ sitting between recognize and generate:
    (cost ceiling).
 4. **Generate** — call a hosted image model with a prompt built from the
    species + the fixed house style; get back a painting.
-5. **Display** — save the painting to the permanent archive, add it to the live
-   set, and show it on the wall. A sweeper fades out (hides) paintings past
-   their TTL; the archive keeps the files.
+5. **Display** — save the painting to the archive, add it to the live set, and
+   show it on the wall. A sweeper fades out (hides) paintings past their TTL;
+   the archive keeps the files for a rolling month (the retention purge).
 
 ## Architecture
 
