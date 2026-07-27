@@ -334,12 +334,12 @@ workflow/process decisions:
   `PLAN.md` (ambient installation, local Python service, BirdNET + fal FLUX
   `schnell`, ephemeral wall). `PLAN.md`'s own decision log holds the product
   details.
-- **2026-07-27** — **Review/QA agents always run on Opus** (`model: "opus"`),
-  regardless of the main session's model. User instruction, standing.
 - **2026-07-18** — **User removed themselves as merge gate for this repo,
   permanently.** Claude merges clean, fully-reviewed PRs itself and notifies
   (workflow step 5). Scope: PR merges only; the review loop still gates. Mirror
   of the `crypto-trader` arrangement. Also recorded in global `~/.claude/CLAUDE.md`.
+- **2026-07-27** — **Review/QA agents always run on Opus** (`model: "opus"`),
+  regardless of the main session's model. User instruction, standing.
 
 ## Phase trackers
 
