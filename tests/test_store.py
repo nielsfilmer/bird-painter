@@ -135,3 +135,106 @@ def test_concurrent_adds_do_not_interleave_meta_lines(store):
     for line in lines:
         json.loads(line)
     assert len(store.live()) == 100
+
+
+def _add(store, species, **kw):
+    defaults = dict(
+        image_bytes=b"img", extension="svg", species_common=species,
+        species_scientific="x", confidence=0.9, source="detection",
+    )
+    defaults.update(kw)
+    return store.add(**defaults)
+
+
+def test_purge_removes_old_artifacts_and_keeps_young(archive_dir, monkeypatch):
+    from bird_painter import store as store_mod
+
+    clock = {"t": 1_000_000.0}
+    monkeypatch.setattr(store_mod.time, "time", lambda: clock["t"])
+    store = store_mod.Store(archive_dir, ttl_seconds=100, retention_seconds=1000)
+    old = _add(store, "Old Bird", audio_bytes=b"wav")
+    clock["t"] += 600
+    young = _add(store, "Young Bird")
+    clock["t"] = old.born_at + 1500  # old past retention (1000), young not
+
+    assert store.purge_expired() == 1
+    assert [p.species_common for p in store._paintings] == ["Young Bird"]
+    # Purged files are gone — image AND clip.
+    assert not (archive_dir / old.file).exists()
+    assert store.audio_file_for(old.file) is None
+    assert (archive_dir / young.file).exists()
+
+
+def test_purge_compacts_meta_so_reload_cannot_resurrect(archive_dir, monkeypatch):
+    from bird_painter import store as store_mod
+
+    clock = {"t": 1_000_000.0}
+    monkeypatch.setattr(store_mod.time, "time", lambda: clock["t"])
+    store = store_mod.Store(archive_dir, ttl_seconds=100, retention_seconds=1000)
+    _add(store, "Old Bird")
+    clock["t"] += 1500
+    _add(store, "Young Bird")
+    store.purge_expired()
+    # A fresh store (reboot) sees only the survivor.
+    reloaded = store_mod.Store(archive_dir, ttl_seconds=100, retention_seconds=1000)
+    assert [p.species_common for p in reloaded._paintings] == ["Young Bird"]
+
+
+def test_boot_purge_runs_on_construction(archive_dir, monkeypatch):
+    from bird_painter import store as store_mod
+
+    clock = {"t": 1_000_000.0}
+    monkeypatch.setattr(store_mod.time, "time", lambda: clock["t"])
+    store = store_mod.Store(archive_dir, ttl_seconds=100, retention_seconds=1000)
+    old = _add(store, "Old Bird")
+    clock["t"] += 5000  # wall was off for a long time
+    rebooted = store_mod.Store(archive_dir, ttl_seconds=100, retention_seconds=1000)
+    assert rebooted._paintings == []
+    assert not (archive_dir / old.file).exists()
+
+
+def test_live_triggers_throttled_purge(archive_dir, monkeypatch):
+    from bird_painter import store as store_mod
+
+    clock = {"t": 1_000_000.0}
+    monkeypatch.setattr(store_mod.time, "time", lambda: clock["t"])
+    store = store_mod.Store(archive_dir, ttl_seconds=10**9, retention_seconds=1000)
+    _add(store, "Old Bird")
+    # Advance beyond retention AND the purge throttle; live() should purge.
+    clock["t"] += 5000
+    assert store.live() == []
+    assert store._paintings == []
+
+
+def test_retention_none_disables_purging(archive_dir, monkeypatch):
+    from bird_painter import store as store_mod
+
+    clock = {"t": 1_000_000.0}
+    monkeypatch.setattr(store_mod.time, "time", lambda: clock["t"])
+    store = store_mod.Store(archive_dir, ttl_seconds=10**9, retention_seconds=None)
+    _add(store, "Forever Bird")
+    clock["t"] += 10**8
+    assert store.purge_expired() == 0
+    assert len(store._paintings) == 1
+
+
+def test_purge_never_deletes_outside_the_archive(tmp_path, monkeypatch):
+    """A corrupt/crafted meta record with a traversal filename must not reach
+    outside the archive dir (PoC'd during PR #75 review: it did)."""
+    import json
+    import time as _time
+
+    from bird_painter import store as store_mod
+
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious")
+    record = {
+        "file": "../victim.txt", "species_common": "Evil",
+        "species_scientific": "x", "confidence": 0.9,
+        "born_at": _time.time() - 10**8, "source": "detection",
+    }
+    (archive / "meta.jsonl").write_text(json.dumps(record) + "\n")
+    store_mod.Store(archive, ttl_seconds=100, retention_seconds=1000)  # boot purge
+    assert victim.exists(), "purge escaped the archive dir"

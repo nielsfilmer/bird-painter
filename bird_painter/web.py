@@ -68,7 +68,11 @@ def _start_listener(config: Config, runner: PaintRunner) -> None:
 
 def create_app(config: Config | None = None) -> FastAPI:
     config = load_config() if config is None else config
-    store = Store(config.archive_dir, config.paint_ttl_seconds)
+    store = Store(
+        config.archive_dir,
+        config.paint_ttl_seconds,
+        retention_seconds=config.retention_days * 24 * 60 * 60,
+    )
     gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
     runner = PaintRunner(config, store, gate)
 

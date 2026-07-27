@@ -29,7 +29,7 @@ spot.</sub>
   your own machine. The only thing that goes out is a text prompt for the
   painting.
 - **It ages well.** Birds fade after a few hours, so the wall is never a
-  cluttered museum. Every painting is kept on disk regardless.
+  cluttered museum; the archive keeps a rolling month behind it.
 
 ## How it works
 
@@ -112,8 +112,9 @@ Parts list and setup notes: [`docs/hardware.md`](docs/hardware.md).
 - **A painting can just not arrive.** If the image service is slow, down, or
   out of credit, that bird is skipped and logged — nothing crashes, and the
   species simply paints the next time it's heard.
-- **The archive grows forever.** Every painting is kept on disk; there's no
-  pruning yet.
+- **The archive is a rolling month.** Paintings and their sound clips are
+  deleted after 31 days (`BP_RETENTION_DAYS`) — the wall is about what's been
+  heard lately, not a permanent collection.
 
 ## Development
 
