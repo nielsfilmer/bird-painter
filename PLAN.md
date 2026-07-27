@@ -277,3 +277,10 @@ whole magic; ship it first.
   LAN at `/audio/*`, replayed by clicking the bird on the browser wall. The
   clip stays inside the house (never sent to any cloud). Growth bounded by the
   planned 1-month retention purge.
+- **2026-07-27** — **Occasion hats** (owner feature request): on special days
+  birds are painted wearing a tiny hat, woven into the FLUX prompt (the one
+  place in-image content is right — it's the subject, not a label). Public
+  holidays (New Year, King's Day, Halloween, Sinterklaas, Christmas) live in
+  code; personal days (family birthdays, one-off parties) come ONLY from env
+  (`BP_HAT_DAYS`/`BP_HAT_DATES`) so they never enter this public repo.
+  Personal days take precedence and always get the party hat.

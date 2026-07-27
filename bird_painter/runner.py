@@ -4,6 +4,7 @@ wall."""
 
 from __future__ import annotations
 
+import datetime
 import logging
 
 import numpy as np
@@ -13,6 +14,7 @@ from .brush import paint as paint_species
 from .config import Config
 from .ears import Detection
 from .gate import TriggerGate
+from .occasions import hat_for
 from .store import Store
 from .trim import trim_to_bird
 
@@ -48,6 +50,9 @@ class PaintRunner:
             detection.species_scientific,
             fal_key=self.config.fal_key,
             model=self.config.fal_model,
+            hat=hat_for(
+                datetime.date.today(), self.config.hat_days, self.config.hat_dates
+            ),
         )
         if result is None:
             # Soft failure (fal outage / no key): nothing marked painted, no

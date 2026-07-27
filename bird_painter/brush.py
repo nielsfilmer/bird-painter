@@ -33,6 +33,9 @@ UNKNOWN_SCIENTIFIC = "Species incognita"
 # far better — recommended if text/paper still leak through.
 PROMPT_TEMPLATE = (
     "A single {name} bird, hand-painted naturalist watercolor, the whole bird "
+    # "perched in full side view" is a LOAD-BEARING ANCHOR: build_prompt splices
+    # the occasion hat in right after it (a test pins this). If you reword it,
+    # update build_prompt's replace + the test together.
     "perched in full side view, soft muted natural colors, fine feather "
     "detail, cleanly isolated and centred on a pure flat bright white "
     "background, the bird is the only thing in the image. No text, no words, "
@@ -42,11 +45,22 @@ PROMPT_TEMPLATE = (
 )
 
 
-def build_prompt(species_common: str, species_scientific: str) -> str:
+def build_prompt(
+    species_common: str, species_scientific: str, hat: str | None = None
+) -> str:
     name = species_common
     if species_scientific and species_scientific != UNKNOWN_SCIENTIFIC:
         name = f"{species_common} ({species_scientific})"
-    return PROMPT_TEMPLATE.format(name=name)
+    prompt = PROMPT_TEMPLATE.format(name=name)
+    if hat:
+        # Occasion easter egg (see occasions.py): woven in right after the
+        # bird so the hat reads as part of the subject, before the no-text
+        # tail so that still binds last.
+        prompt = prompt.replace(
+            "perched in full side view",
+            f"perched in full side view, {hat}",
+        )
+    return prompt
 
 
 def paint(
@@ -55,12 +69,13 @@ def paint(
     *,
     fal_key: str,
     model: str = DEFAULT_MODEL,
+    hat: str | None = None,
 ) -> tuple[bytes, str] | None:
     """Paint one bird. Returns (image_bytes, extension) or None on failure."""
     if not fal_key:
         logger.warning("brush: FAL_KEY not set; cannot paint %s", species_common)
         return None
-    prompt = build_prompt(species_common, species_scientific)
+    prompt = build_prompt(species_common, species_scientific, hat)
     try:
         response = httpx.post(
             f"{FAL_BASE}/{model}",
