@@ -125,6 +125,92 @@
     transition: opacity 1.8s ease;
   }
   #empty.hidden { opacity: 0; }
+  /* Archive: a quiet corner button + a full-screen overlay. Browser wall
+     only — the server-rendered /wall.png never contains page chrome. */
+  #archive-button {
+    position: fixed;
+    right: 2vmin;
+    bottom: 1.6vmin;
+    z-index: 3;
+    font-style: italic;
+    font-size: clamp(11px, 1.4vmin, 15px);
+    color: var(--ink-dim);
+    background: none;
+    border: none;
+    font-family: inherit;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    opacity: 0.75;
+  }
+  #archive-button:hover { opacity: 1; text-decoration: underline; }
+  #archive {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: inherit;
+    overflow-y: auto;
+    padding: 5vmin 6vmin;
+    display: none;
+  }
+  #archive.open { display: block; }
+  #archive h2 {
+    font-variant: small-caps;
+    letter-spacing: 0.18em;
+    font-weight: normal;
+    font-size: clamp(18px, 3vmin, 34px);
+    text-align: center;
+    margin-bottom: 3vmin;
+  }
+  #archive-close {
+    position: fixed;
+    top: 2vmin;
+    right: 2.5vmin;
+    z-index: 11;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: clamp(20px, 3vmin, 30px);
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+  #archive-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 3vmin 2vmin;
+  }
+  .arch-card { text-align: center; }
+  .arch-card img {
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+    mix-blend-mode: multiply;
+    -webkit-mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
+    mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
+  }
+  .arch-card.has-audio { cursor: pointer; }
+  .arch-card.playing img { animation: sing 1.1s ease-in-out infinite; }
+  .arch-card .species {
+    font-variant: small-caps;
+    letter-spacing: 0.05em;
+    font-size: clamp(9px, 1.1vmin, 13px);
+  }
+  .arch-card .when {
+    font-style: italic;
+    font-size: clamp(8px, 0.95vmin, 11px);
+    color: #6b5e45;
+  }
+  #archive-more {
+    display: block;
+    margin: 4vmin auto 1vmin;
+    background: none;
+    border: 1px solid var(--ink-dim);
+    font-family: inherit;
+    font-style: italic;
+    color: var(--ink);
+    padding: 0.8vmin 2.4vmin;
+    cursor: pointer;
+  }
+  #archive-more.done { display: none; }
 </style>
 </head>
 <body>
@@ -134,6 +220,13 @@
 </div>
 <div id="empty">listening…</div>
 <div id="wall"></div>
+<button id="archive-button" title="everything heard this month">archive</button>
+<div id="archive">
+  <button id="archive-close" title="back to the wall">&times;</button>
+  <h2>heard this month</h2>
+  <div id="archive-grid"></div>
+  <button id="archive-more">more</button>
+</div>
 <script type="module">
 import { computeCollage } from "/layout.js";
 
@@ -262,6 +355,62 @@ async function refresh() {
 
 refresh();
 setInterval(refresh, 5000);
+
+// ---- archive overlay (browser only; /wall.png renders none of this) ----
+const archivePanel = document.getElementById("archive");
+const archiveGrid = document.getElementById("archive-grid");
+const archiveMore = document.getElementById("archive-more");
+let archiveOffset = 0;
+
+function whenText(bornAt) {
+  const t = new Date(bornAt * 1000);
+  return `${t.getDate()} ${t.toLocaleString([], { month: "short" })}, ` +
+    t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+}
+
+async function loadArchivePage() {
+  let data;
+  try {
+    const res = await fetch(`/api/archive?offset=${archiveOffset}&limit=60`);
+    if (!res.ok) return;
+    data = await res.json();
+  } catch { return; }
+  for (const p of data.paintings) {
+    const card = document.createElement("figure");
+    card.className = "arch-card";
+    const img = document.createElement("img");
+    img.src = `/images/${encodeURIComponent(p.file)}`;
+    img.alt = `Painting of ${p.species_common}`;
+    img.loading = "lazy";
+    const cap = document.createElement("figcaption");
+    const species = document.createElement("div");
+    species.className = "species";
+    species.textContent = p.species_common;
+    const when = document.createElement("div");
+    when.className = "when";
+    when.textContent = whenText(p.born_at);
+    cap.append(species, when);
+    card.append(img, cap);
+    if (p.audio) {
+      card.classList.add("has-audio");
+      card.title = "click to hear the song that painted this bird";
+      card.addEventListener("click", () => playClip(card, p.audio));
+    }
+    archiveGrid.appendChild(card);
+  }
+  archiveOffset += data.paintings.length;
+  archiveMore.classList.toggle("done", archiveOffset >= data.total);
+}
+
+document.getElementById("archive-button").addEventListener("click", () => {
+  archivePanel.classList.add("open");
+  if (archiveOffset === 0) loadArchivePage();
+});
+document.getElementById("archive-close").addEventListener("click", () => {
+  archivePanel.classList.remove("open");
+  if (nowPlaying) { nowPlaying.audio.pause(); nowPlaying.fig.classList.remove("playing"); nowPlaying = null; }
+});
+archiveMore.addEventListener("click", loadArchivePage);
 </script>
 </body>
 </html>

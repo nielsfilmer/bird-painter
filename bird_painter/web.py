@@ -146,6 +146,31 @@ def create_app(config: Config | None = None) -> FastAPI:
         )
         return Response(content=png, media_type="image/png")
 
+    @app.get("/api/archive")
+    def archive(offset: int = 0, limit: int = 60) -> JSONResponse:
+        """The browsable archive (browser wall only — the e-paper /wall.png
+        render never shows it): everything retention has kept, newest first,
+        paginated."""
+        offset = max(0, offset)
+        limit = max(1, min(limit, 200))
+        everything = store.all_paintings()
+        page = everything[offset : offset + limit]
+        return JSONResponse(
+            {
+                "total": len(everything),
+                "offset": offset,
+                "paintings": [
+                    {
+                        "file": p.file,
+                        "species_common": p.species_common,
+                        "born_at": p.born_at,
+                        "audio": store.audio_file_for(p.file),
+                    }
+                    for p in page
+                ],
+            }
+        )
+
     @app.get("/audio/{filename}")
     def audio(filename: str) -> FileResponse:
         """The archived detection clip behind a painting (see /api/live's

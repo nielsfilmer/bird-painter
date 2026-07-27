@@ -192,6 +192,11 @@ class Store:
             self._paintings.append(painting)
         return painting
 
+    def all_paintings(self) -> list[Painting]:
+        """Everything retention has kept, newest first — the archive view."""
+        self.maybe_purge()
+        return sorted(self._paintings, key=lambda p: -p.born_at)
+
     def live(self, now: float | None = None) -> list[Painting]:
         self.maybe_purge(now)
         """Non-expired paintings, newest first."""

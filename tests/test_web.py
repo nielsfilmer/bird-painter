@@ -162,3 +162,36 @@ def test_audio_endpoint_serves_clip_and_api_live_links_it(config):
         assert response.headers["content-type"] == "audio/wav"
         assert client.get("/audio/nope.wav").status_code == 404
         assert client.get("/audio/..%2Fmeta.jsonl").status_code == 404
+
+
+def test_api_archive_paginates_everything_newest_first(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        for species in ("robin", "wren", "junco"):
+            client.post(f"/dev/paint/{species}")
+        body = client.get("/api/archive?limit=2").json()
+        assert body["total"] == 3
+        assert len(body["paintings"]) == 2
+        assert body["paintings"][0]["species_common"] == "Junco"  # newest first
+        page2 = client.get("/api/archive?offset=2&limit=2").json()
+        assert [p["species_common"] for p in page2["paintings"]] == ["Robin"]
+        # every entry carries file/species/born_at/audio
+        for p in body["paintings"]:
+            assert set(p) == {"file", "species_common", "born_at", "audio"}
+
+
+def test_api_archive_clamps_junk_paging(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        client.post("/dev/paint/robin")
+        assert client.get("/api/archive?offset=-5&limit=9999").json()["total"] == 1
+        assert client.get("/api/archive?offset=999").json()["paintings"] == []
+
+
+def test_archive_button_and_overlay_only_in_the_browser_page(client):
+    # The wall page ships the archive UI…
+    page = client.get("/").text
+    assert "archive-button" in page
+    # …and the e-paper /wall.png is a server-side raster that renders paintings
+    # only — no DOM, so no button can appear (see render.py). Sanity: PNG magic.
+    assert client.get("/wall.png").content[:8] == b"\x89PNG\r\n\x1a\n"
