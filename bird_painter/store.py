@@ -127,6 +127,11 @@ class Store:
                 return 0
             for p in expired:
                 for name in (p.file, f"{Path(p.file).stem}.wav"):
+                    # Same guard as the serving paths: a corrupt/crafted meta
+                    # record must never delete outside the archive dir.
+                    if name != Path(name).name:
+                        logger.warning("purge: refusing suspicious name %r", name)
+                        continue
                     try:
                         (self.archive_dir / name).unlink(missing_ok=True)
                     except OSError:
