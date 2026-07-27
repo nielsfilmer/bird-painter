@@ -209,10 +209,10 @@ class Config:
     # Occasion hats: personal party-hat days (DD-MM, recurring) and one-time
     # dates (DD-MM-YYYY) — env-only so they stay out of the public repo.
     # Public holidays are in occasions.py.
-    hat_days: tuple = field(
+    hat_days: tuple[tuple[int, int], ...] = field(
         default_factory=lambda: _hat_days(os.environ.get("BP_HAT_DAYS"))
     )
-    hat_dates: tuple = field(
+    hat_dates: tuple[datetime.date, ...] = field(
         default_factory=lambda: _hat_dates(os.environ.get("BP_HAT_DATES"))
     )
     # Start the live mic listener alongside the wall. Off → wall-only (tests,

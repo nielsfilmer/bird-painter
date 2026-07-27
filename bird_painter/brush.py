@@ -33,6 +33,9 @@ UNKNOWN_SCIENTIFIC = "Species incognita"
 # far better — recommended if text/paper still leak through.
 PROMPT_TEMPLATE = (
     "A single {name} bird, hand-painted naturalist watercolor, the whole bird "
+    # "perched in full side view" is a LOAD-BEARING ANCHOR: build_prompt splices
+    # the occasion hat in right after it (a test pins this). If you reword it,
+    # update build_prompt's replace + the test together.
     "perched in full side view, soft muted natural colors, fine feather "
     "detail, cleanly isolated and centred on a pure flat bright white "
     "background, the bird is the only thing in the image. No text, no words, "
