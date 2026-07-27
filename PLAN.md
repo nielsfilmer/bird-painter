@@ -110,11 +110,10 @@ the clip never reaches any cloud service.
     stable per-painting size and scatter (hashed from its filename, so layout
     is deterministic across reloads; birds stand upright — no rotation).
     Existing plates glide outward as newer ones arrive.
-  - **A shelf first, then full height, widen with count, shrink only when
-    full.** The first three birds sit in a single horizontal ROW (a wall
-    starting its day reads as a neat shelf); from the fourth bird the cluster
-    oval's HEIGHT opens to the sub-title band and only its width
-    adapts. A few birds form a tall, horizontally-compact group in the middle
+  - **A shelf first, then vertical growth around it.** The three OLDEST live
+    birds keep a single horizontal ROW across the band centre for good (a
+    neat shelf); every newer bird spirals into the full-height oval with the
+    shelf as an obstacle, so the group grows vertically above and below it. A few birds form a tall, horizontally-compact group in the middle
     at their natural size (~16–20 vmin, a tight span so no bird renders far
     smaller than its neighbours); as more arrive the oval widens (widen-to-fit,
     starting one plate wide) until it hits the viewport cap, and only then does
@@ -298,7 +297,8 @@ whole magic; ship it first.
   everything retention has kept, newest first, paginated, clips playable. The
   e-paper `/wall.png` never shows it (server raster has no DOM; test pins the
   split).
-- **2026-07-27** — **Row-first placement** (owner rule): the first three birds
-  form a single horizontal row; from the fourth, the full-height-first rule
-  takes over. Implemented as a near-zero-height oval for ≤3 birds (same widen
-  loop), shrink seed keeps the row's real height.
+- **2026-07-27** — **Shelf-anchored placement** (owner rule, corrected same
+  day): the three OLDEST live birds hold a horizontal row at the band centre
+  permanently; newer birds stack vertically around it. Two-phase layout: the
+  row lays out in a ~zero-height oval, then newer birds spiral the full-height
+  oval with the shelf as obstacles; one shared widen/shrink loop.

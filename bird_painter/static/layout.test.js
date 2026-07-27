@@ -97,32 +97,34 @@ test("the first three birds form a single horizontal row", () => {
   }
 });
 
-test("a sparse wall is a tall central group: full height first, narrow width", () => {
-  // The placement rule: the group always uses the sub-title band's height and
-  // only widens as birds arrive — so a few birds must form a tall,
-  // horizontally-compact group in the middle, never a wide row.
+test("newer birds stack vertically around the anchored shelf", () => {
+  // The corrected rule: the three OLDEST birds keep the horizontal row at the
+  // band centre for good; every newer bird lands clear of the row, above or
+  // below, growing the group vertically.
   const [W, H] = [1920, 1080];
   const bandTop = 150;
-  const bandH = H - bandTop;
-  const vmin = Math.min(W, H) / 100;
   for (let seed = 1; seed <= 20; seed++) {
-    const placed = computeCollage(randomFiles(makeRng(seed), 4), W, H, bandTop);
-    let xReach = 0, yMin = Infinity, yMax = -Infinity;
-    for (const p of placed) {
-      const imageH = p.sizeVmin * vmin * PLATE_ASPECT;
-      xReach = Math.max(xReach, Math.abs(p.x) + (p.sizeVmin * vmin) / 2);
-      yMin = Math.min(yMin, p.y - imageH / 2);
-      yMax = Math.max(yMax, p.y + imageH / 2);
+    for (const n of [4, 6, 8]) {
+      const placed = computeCollage(randomFiles(makeRng(seed), n), W, H, bandTop);
+      const row = placed.slice(n - 3); // input is newest-first; oldest = tail
+      for (const p of row) {
+        assert.ok(
+          Math.abs(p.y - bandTop / 2) <= 3,
+          `seed ${seed} n=${n}: shelf bird drifted ${p.y.toFixed(1)}`,
+        );
+      }
+      for (const p of placed.slice(0, n - 3)) {
+        assert.ok(
+          Math.abs(p.y - bandTop / 2) >= 100,
+          `seed ${seed} n=${n}: newer bird sitting on the shelf (y=${p.y.toFixed(0)})`,
+        );
+      }
+      const ys = placed.map(p => p.y);
+      assert.ok(
+        Math.max(...ys) - Math.min(...ys) >= (n >= 6 ? 450 : 250),
+        `seed ${seed} n=${n}: group not growing vertically`,
+      );
     }
-    // Narrow: stays within ~a quarter of the width. Tall: spans most of the band.
-    assert.ok(
-      xReach <= W * 0.25,
-      `seed ${seed}: sparse wall too wide — reached ${xReach.toFixed(0)}px`,
-    );
-    assert.ok(
-      yMax - yMin >= bandH * 0.55,
-      `seed ${seed}: sparse wall too flat — spans ${(yMax - yMin).toFixed(0)}px of ${bandH}px band`,
-    );
   }
 });
 
@@ -186,16 +188,16 @@ test("every plate stays on screen and below the title band", () => {
   }
 });
 
-test("newest bird (index 0) sits at the band centre, on top", () => {
-  const files = randomFiles(makeRng(3), 6);
+test("newest bird is on top; the shelf belongs to the oldest three", () => {
   const [W, H] = [1280, 800];
   const bandTop = 140;
-  const placed = computeCollage(files, W, H, bandTop);
-  const newest = placed[0];
-  assert.equal(newest.file, files[0]);
-  assert.equal(newest.x, 0);
-  assert.equal(newest.y, bandTop / 2); // band centre offset
-  assert.ok(placed.every(p => p === newest || p.z < newest.z));
+  // With three or fewer birds, the newest sits ON the shelf…
+  const three = computeCollage(randomFiles(makeRng(3), 3), W, H, bandTop);
+  assert.ok(Math.abs(three[0].y - bandTop / 2) <= 3);
+  // …with more, the newest is OFF the shelf but still z-topmost.
+  const six = computeCollage(randomFiles(makeRng(3), 6), W, H, bandTop);
+  assert.ok(Math.abs(six[0].y - bandTop / 2) >= 100, "newest crowded the shelf");
+  assert.ok(six.every(p => p === six[0] || p.z < six[0].z), "newest not on top");
 });
 
 test("a zero-size viewport yields no placements (no 0-size plates)", () => {

@@ -73,14 +73,15 @@ export function overlapArea(a, b) {
   return Math.max(0, w) * Math.max(0, h);
 }
 
-// One layout pass at a given scale. Places plates on a phyllotaxis spiral
-// bounded to a central oval (halfW x halfH), clamped to stay on screen
-// (boundW/boundH are the viewport half-extents). Returns the chosen boxes
-// plus how many plates had to settle for an overlapping spot (fallbacks).
-function computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH) {
-  const placed = [];
+// One layout pass at a given scale for a batch of entries ({file, index} —
+// index is the wall-wide position, used for z; the spiral walks by the LOCAL
+// position within the batch). Plates walk a phyllotaxis spiral bounded to a
+// central oval (halfW x halfH), clamped to stay on screen (boundW/boundH are
+// the viewport half-extents), avoiding everything already in `placed`
+// (appended to). Returns how many plates had to settle for an overlap.
+function computeLayout(entries, scale, vmin, halfW, halfH, boundW, boundH, placed) {
   let fallbacks = 0;
-  files.forEach((file, index) => {
+  entries.forEach(({ file, index }, local) => {
     const h = hash(file);
     const sizeVmin = (SIZE_MIN_VMIN + (h % SIZE_SPAN_VMIN)) * scale;
     const sizePx = sizeVmin * vmin;
@@ -93,7 +94,7 @@ function computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH) {
     const clampX = Math.min(halfW, Math.max(0, boundW - sizePx / 2));
     const clampY = Math.min(halfH, Math.max(0, boundH - (imageH + captionPx(imageH)) / 2));
     let best = null, bestOverlap = Infinity;
-    for (let t = index, tries = 0; tries < MAX_TRIES; tries++, t += SPIRAL_STEP) {
+    for (let t = local, tries = 0; tries < MAX_TRIES; tries++, t += SPIRAL_STEP) {
       const angle = t * GOLDEN_ANGLE + jitterA;
       const reach = Math.sqrt(t) / Math.sqrt(MAX_INDEX);
       let x = Math.cos(angle) * reach * halfW;
@@ -108,7 +109,7 @@ function computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH) {
     if (bestOverlap > 0) fallbacks++;
     placed.push({ box: best, file, sizeVmin, index });
   });
-  return { placed, fallbacks };
+  return fallbacks;
 }
 
 export function computeCollage(files, W, H, bandTop) {
@@ -123,15 +124,8 @@ export function computeCollage(files, W, H, bandTop) {
     const imageH = s * PLATE_ASPECT;
     return sum + (s + GAP_VMIN * vmin) * (imageH + captionPx(imageH) + GAP_VMIN * vmin);
   }, 0);
-  // Full height first: the oval's height is fixed to the sub-title band; only
-  // its width adapts. Start from the width the content's own area implies
-  // (ellipse area = π·halfW·halfH) and widen until every plate finds a free
-  // spot — so a few birds form a tall, horizontally-compact group at full size,
-  // and the group widens as birds arrive.
   const maxHalfW = (CLUSTER_W_FRAC * W) / 2;
   const boundW = W / 2, boundH = bandH / 2;
-  // Start as narrow as the widest single plate — a one-plate-wide column — so
-  // the group stacks vertically (fills the height) before it widens.
   const maxBoxW = files.reduce((m, file) => {
     const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
     return Math.max(m, s + GAP_VMIN * vmin);
@@ -141,31 +135,51 @@ export function computeCollage(files, W, H, bandTop) {
     const imageH = s * PLATE_ASPECT;
     return Math.max(m, imageH + captionPx(imageH) + GAP_VMIN * vmin);
   }, 1);
-  // Row mode (≤ ROW_LIMIT birds): pin plate centres to the row axis by giving
-  // the oval ~no height, so the widen loop lays a single horizontal row. The
-  // shrink seed still needs the row's REAL occupied height (one plate), else
-  // a near-zero oval area would collapse the scale.
-  const rowMode = files.length <= ROW_LIMIT;
-  const halfH = rowMode ? 1 : (CLUSTER_H_FRAC * bandH) / 2;
-  const seedHalfH = rowMode ? maxBoxH / 2 : halfH;
+  // The rule: the up-to-ROW_LIMIT OLDEST birds keep a single horizontal row
+  // across the band centre for good; every newer bird stacks vertically
+  // around that shelf. `files` is newest-first, so the row is the tail.
+  const entries = files.map((file, index) => ({ file, index }));
+  const rowCount = Math.min(ROW_LIMIT, entries.length);
+  const rowEntries = entries.slice(entries.length - rowCount);
+  const tallEntries = entries.slice(0, entries.length - rowCount);
+  const fullHalfH = (CLUSTER_H_FRAC * bandH) / 2;
+
+  // Two phases per pass: the row lays out in a ~zero-height oval (centres
+  // pinned to the row axis), then the newer birds spiral in the full-height
+  // oval with the row plates as obstacles — so they land above/below the
+  // shelf and expand vertically, per the current rules.
+  function layoutPass(scale, halfW) {
+    const placed = [];
+    let fallbacks = computeLayout(rowEntries, scale, vmin, halfW, 1, boundW, boundH, placed);
+    fallbacks += computeLayout(tallEntries, scale, vmin, halfW, fullHalfH, boundW, boundH, placed);
+    return { placed, fallbacks };
+  }
+
+  // Start one plate wide and widen until everything fits (or the cap).
   const halfW0 = Math.min(maxHalfW, maxBoxW / 2);
   let scale = 1, halfW = halfW0, result;
   for (let step = 0, k = 1; step < GROW_STEPS; step++, k *= GROW_FACTOR) {
     halfW = Math.min(maxHalfW, halfW0 * k);
-    result = computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH);
+    result = layoutPass(scale, halfW);
     if (result.fallbacks === 0 || halfW >= maxHalfW) break;
   }
   // Width capped and still overlapping → the screen is full: now (and only
-  // now) shrink the plates together until the set fits.
+  // now) shrink the plates together until the set fits. The seed uses the
+  // content's REAL occupied height (a bare row is one plate tall, not the
+  // ~zero-height placement oval — a near-zero area would collapse the scale).
   if (result.fallbacks > 0) {
+    const seedHalfH = tallEntries.length > 0 ? fullHalfH : maxBoxH / 2;
     const clusterArea = Math.PI * halfW * seedHalfH;
     scale = Math.min(1, Math.sqrt((FILL_FACTOR * clusterArea) / (naturalArea || 1)));
-    result = computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH);
+    result = layoutPass(scale, halfW);
     for (let i = 0; i < SHRINK_RETRIES && result.fallbacks > 0; i++) {
       scale *= SHRINK_STEP;
-      result = computeLayout(files, scale, vmin, halfW, halfH, boundW, boundH);
+      result = layoutPass(scale, halfW);
     }
   }
+  // Preserve the input (newest-first) order in the result — consumers index
+  // by position as well as by file.
+  result.placed.sort((a, b) => a.index - b.index);
   return result.placed.map(({ box, file, sizeVmin, index }) => ({
     file,
     x: box.x,
