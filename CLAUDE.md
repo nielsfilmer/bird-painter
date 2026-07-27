@@ -272,6 +272,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     cooldown (via the store) + rolling per-hour cap.
   - `runner.py` — `PaintRunner`: detections → gate → brush → store; the
     callback the mic feeds. Only a successful paint consumes a cap slot.
+  - `occasions.py` — occasion hats: public-holiday table + `hat_for(...)`;
+    personal days come only from env (`BP_HAT_DAYS`/`BP_HAT_DATES`), never
+    committed (public repo).
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
   - `trim.py` — `trim_to_bird(...)`: crops the flat-white margin off a painting
     at store time (padded back to 4:5) so the bird fills its plate; fail-soft

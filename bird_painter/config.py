@@ -3,6 +3,7 @@ every knob can be overridden via environment variable (loaded from .env)."""
 
 from __future__ import annotations
 
+import datetime
 import logging
 import os
 import sys
@@ -98,6 +99,42 @@ def _host() -> str:
     return os.environ.get("BP_HOST") or "0.0.0.0"  # noqa: S104 — intentional LAN bind
 
 
+def _hat_days(raw: str | None) -> tuple[tuple[int, int], ...]:
+    """Parse BP_HAT_DAYS: comma-separated DD-MM recurring party-hat days
+    (personal dates live only in the env, never in the repo)."""
+    if not raw or not raw.strip():
+        return ()
+    days = []
+    for part in raw.split(","):
+        part = part.strip()
+        try:
+            day, month = (int(x) for x in part.split("-"))
+            datetime.date(2000, month, day)  # validates the pair (leap-safe year)
+        except (ValueError, TypeError):
+            raise ConfigError(
+                f"BP_HAT_DAYS entries must be DD-MM, got: {part!r}"
+            ) from None
+        days.append((day, month))
+    return tuple(days)
+
+
+def _hat_dates(raw: str | None) -> tuple[datetime.date, ...]:
+    """Parse BP_HAT_DATES: comma-separated DD-MM-YYYY one-time party dates."""
+    if not raw or not raw.strip():
+        return ()
+    dates = []
+    for part in raw.split(","):
+        part = part.strip()
+        try:
+            day, month, year = (int(x) for x in part.split("-"))
+            dates.append(datetime.date(year, month, day))
+        except (ValueError, TypeError):
+            raise ConfigError(
+                f"BP_HAT_DATES entries must be DD-MM-YYYY, got: {part!r}"
+            ) from None
+    return tuple(dates)
+
+
 def _resolve_device(raw: str | None) -> int | str | None:
     """A device given as a numeric string is a device index; anything else is
     a name substring sounddevice matches; empty/None means the default."""
@@ -168,6 +205,15 @@ class Config:
     # (lazy import — don't drag httpx into config just to read a constant).
     fal_model: str = field(
         default_factory=lambda: os.environ.get("BP_FAL_MODEL") or _brush_default_model()
+    )
+    # Occasion hats: personal party-hat days (DD-MM, recurring) and one-time
+    # dates (DD-MM-YYYY) — env-only so they stay out of the public repo.
+    # Public holidays are in occasions.py.
+    hat_days: tuple = field(
+        default_factory=lambda: _hat_days(os.environ.get("BP_HAT_DAYS"))
+    )
+    hat_dates: tuple = field(
+        default_factory=lambda: _hat_dates(os.environ.get("BP_HAT_DATES"))
     )
     # Start the live mic listener alongside the wall. Off → wall-only (tests,
     # QA, or a machine with no mic); the /dev/paint endpoint still works.

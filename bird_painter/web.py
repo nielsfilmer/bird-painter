@@ -9,6 +9,7 @@ no side effects; uvicorn builds the production app via
 
 from __future__ import annotations
 
+import datetime
 import logging
 import mimetypes
 import threading
@@ -21,6 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from . import brush
 from .config import Config, load_config
 from .gate import TriggerGate
+from .occasions import hat_for
 from .placeholder import placeholder_svg
 from .runner import PaintRunner
 from .store import Store
@@ -165,7 +167,11 @@ def create_app(config: Config | None = None) -> FastAPI:
         common = species.replace("-", " ").replace("_", " ").title()
         scientific = brush.UNKNOWN_SCIENTIFIC
         result = brush.paint(
-            common, scientific, fal_key=config.fal_key, model=config.fal_model
+            common,
+            scientific,
+            fal_key=config.fal_key,
+            model=config.fal_model,
+            hat=hat_for(datetime.date.today(), config.hat_days, config.hat_dates),
         )
         if result is not None:
             image_bytes, extension = result
