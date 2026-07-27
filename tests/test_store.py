@@ -216,3 +216,25 @@ def test_retention_none_disables_purging(archive_dir, monkeypatch):
     clock["t"] += 10**8
     assert store.purge_expired() == 0
     assert len(store._paintings) == 1
+
+
+def test_purge_never_deletes_outside_the_archive(tmp_path, monkeypatch):
+    """A corrupt/crafted meta record with a traversal filename must not reach
+    outside the archive dir (PoC'd during PR #75 review: it did)."""
+    import json
+    import time as _time
+
+    from bird_painter import store as store_mod
+
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious")
+    record = {
+        "file": "../victim.txt", "species_common": "Evil",
+        "species_scientific": "x", "confidence": 0.9,
+        "born_at": _time.time() - 10**8, "source": "detection",
+    }
+    (archive / "meta.jsonl").write_text(json.dumps(record) + "\n")
+    store_mod.Store(archive, ttl_seconds=100, retention_seconds=1000)  # boot purge
+    assert victim.exists(), "purge escaped the archive dir"
