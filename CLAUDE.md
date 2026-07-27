@@ -30,6 +30,9 @@ Every task ends with a pull request. Do **not** push directly to `main`.
    the static-analysis pass still applies — instead of hand-rolling the
    orchestration. Hand-rolled fallback:
    use the `Agent` tool (`subagent_type: "general-purpose"`) for each.
+   **Review and QA agents always run on Opus** (`model: "opus"` on the Agent
+   call) regardless of what model the main session runs — user instruction
+   2026-07-27, standing.
    - **Senior-developer code review.** Framed as a senior dev reviewing the PR;
      give it the project goals (point it at `PLAN.md` and this file) and have it
      run a **static-analysis pass** (the repo's own linters/type-checkers/SAST,
@@ -331,6 +334,8 @@ workflow/process decisions:
   `PLAN.md` (ambient installation, local Python service, BirdNET + fal FLUX
   `schnell`, ephemeral wall). `PLAN.md`'s own decision log holds the product
   details.
+- **2026-07-27** — **Review/QA agents always run on Opus** (`model: "opus"`),
+  regardless of the main session's model. User instruction, standing.
 - **2026-07-18** — **User removed themselves as merge gate for this repo,
   permanently.** Claude merges clean, fully-reviewed PRs itself and notifies
   (workflow step 5). Scope: PR merges only; the review loop still gates. Mirror
