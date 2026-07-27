@@ -206,6 +206,11 @@ class Config:
     fal_model: str = field(
         default_factory=lambda: os.environ.get("BP_FAL_MODEL") or _brush_default_model()
     )
+    # Artifacts (painting + audio clip) are purged after this many days; the
+    # archive is a rolling month by default (owner decision 2026-07-27).
+    retention_days: int = field(
+        default_factory=lambda: _env_int("BP_RETENTION_DAYS", 31)
+    )
     # Occasion hats: personal party-hat days (DD-MM, recurring) and one-time
     # dates (DD-MM-YYYY) — env-only so they stay out of the public repo.
     # Public holidays are in occasions.py.

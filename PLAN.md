@@ -92,9 +92,12 @@ the clip never reaches any cloud service.
   already lovely for stylized birds. Upgrade path: FLUX `dev`/`pro` if `schnell`
   underwhelms. Needs one API key, kept in a local `.env` (never committed, never
   pasted into chat).
-- **Store** — permanent archive of every painting on disk (`{image file,
-  species, born_at}`), plus an in-process live set. The wall reads the live set;
-  expiry hides from the wall but never deletes the archived file.
+- **Store** — rolling archive of paintings on disk (`{image file, species,
+  born_at}` + optional detection clip), plus an in-process live set. The wall
+  reads the live set; TTL expiry hides from the wall without deleting. A
+  separate **retention purge** (default 31 days, `BP_RETENTION_DAYS`) deletes
+  artifacts outright — at boot, after adds, and hourly from the read path —
+  compacting `meta.jsonl` atomically so reboots can't resurrect purged birds.
 - **Wall** — a full-screen web page served locally by the Python process
   (framework: **FastAPI**). New painting fades in when its bird is heard;
   expired ones fade out. Subtle per-bird label (species, time heard). Updates by
@@ -222,11 +225,10 @@ whole magic; ship it first.
   hourly cap slot, and don't mark the species painted (so it retries naturally
   on the next detection). No painting simply means no new bird on the wall — a
   soft failure, never a crash.
-- **Archive disk growth** — the permanent on-disk archive grows unbounded (every
-  bird ever painted is kept, plus ~0.5 MB of detection clip per painted bird).
-  Trivial for a personal toy at 20 paints/hour, but name it: no retention/
-  pruning in v0. A 1-month retention purge is planned (owner request
-  2026-07-27), which will bound this.
+- **Archive disk growth** — bounded: artifacts (painting + detection clip +
+  meta record) are purged after a rolling month (`BP_RETENTION_DAYS`, default
+  31). Worst case ≈ 20 paints/hour × 31 days of images+clips — comfortably
+  within an SD card for a personal toy.
 
 ## Decision log
 
@@ -284,3 +286,8 @@ whole magic; ship it first.
   code; personal days (family birthdays, one-off parties) come ONLY from env
   (`BP_HAT_DAYS`/`BP_HAT_DATES`) so they never enter this public repo.
   Personal days take precedence and always get the party hat.
+- **2026-07-27** — **1-month retention purge** (owner request): paintings,
+  clips, and meta records older than `BP_RETENTION_DAYS` (default 31) are
+  deleted — the archive is a rolling month, superseding v0's "archived
+  forever" stance. Purge runs at boot + throttled from the read path, and
+  compacts meta.jsonl atomically.
