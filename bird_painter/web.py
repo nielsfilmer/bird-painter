@@ -23,6 +23,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import brush
+from .api_docs import describe
 from .config import Config, load_config
 from .events import EventHub, absolutize, announce_painted
 from .gate import TriggerGate
@@ -157,7 +158,18 @@ def create_app(config: Config | None = None) -> FastAPI:
         finally:
             events.unbind()
 
-    app = FastAPI(title="bird-painter", lifespan=lifespan)
+    app = FastAPI(
+        title="bird-painter",
+        # OpenAPI can't describe a WebSocket, so Swagger's reader is pointed at
+        # the page that can — see /api/docs.
+        description=(
+            "The local API of a wall that paints the birds it hears. This "
+            "generated reference covers the REST endpoints only; the live "
+            "detection stream (`/ws/detections`) is documented at "
+            "[/api/docs](/api/docs), alongside the same endpoints."
+        ),
+        lifespan=lifespan,
+    )
     # Exposed for tests and debugging; not part of any API contract.
     app.state.config = config
     app.state.store = store
@@ -171,6 +183,19 @@ def create_app(config: Config | None = None) -> FastAPI:
     def layout_js() -> FileResponse:
         # The wall imports this ES module (its layout maths, unit-tested).
         return FileResponse(STATIC_DIR / "layout.js", media_type="text/javascript")
+
+    @app.get("/api/docs", response_class=HTMLResponse)
+    def api_docs_page() -> str:
+        """The API, documented for a human: every endpoint, every WebSocket
+        event, and a live console wired to this wall's own stream. It renders
+        `/api` — so the page can't drift from the description."""
+        return (STATIC_DIR / "api-docs.html").read_text()
+
+    @app.get("/api")
+    def api_description() -> JSONResponse:
+        """The same documentation as JSON, with this instance's settings —
+        what `/api/docs` reads, and what a script would."""
+        return JSONResponse(describe(config))
 
     @app.get("/api/live")
     def live() -> JSONResponse:

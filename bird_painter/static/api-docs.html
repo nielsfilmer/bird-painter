@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bird-painter — API</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  :root {
+    --ink: #4a3f2e;
+    --ink-dim: #8d8065;
+    --rule: rgba(122, 96, 59, 0.22);
+    --code-bg: rgba(122, 96, 59, 0.08);
+  }
+  body {
+    /* The same aged-cream paper the wall lives on — this is documentation for
+       an installation, not a dashboard. */
+    background:
+      radial-gradient(ellipse at 22% 12%, rgba(122, 96, 59, 0.10), transparent 55%),
+      radial-gradient(ellipse at 78% 80%, rgba(122, 96, 59, 0.10), transparent 50%),
+      radial-gradient(ellipse at 50% 40%, #f4edda 0%, #ece1c6 70%, #ddcda6 100%);
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: Georgia, "Times New Roman", serif;
+    line-height: 1.55;
+    padding: 4rem 1.5rem 6rem;
+  }
+  main { max-width: 54rem; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 3.5rem; }
+  .eyebrow { font-style: italic; color: var(--ink-dim); }
+  h1 { font-variant: small-caps; letter-spacing: 0.16em; font-weight: normal; font-size: 2.4rem; }
+  h2 {
+    font-variant: small-caps; letter-spacing: 0.1em; font-weight: normal;
+    font-size: 1.5rem; margin: 3rem 0 0.4rem;
+    border-bottom: 1px solid var(--rule); padding-bottom: 0.3rem;
+  }
+  h3 { font-weight: normal; font-size: 1.15rem; margin: 1.6rem 0 0.2rem; }
+  p { margin: 0.5rem 0; }
+  .lede { color: var(--ink-dim); font-style: italic; }
+  .settings { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; color: var(--ink-dim); font-size: 0.92rem; }
+  .endpoint { padding: 1rem 0; border-bottom: 1px solid var(--rule); }
+  .sig { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+  .method {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.78rem;
+    letter-spacing: 0.08em; padding: 0.1rem 0.45rem; border: 1px solid var(--rule);
+    border-radius: 2px; color: var(--ink-dim);
+  }
+  code, .path, pre {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  .path { font-size: 1.02rem; }
+  .returns { color: var(--ink-dim); font-size: 0.85rem; font-style: italic; margin-left: auto; }
+  .params { list-style: none; padding: 0; margin: 0.4rem 0 0; font-size: 0.9rem; color: var(--ink-dim); }
+  .params li::before { content: "· "; }
+  pre {
+    background: var(--code-bg); border-radius: 3px; padding: 0.7rem 0.9rem;
+    overflow-x: auto; font-size: 0.82rem; line-height: 1.45; margin-top: 0.6rem;
+  }
+  .notes { margin: 0.8rem 0 0 1.1rem; padding: 0; }
+  .notes li { margin: 0.25rem 0; }
+  /* The live console: the page proving the stream it documents. */
+  #console {
+    margin-top: 1rem; border: 1px solid var(--rule); border-radius: 3px;
+    background: rgba(255, 253, 246, 0.5); min-height: 7rem; overflow: hidden;
+  }
+  #status {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--rule);
+    font-size: 0.85rem; color: var(--ink-dim);
+  }
+  #status .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--ink-dim); }
+  #status.live .dot { background: #6b7f52; }
+  #status.down .dot { background: #a4593f; }
+  #status button {
+    margin-left: auto; font: inherit; font-size: 0.85rem; color: var(--ink-dim);
+    background: none; border: 1px solid var(--rule); border-radius: 2px;
+    padding: 0.1rem 0.6rem; cursor: pointer;
+  }
+  #events { list-style: none; margin: 0; padding: 0; max-height: 26rem; overflow-y: auto; }
+  #events li { display: flex; gap: 0.8rem; align-items: center; padding: 0.6rem 0.9rem; border-bottom: 1px solid var(--rule); }
+  #events li:last-child { border-bottom: none; }
+  #events img { width: 3.2rem; aspect-ratio: 4 / 5; object-fit: cover; mix-blend-mode: multiply; }
+  .event-body { min-width: 0; }
+  .event-type {
+    font-variant: small-caps; letter-spacing: 0.08em; font-size: 0.78rem;
+    color: var(--ink-dim); margin-right: 0.4rem;
+  }
+  .species { font-variant: small-caps; letter-spacing: 0.05em; }
+  .scientific { font-style: italic; color: var(--ink-dim); }
+  .when, .links { font-size: 0.82rem; color: var(--ink-dim); }
+  .links a { color: inherit; }
+  .empty { padding: 1.4rem 0.9rem; color: var(--ink-dim); font-style: italic; }
+  footer { margin-top: 3.5rem; text-align: center; color: var(--ink-dim); font-size: 0.85rem; }
+  a { color: var(--ink); }
+  @media (max-width: 34rem) {
+    body { padding: 2.5rem 1rem 4rem; }
+    .returns { margin-left: 0; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">birds outside</p>
+    <h1>The API</h1>
+    <p class="lede" id="tagline"></p>
+    <ul class="settings" id="settings"></ul>
+  </header>
+
+  <section>
+    <h2>Live stream</h2>
+    <p><span class="method">WS</span> <code class="path" id="ws-path">/ws/detections</code></p>
+    <p id="ws-description"></p>
+    <ul class="notes" id="ws-notes"></ul>
+
+    <h3>Watch it now</h3>
+    <p class="lede">This page is connected to your wall's stream. Birds appear
+      here the moment they're recognised.</p>
+    <div id="console">
+      <div id="status"><span class="dot"></span><span id="status-text">connecting…</span>
+        <button type="button" id="reconnect" hidden>reconnect</button></div>
+      <p class="empty" id="empty">Nothing heard yet. Paint one by hand to test the
+        stream: <code>curl -X POST <span id="curl-base"></span>/dev/paint/eurasian-jay</code></p>
+      <ul id="events"></ul>
+    </div>
+
+    <h3>Events</h3>
+    <div id="ws-events"></div>
+  </section>
+
+  <section>
+    <h2>Endpoints</h2>
+    <div id="endpoints"></div>
+  </section>
+
+  <footer>
+    <p>Served by this wall itself — <a href="/api">/api</a> is the same
+      description as JSON, <a href="/docs">/docs</a> is the generated OpenAPI
+      reference. <a href="/">The wall</a>.</p>
+  </footer>
+</main>
+
+<script type="module">
+  const text = (tag, value, className) => {
+    const node = document.createElement(tag);
+    node.textContent = value;
+    if (className) node.className = className;
+    return node;
+  };
+  const pretty = (value) => JSON.stringify(value, null, 2);
+
+  // The descriptions mark identifiers with `backticks` (they read well raw in
+  // /api's JSON too); here they become real code spans. Built as DOM nodes —
+  // never innerHTML — so the text stays text.
+  const prose = (tag, value) => {
+    const node = document.createElement(tag);
+    value.split("`").forEach((part, index) => {
+      node.append(index % 2 ? text("code", part) : document.createTextNode(part));
+    });
+    return node;
+  };
+
+  // ——— The description, rendered from the same JSON /api serves ———
+  const api = await (await fetch("/api")).json();
+
+  document.getElementById("tagline").textContent = api.description;
+  document.getElementById("settings").append(...Object.entries(api.settings).map(
+    ([name, value]) => text("li", `${name.replace(/_/g, " ")}: ${value}`)));
+
+  document.getElementById("ws-path").textContent = api.websocket.path;
+  document.getElementById("ws-description").replaceWith(
+    Object.assign(prose("p", api.websocket.description), { id: "ws-description" }));
+  document.getElementById("ws-notes").append(
+    ...api.websocket.notes.map((note) => prose("li", note)));
+
+  document.getElementById("ws-events").append(...api.websocket.events.map((event) => {
+    const section = document.createElement("div");
+    section.className = "endpoint";
+    section.append(
+      text("h3", event.type),
+      prose("p", event.description),
+      text("pre", pretty(event.example)),
+    );
+    return section;
+  }));
+
+  document.getElementById("endpoints").append(...api.endpoints.map((endpoint) => {
+    const section = document.createElement("div");
+    section.className = "endpoint";
+    const signature = document.createElement("p");
+    signature.className = "sig";
+    signature.append(
+      text("span", endpoint.method, "method"),
+      text("code", endpoint.path, "path"),
+      text("span", endpoint.returns ?? "", "returns"),
+    );
+    section.append(signature, prose("p", endpoint.description));
+    if (endpoint.params?.length) {
+      const params = document.createElement("ul");
+      params.className = "params";
+      params.append(...endpoint.params.map((param) => text(
+        "li",
+        `${param.name} (${param.type}, default ${JSON.stringify(param.default)})`
+        + (param.note ? ` — ${param.note}` : ""),
+      )));
+      section.append(params);
+    }
+    if (endpoint.example) section.append(text("pre", pretty(endpoint.example)));
+    return section;
+  }));
+
+  document.getElementById("curl-base").textContent = location.origin;
+
+  // ——— The live console ———
+  const status = document.getElementById("status");
+  const statusText = document.getElementById("status-text");
+  const reconnectButton = document.getElementById("reconnect");
+  const list = document.getElementById("events");
+  const empty = document.getElementById("empty");
+  const MAX_ROWS = 40;
+
+  const when = (event) => new Date(event.at * 1000).toLocaleTimeString();
+
+  function render(event) {
+    if (event.type === "ping" || event.type === "hello") return;
+    empty.hidden = true;
+    const row = document.createElement("li");
+    if (event.image) {
+      const image = document.createElement("img");
+      image.src = event.image.url;
+      image.alt = event.species_common;
+      row.append(image);
+    }
+    const body = document.createElement("div");
+    body.className = "event-body";
+    const line = document.createElement("p");
+    line.append(
+      text("span", event.type, "event-type"),
+      text("span", event.species_common, "species"),
+      document.createTextNode(" "),
+      text("span", event.species_scientific, "scientific"),
+    );
+    body.append(line, text("p", `${when(event)} · confidence ${event.confidence}`
+      + (event.will_paint === false ? " · not painted (cooldown or hourly cap)" : ""), "when"));
+    if (event.audio) {
+      const links = document.createElement("p");
+      links.className = "links";
+      const player = document.createElement("audio");
+      player.controls = true;
+      player.src = event.audio.url;
+      player.style.height = "1.6rem";
+      const download = document.createElement("a");
+      download.href = event.audio.download_url;
+      download.textContent = "download the sound";
+      links.append(player, document.createTextNode(" "), download);
+      body.append(links);
+    }
+    row.append(body);
+    list.prepend(row);
+    while (list.children.length > MAX_ROWS) list.lastElementChild.remove();
+  }
+
+  let socket = null;
+  let retryDelay = 1000;
+  let retryTimer = null;
+
+  function connect() {
+    clearTimeout(retryTimer);  // never let two sockets race in
+    reconnectButton.hidden = true;
+    status.className = "";
+    statusText.textContent = "connecting…";
+    socket = new WebSocket(
+      `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${api.websocket.path}`);
+
+    socket.addEventListener("open", () => {
+      retryDelay = 1000;
+      status.className = "live";
+      statusText.textContent = "listening";
+    });
+    socket.addEventListener("message", (message) => {
+      const event = JSON.parse(message.data);
+      // The hello frame carries the backlog: replay it oldest-first so the
+      // newest bird still ends up on top.
+      if (event.type === "hello") event.recent.forEach(render);
+      else render(event);
+    });
+    socket.addEventListener("close", () => {
+      status.className = "down";
+      statusText.textContent = "disconnected";
+      // The wall restarts (a new species list, a reboot); the page shouldn't
+      // need one too. Back off so a wall that's really gone isn't hammered.
+      reconnectButton.hidden = false;
+      retryTimer = setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 30000);
+    });
+  }
+
+  reconnectButton.addEventListener("click", () => {
+    if (socket) socket.close();
+    retryDelay = 1000;
+    connect();
+  });
+
+  connect();
+</script>
+</body>
+</html>
