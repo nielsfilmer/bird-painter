@@ -55,8 +55,9 @@ def _base_url(websocket: WebSocket) -> str:
     return f"{scheme}://{url.netloc}"
 
 
-# The only values that mean "no, stream it" — everything else, including a
-# bare `?download`, hands the file over.
+# The values that mean "no, stream it" — everything else hands the file over.
+# A bare `?download` is indistinguishable from `?download=` (both parse to the
+# empty string), so it streams too; the documented form is `?download=1`.
 _NOT_DOWNLOAD = {"", "0", "false", "no", "off"}
 
 
