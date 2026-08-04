@@ -20,12 +20,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import brush
-from .api_docs import describe
+from .api_docs import describe, openapi_websocket_path
 from .config import Config, load_config
-from .events import EventHub, absolutize, announce_painted
+from .events import PING_SECONDS, EventHub, absolutize, announce_painted
 from .gate import TriggerGate
 from .occasions import hat_for
 from .placeholder import placeholder_svg
@@ -36,11 +37,6 @@ from .trim import trim_to_bird
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 
-# Idle keepalive on the detection socket. Birds are rare — an hour of silence
-# is normal — so the stream pings to keep proxies/NAT from reaping a healthy
-# connection. It does NOT detect a client that vanished: writes to a lost
-# transport succeed silently, which is what _watch_for_disconnect is for.
-WS_PING_SECONDS = 30
 
 
 def _base_url(websocket: WebSocket) -> str:
@@ -163,13 +159,29 @@ def create_app(config: Config | None = None) -> FastAPI:
         # OpenAPI can't describe a WebSocket, so Swagger's reader is pointed at
         # the page that can — see /api/docs.
         description=(
-            "The local API of a wall that paints the birds it hears. This "
-            "generated reference covers the REST endpoints only; the live "
-            "detection stream (`/ws/detections`) is documented at "
-            "[/api/docs](/api/docs), alongside the same endpoints."
+            "The local API of a wall that paints the birds it hears. The live "
+            "detection stream is listed below as the upgrade handshake it is "
+            "(OpenAPI has no WebSocket operation); to actually watch it, and "
+            "for the same endpoints in prose, see [/api/docs](/api/docs)."
         ),
         lifespan=lifespan,
     )
+    def openapi() -> dict:
+        """The generated schema, plus the WebSocket FastAPI can't see. Without
+        this a reader of /docs never learns the stream exists."""
+        if app.openapi_schema is None:
+            schema = get_openapi(
+                title=app.title,
+                version=app.version,
+                description=app.description,
+                routes=app.routes,
+            )
+            schema["paths"].update(openapi_websocket_path())
+            app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = openapi
+
     # Exposed for tests and debugging; not part of any API contract.
     app.state.config = config
     app.state.store = store
@@ -177,7 +189,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def wall() -> str:
-        return (STATIC_DIR / "index.html").read_text()
+        return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
     @app.get("/layout.js")
     def layout_js() -> FileResponse:
@@ -189,7 +201,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         """The API, documented for a human: every endpoint, every WebSocket
         event, and a live console wired to this wall's own stream. It renders
         `/api` — so the page can't drift from the description."""
-        return (STATIC_DIR / "api-docs.html").read_text()
+        return (STATIC_DIR / "api-docs.html").read_text(encoding="utf-8")
 
     @app.get("/api")
     def api_description() -> JSONResponse:
@@ -244,7 +256,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                     {
                         "type": "hello",
                         "at": time.time(),
-                        "ping_seconds": WS_PING_SECONDS,
+                        "ping_seconds": PING_SECONDS,
                         "recent": [absolutize(event, base) for event in replayed],
                     }
                 )
@@ -256,7 +268,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                         getter = asyncio.create_task(queue.get())
                     done, _ = await asyncio.wait(
                         {getter, watcher},
-                        timeout=WS_PING_SECONDS,
+                        timeout=PING_SECONDS,
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     if watcher in done:

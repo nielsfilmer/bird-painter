@@ -2,10 +2,11 @@
 documentation honest: a stale example is worse than no example."""
 
 import pytest
+from fastapi.routing import APIWebSocketRoute
 from fastapi.testclient import TestClient
 
 from bird_painter.api_docs import ENDPOINTS, WEBSOCKET, describe
-from bird_painter.events import detected_event, painted_event
+from bird_painter.events import EVENT_TYPES, PING_SECONDS, detected_event, painted_event
 from bird_painter.store import Painting
 from bird_painter.web import create_app
 
@@ -56,22 +57,39 @@ def test_every_documented_endpoint_actually_exists(client):
 
 def test_every_real_api_route_is_documented(client):
     """…and the reverse: an endpoint added without a line in the description
-    fails here rather than quietly going missing from the docs."""
-    documented = {e["path"].replace("{file}", "{filename}") for e in ENDPOINTS}
+    fails here rather than quietly going missing from the docs.
+
+    Matched on (method, path), not path alone — round-1 review demonstrated
+    that a new POST on an already-documented GET path slipped straight
+    through — and WebSocket routes count, since the stream is the half most
+    worth documenting."""
+    documented = {
+        (e["method"], e["path"].replace("{file}", "{filename}")) for e in ENDPOINTS
+    }
+    documented.add(("WEBSOCKET", WEBSOCKET["path"]))
     # FastAPI's own generated routes + the wall's ES module: not API surface.
     documented |= {
-        "/openapi.json",
-        "/redoc",
-        "/docs/oauth2-redirect",
-        "/layout.js",
+        ("GET", "/openapi.json"),
+        ("GET", "/redoc"),
+        ("GET", "/docs/oauth2-redirect"),
+        ("GET", "/layout.js"),
     }
-    served = {
-        route.path
-        for route in client.app.routes
-        if "GET" in getattr(route, "methods", set())
-        or "POST" in getattr(route, "methods", set())
-    }
+    served = set()
+    for route in client.app.routes:
+        if isinstance(route, APIWebSocketRoute):
+            served.add(("WEBSOCKET", route.path))
+            continue
+        for method in getattr(route, "methods", set()):
+            if method in {"GET", "POST"}:
+                served.add((method, route.path))
     assert served - documented == set()
+
+
+def test_every_event_the_stream_can_emit_is_documented():
+    """The same guard for events: the roster lives beside the producers in
+    events.py, so a new event type fails here instead of going unmentioned."""
+    documented = {event["type"] for event in WEBSOCKET["events"]}
+    assert documented == set(EVENT_TYPES)
 
 
 def test_websocket_path_is_the_one_the_app_serves(client):
@@ -128,3 +146,89 @@ def test_swagger_still_serves_and_points_at_the_human_page(client):
     assert client.get("/docs").status_code == 200
     schema = client.get("/openapi.json").json()
     assert "/api/docs" in schema["info"]["description"]
+
+
+def test_documented_endpoint_examples_match_the_live_responses(client):
+    """Event examples were guarded from the start; endpoint examples were not
+    (round-1 review). Same rule for both: an example that no longer matches
+    the response is a lie the page tells confidently."""
+    client.post("/dev/paint/robin")
+
+    def example_for(method: str, path: str) -> dict:
+        return next(
+            e["example"]
+            for e in ENDPOINTS
+            if e["method"] == method and e["path"] == path
+        )
+
+    live = client.get("/api/live").json()
+    live_example = example_for("GET", "/api/live")
+    assert set(live) == set(live_example)
+    assert set(live["paintings"][0]) == set(live_example["paintings"][0])
+
+    archive = client.get("/api/archive").json()
+    archive_example = example_for("GET", "/api/archive")
+    assert set(archive) == set(archive_example)
+    assert set(archive["paintings"][0]) == set(archive_example["paintings"][0])
+
+    painted = client.post("/dev/paint/wren")
+    assert set(painted.json()) == set(example_for("POST", "/dev/paint/{species}"))
+
+
+def test_documented_statuses_are_the_ones_the_endpoint_returns(client):
+    """/dev/paint documents 201 and 502 — the 201 is exercised here; the 502
+    path (a failing brush with a key set) is covered in test_web.py."""
+    statuses = next(
+        e["statuses"] for e in ENDPOINTS if e["path"] == "/dev/paint/{species}"
+    )
+    assert set(statuses) == {"201", "502"}
+    assert client.post("/dev/paint/junco").status_code == 201
+
+
+def test_documented_ping_interval_is_the_one_the_stream_uses(client):
+    """A retyped '30s' in prose is exactly how docs rot; both the example and
+    the note are tied to the constant."""
+    hello_example = next(
+        e["example"] for e in WEBSOCKET["events"] if e["type"] == "hello"
+    )
+    assert hello_example["ping_seconds"] == PING_SECONDS
+    assert any(f"{PING_SECONDS}s" in note for note in WEBSOCKET["notes"])
+    with client.websocket_connect("/ws/detections") as ws:
+        assert ws.receive_json()["ping_seconds"] == PING_SECONDS
+
+
+def test_api_publishes_only_the_allowlisted_settings(client):
+    """The wall is unauthenticated on the LAN, so /api's settings block is an
+    allowlist, not a dump of Config: one careless addition would publish the
+    house's coordinates or the fal key."""
+    assert set(client.get("/api").json()["settings"]) == {
+        "paint_ttl_seconds",
+        "wall_max_live",
+        "max_paints_per_hour",
+        "confidence_floor",
+        "retention_days",
+        "listener_enabled",
+    }
+
+
+def test_openapi_lists_the_websocket_so_swagger_readers_find_it(client):
+    """OpenAPI has no WebSocket operation, so the stream is folded in as the
+    upgrade handshake it is — otherwise a reader of /docs never learns it
+    exists (the complaint that prompted this)."""
+    schema = client.get("/openapi.json").json()
+    stream = schema["paths"]["/ws/detections"]["get"]
+    assert "[WebSocket]" in stream["summary"]
+    assert "101" in stream["responses"]
+    # every event documented on the page is described there too
+    for event in WEBSOCKET["events"]:
+        assert f"`{event['type']}`" in stream["description"]
+
+
+def test_the_page_can_still_stream_when_the_description_fails(client):
+    """Round-1 blocking finding: the page died silently if /api failed. The
+    console must not depend on the fetch — the stream path is fixed in the
+    page, and the fetch is guarded."""
+    page = client.get("/api/docs").text
+    assert 'const WS_PATH = "/ws/detections"' in page
+    assert "describeFailure" in page
+    assert "response.ok" in page

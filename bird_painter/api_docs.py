@@ -13,7 +13,10 @@ documenting.
 
 from __future__ import annotations
 
+import json
 from importlib.metadata import PackageNotFoundError, version
+
+from .events import PING_SECONDS
 
 
 def _version() -> str:
@@ -81,6 +84,18 @@ ENDPOINTS: list[dict] = [
             },
         ],
         "returns": "application/json",
+        "example": {
+            "total": 137,
+            "offset": 0,
+            "paintings": [
+                {
+                    "file": EXAMPLE_PAINTING_FILE,
+                    "species_common": "Eurasian Wren",
+                    "born_at": 1785866477.948883,
+                    "audio": EXAMPLE_CLIP_FILE,
+                }
+            ],
+        },
     },
     {
         "method": "GET",
@@ -109,7 +124,8 @@ ENDPOINTS: list[dict] = [
                 "default": None,
                 "note": (
                     "any value serves an attachment instead of streaming, "
-                    "except an explicit no (0, false, no, off)"
+                    "except an explicit no (empty, 0, false, no, off) — "
+                    "so a bare ?download streams"
                 ),
             }
         ],
@@ -136,6 +152,10 @@ ENDPOINTS: list[dict] = [
             "detection clip — nothing was heard."
         ),
         "returns": "application/json",
+        "statuses": {
+            "201": "painted; `source` is `dev`, or `dev-placeholder` with no FAL_KEY",
+            "502": "the brush failed (fal outage) — nothing painted, try again",
+        },
         "example": {"painted": EXAMPLE_PAINTING_FILE, "source": "dev"},
     },
     {
@@ -160,9 +180,10 @@ ENDPOINTS: list[dict] = [
         "path": "/docs",
         "summary": "OpenAPI (Swagger UI)",
         "description": (
-            "FastAPI's generated reference for the REST endpoints, with "
-            "/openapi.json behind it. It cannot describe the WebSocket stream "
-            "— that's what this page is for."
+            "FastAPI's generated reference, with /openapi.json behind it. "
+            "The stream is listed there too — as the upgrade handshake it "
+            "is, since OpenAPI has no WebSocket operation — but only this "
+            "page can actually connect to it."
         ),
         "returns": "text/html",
     },
@@ -180,8 +201,9 @@ WEBSOCKET: dict = {
     "notes": [
         "Connecting replays the recent events first (birds are rare — a fresh "
         "connection shouldn't open onto an empty quiet hour).",
-        "A ping event arrives every 30s so an idle connection survives NAT and "
-        "proxies. Nothing is expected back; the server ignores what you send.",
+        f"A ping event arrives every {PING_SECONDS}s so an idle connection "
+        "survives NAT and proxies. Nothing is expected back; the server "
+        "ignores what you send.",
         "A client too slow to keep up loses its oldest events rather than "
         "stalling the microphone. Reconnect and the backlog catches you up.",
         "No authentication — like the rest of the wall, it's meant for your "
@@ -198,7 +220,7 @@ WEBSOCKET: dict = {
             "example": {
                 "type": "hello",
                 "at": 1785866474.154511,
-                "ping_seconds": 30,
+                "ping_seconds": PING_SECONDS,
                 "recent": [],
             },
         },
@@ -279,4 +301,42 @@ def describe(config) -> dict:
         },
         "endpoints": ENDPOINTS,
         "websocket": WEBSOCKET,
+    }
+
+
+def openapi_websocket_path() -> dict:
+    """An OpenAPI `paths` entry for the detection stream.
+
+    OpenAPI has no WebSocket operation, so a reader of the generated `/docs`
+    would otherwise never learn the stream exists — the complaint that
+    prompted this. The compromise every WS-bearing FastAPI app makes: describe
+    the handshake as what it literally is, a GET that upgrades, marked plainly
+    so nobody mistakes it for a normal request, with the event shapes inline
+    and a pointer to the page that can do it justice.
+    """
+    events = "\n\n".join(
+        f"**`{event['type']}`** — {event['description']}\n\n"
+        f"```json\n{json.dumps(event['example'], indent=2)}\n```"
+        for event in WEBSOCKET["events"]
+    )
+    notes = "\n".join(f"- {note}" for note in WEBSOCKET["notes"])
+    return {
+        WEBSOCKET["path"]: {
+            "get": {
+                "tags": ["websocket"],
+                "summary": f"[WebSocket] {WEBSOCKET['summary']}",
+                "description": (
+                    f"**This is a WebSocket endpoint, not a plain GET** — connect to "
+                    f"`ws://<host>{WEBSOCKET['path']}` (`wss://` over TLS). "
+                    f"'Try it out' below cannot open one; the live console at "
+                    f"[/api/docs](/api/docs) can.\n\n"
+                    f"{WEBSOCKET['description']}\n\n"
+                    f"{notes}\n\n### Events\n\n{events}"
+                ),
+                "responses": {
+                    "101": {"description": "Switching Protocols — the stream is open"},
+                    "400": {"description": "Not a WebSocket handshake"},
+                },
+            }
+        }
     }
