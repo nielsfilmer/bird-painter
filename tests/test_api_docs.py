@@ -9,10 +9,7 @@ from bird_painter.api_docs import ENDPOINTS, WEBSOCKET, describe
 from bird_painter.events import EVENT_TYPES, PING_SECONDS, detected_event, painted_event
 from bird_painter.store import Painting
 from bird_painter.web import create_app
-
-# The wall's own machine — /dev/paint is loopback-only, and
-# TestClient's default peer ('testclient') is not an address.
-LOCAL = ("127.0.0.1", 51000)
+from tests.conftest import LOCAL, REMOTE
 
 
 @pytest.fixture
@@ -187,7 +184,7 @@ def test_documented_statuses_are_the_ones_the_endpoint_returns(client):
     )
     assert set(statuses) == {"201", "404", "502"}
     assert client.post("/dev/paint/junco").status_code == 201  # client is LOCAL
-    with TestClient(client.app, client=("192.168.1.50", 51000)) as remote:
+    with TestClient(client.app, client=REMOTE) as remote:
         assert remote.post("/dev/paint/junco").status_code == 404
 
 

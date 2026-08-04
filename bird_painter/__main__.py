@@ -83,7 +83,17 @@ def main() -> None:
 
     port = port_override if port_override is not None else config.port
     uvicorn.run(
-        "bird_painter.web:create_app", factory=True, host=config.host, port=port
+        "bird_painter.web:create_app",
+        factory=True,
+        host=config.host,
+        port=port,
+        # uvicorn trusts X-Forwarded-For by default (and FORWARDED_ALLOW_IPS=*
+        # in the environment widens that to everyone), rewriting the peer
+        # address the app sees. /dev/paint's loopback check is exactly that
+        # address, so leaving this on would let any LAN caller claim to be
+        # local. Nothing here runs behind a proxy; if that ever changes, the
+        # proxy must be trusted deliberately, not by default.
+        proxy_headers=False,
     )
 
 

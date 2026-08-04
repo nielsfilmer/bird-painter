@@ -81,7 +81,12 @@ curl -X POST http://127.0.0.1:8537/dev/paint/eurasian-jay
 That one endpoint answers **only on the machine running the wall**. Everything
 else — the wall, the archive, the stream, the images and sounds — is served to
 your whole network as before; painting by hand isn't, because it skips the
-hourly cap and, with a key set, spends real money per call.
+hourly cap and, with a key set, spends real money per call. To reach it from
+your laptop, borrow the wall's own loopback over ssh:
+
+```bash
+ssh -L 8537:127.0.0.1:8537 pi@wall.local
+```
 
 ## Watch the birds arrive (WebSocket)
 

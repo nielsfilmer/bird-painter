@@ -340,9 +340,15 @@ whole magic; ship it first.
   narrowed, on being asked, to everything-except-`/dev/paint`, enforced by
   client address). It bypasses the hourly cap and spends real money per call
   with a key set, so on an unauthenticated LAN it was the one endpoint that
-  could cost something (issue #66). Off-machine callers get 404, not 403 — a
-  403 advertises what's there. The decision is made on the peer address only,
-  never on `X-Forwarded-For`, and an unplaceable peer counts as remote, so it
-  fails closed. Everything else stays open on the network: the wall, the
+  could cost something (issue #66). Off-machine callers get 404 because for
+  them the path genuinely isn't routable — not as concealment: `/api` and
+  `/api/docs` describe the endpoint and its 404 to anyone who asks. The
+  decision is made on the peer address only, never on `X-Forwarded-For`, and
+  an unplaceable peer counts as remote, so it fails closed. That required
+  turning uvicorn's proxy-header handling **off** (`proxy_headers=False`): it
+  is on by default and rewrites the peer address from `X-Forwarded-For`, which
+  with `FORWARDED_ALLOW_IPS=*` in the environment handed the endpoint to any
+  caller willing to type a header — found in review, with a working exploit,
+  before merge. Reaching it from elsewhere is an ssh tunnel's job. Everything else stays open on the network: the wall, the
   archive, the stream, and the images and sounds its events link to — the
   phone and the e-paper frame depend on them.

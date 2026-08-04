@@ -9,10 +9,7 @@ from fastapi.testclient import TestClient
 
 from bird_painter.events import painted_event
 from bird_painter.web import create_app
-
-# The wall's own machine — /dev/paint is loopback-only, and
-# TestClient's default peer ('testclient') is not an address.
-LOCAL = ("127.0.0.1", 51000)
+from tests.conftest import LOCAL, REMOTE
 
 
 @pytest.fixture
@@ -416,7 +413,7 @@ def test_dev_paint_is_refused_from_off_the_machine(config):
     money per call — so it must not be one curl away for anyone on the LAN
     (issue #66). A 404, not a 403: a 403 would advertise that it's there."""
     app = create_app(config)
-    with TestClient(app, client=("192.168.1.50", 51000)) as client:
+    with TestClient(app, client=REMOTE) as client:
         assert client.post("/dev/paint/robin").status_code == 404
         assert client.get("/api/live").json()["paintings"] == []  # nothing painted
 
@@ -432,7 +429,7 @@ def test_dev_paint_ignores_a_forwarded_for_header(config):
     """The decision is made on the peer address alone — a header can be typed
     by anyone, and this wall has no authentication to fall back on."""
     app = create_app(config)
-    with TestClient(app, client=("192.168.1.50", 51000)) as client:
+    with TestClient(app, client=REMOTE) as client:
         response = client.post(
             "/dev/paint/robin", headers={"X-Forwarded-For": "127.0.0.1"}
         )
@@ -452,9 +449,51 @@ def test_everything_else_stays_reachable_from_the_network(config):
     app = create_app(config)
     with TestClient(app, client=LOCAL) as local:
         painted = local.post("/dev/paint/wren").json()["painted"]
-    with TestClient(app, client=("192.168.1.50", 51000)) as remote:
+        clip = app.state.store.audio_file_for(
+            app.state.store.add(
+                image_bytes=b"<svg/>",
+                extension="svg",
+                species_common="Robin",
+                species_scientific="Erithacus rubecula",
+                confidence=0.9,
+                source="detection",
+                audio_bytes=b"RIFF",
+            ).file
+        )
+    with TestClient(app, client=REMOTE) as remote:
         for path in ("/", "/api", "/api/docs", "/api/live", "/api/archive",
-                     "/wall.png", "/docs", f"/images/{painted}"):
+                     "/wall.png", "/docs", "/openapi.json", "/layout.js",
+                     f"/images/{painted}", f"/audio/{clip}",
+                     f"/audio/{clip}?download=1"):
             assert remote.get(path).status_code == 200, path
         with remote.websocket_connect("/ws/detections") as ws:
             assert ws.receive_json()["type"] == "hello"
+
+
+def test_the_server_does_not_trust_proxy_headers(monkeypatch):
+    """The loopback check is only as good as the peer address, and uvicorn
+    rewrites that from X-Forwarded-For unless proxy headers are off —
+    FORWARDED_ALLOW_IPS=* in the environment would otherwise hand /dev/paint
+    to any LAN caller willing to type a header (found in review of #92)."""
+    from bird_painter import __main__
+
+    captured = {}
+    monkeypatch.setattr(
+        __main__.uvicorn, "run", lambda *args, **kwargs: captured.update(kwargs)
+    )
+    monkeypatch.setattr(sys, "argv", ["bird_painter", "--no-prompt"])
+    __main__.main()
+    assert captured["proxy_headers"] is False
+
+
+def test_loopback_check_understands_the_addresses_a_listener_reports():
+    """A dual-stack listener reports a v4 client as ::ffff:127.0.0.1, which
+    Python only calls loopback from 3.13 — this project targets 3.11."""
+    from bird_painter.web import _is_loopback
+
+    for local in ("127.0.0.1", "127.1.2.3", "::1", "::ffff:127.0.0.1"):
+        assert _is_loopback((local, 5000)) is True, local
+    for remote in ("192.168.1.50", "10.0.0.2", "::ffff:192.168.1.50", "8.8.8.8"):
+        assert _is_loopback((remote, 5000)) is False, remote
+    assert _is_loopback(None) is False
+    assert _is_loopback(("testclient", 5000)) is False
