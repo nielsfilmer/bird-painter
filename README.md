@@ -117,6 +117,14 @@ another machine as-is. `?download=1` saves the clip instead of streaming it.
 websocat ws://127.0.0.1:8537/ws/detections
 ```
 
+## The API, documented by itself
+
+The wall documents its own API at **`/api/docs`** — every endpoint and every
+stream event, with worked examples, and a live console that connects to
+`/ws/detections` so you can watch birds arrive while you read. The same
+description is machine-readable at `/api`, and FastAPI's generated OpenAPI
+reference is at `/docs`.
+
 ## Make it yours
 
 Everything is an environment variable — see [`.env.example`](.env.example):

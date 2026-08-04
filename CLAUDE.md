@@ -251,6 +251,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 - `pyproject.toml` — Python package + deps (FastAPI/uvicorn/dotenv).
 - `.env.example` — env template (FAL_KEY + knob overrides); copy to `.env`.
 - `bird_painter/` — the one local service:
+  - `api_docs.py` — the API's self-description: one structure describing
+    every endpoint + WebSocket event (with examples), served as JSON by
+    `/api` and rendered by `/api/docs`.
   - `config.py` — knobs (defaults = PLAN.md v0 table, env-overridable).
   - `store.py` — permanent archive (files + `meta.jsonl`) + ephemeral live
     view + per-species `last_painted_at` (the cooldown key).
@@ -285,7 +288,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `web.py` — FastAPI app via `create_app(config)` factory (no import-time
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
     `/api/archive`, `/wall.png`, `/images/*`, `/audio/*` (`?download=1` for an
-    attachment), `/ws/detections` (live event stream), `/dev/paint/*`.
+    attachment), `/ws/detections` (live event stream), `/api` + `/api/docs`
+    (the API's own documentation), `/dev/paint/*`.
   - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
     (the collage placement maths), so `/wall.png` places birds identically to
     the live wall. A parity test keeps the two in sync.
@@ -297,6 +301,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     a slow timer, dithers to the Spectra 6 six-colour palette, pushes to the
     panel via the Waveshare `epd13in3E` driver (imported lazily — hardware-only,
     so the module imports/tests without it); redraws only when the wall changed.
+  - `static/api-docs.html` — the documentation page: renders `/api` and
+    carries a live console wired to `/ws/detections`.
   - `static/index.html` — the wall (polling, fade in/out); imports the layout
     module and applies it to the plate DOM.
   - `static/layout.js` — pure collage-layout maths (`computeCollage`): spiral
@@ -325,8 +331,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
 - `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API,
-  event hub + detection WebSocket, wall-layout port + JS-parity, /wall.png
-  render, painting trim; import-purity regression).
+  event hub + detection WebSocket, API docs (incl. docs-vs-routes drift
+  guards), wall-layout port + JS-parity, /wall.png render, painting trim;
+  import-purity regression).
   Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
   milestones/issues (backs the `/status` skill).

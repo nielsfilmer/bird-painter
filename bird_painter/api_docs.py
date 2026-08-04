@@ -105,9 +105,12 @@ ENDPOINTS: list[dict] = [
         "params": [
             {
                 "name": "download",
-                "type": "bool",
-                "default": False,
-                "note": "serve as an attachment instead of streaming",
+                "type": "flag",
+                "default": None,
+                "note": (
+                    "any value serves an attachment instead of streaming, "
+                    "except an explicit no (0, false, no, off)"
+                ),
             }
         ],
         "returns": "audio/wav",
