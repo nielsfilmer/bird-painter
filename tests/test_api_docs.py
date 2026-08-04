@@ -9,12 +9,13 @@ from bird_painter.api_docs import ENDPOINTS, WEBSOCKET, describe
 from bird_painter.events import EVENT_TYPES, PING_SECONDS, detected_event, painted_event
 from bird_painter.store import Painting
 from bird_painter.web import create_app
+from tests.conftest import LOCAL, REMOTE
 
 
 @pytest.fixture
 def client(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         yield client
 
 
@@ -141,6 +142,28 @@ def test_description_carries_no_placeholder_gaps(config):
         assert event["description"] and event["example"]["type"] == event["type"]
 
 
+def test_endpoint_prose_carries_no_markdown_the_page_cannot_render(config):
+    """QA on #92: a `**bold**` in an endpoint description printed its own
+    asterisks on /api/docs, whose renderer does code spans and nothing else.
+    Descriptions bound for the page stay plain prose; the OpenAPI-only text
+    (rendered by Swagger) may use markdown."""
+    description = describe(config)
+    prose = []
+    for endpoint in description["endpoints"]:
+        # Everything the page prints, not just descriptions: status meanings
+        # and param notes reach the reader the same way (round-2 review of
+        # #92 — the first version of this guard walked descriptions only).
+        prose.append(endpoint["description"])
+        prose += endpoint.get("statuses", {}).values()
+        prose += [p.get("note", "") for p in endpoint.get("params", [])]
+    prose += [description["websocket"]["description"]]
+    prose += description["websocket"]["notes"]
+    prose += [e["description"] for e in description["websocket"]["events"]]
+    for text in prose:
+        assert "**" not in text, text
+        assert "\n" not in text, text  # the page renders one paragraph
+
+
 def test_swagger_still_serves_and_points_at_the_human_page(client):
     assert client.get("/docs").status_code == 200
     schema = client.get("/openapi.json").json()
@@ -175,13 +198,16 @@ def test_documented_endpoint_examples_match_the_live_responses(client):
 
 
 def test_documented_statuses_are_the_ones_the_endpoint_returns(client):
-    """/dev/paint documents 201 and 502 — the 201 is exercised here; the 502
-    path (a failing brush with a key set) is covered in test_web.py."""
+    """/dev/paint documents 201, 404 and 502 — the 201 and the 404 are
+    exercised here; the 502 (a failing brush with a key set) is covered in
+    test_web.py."""
     statuses = next(
         e["statuses"] for e in ENDPOINTS if e["path"] == "/dev/paint/{species}"
     )
-    assert set(statuses) == {"201", "502"}
-    assert client.post("/dev/paint/junco").status_code == 201
+    assert set(statuses) == {"201", "404", "502"}
+    assert client.post("/dev/paint/junco").status_code == 201  # client is LOCAL
+    with TestClient(client.app, client=REMOTE) as remote:
+        assert remote.post("/dev/paint/junco").status_code == 404
 
 
 def test_documented_ping_interval_is_the_one_the_stream_uses(client):
@@ -221,6 +247,14 @@ def test_openapi_lists_the_websocket_so_swagger_readers_find_it(client):
     # every event documented on the page is described there too
     for event in WEBSOCKET["events"]:
         assert f"`{event['type']}`" in stream["description"]
+
+
+def test_the_pages_curl_hint_points_at_the_wall_not_at_the_reader(client):
+    """QA on #92: the empty state said "from the wall's own machine" and then
+    printed the reader's own LAN origin, a command that 404s for them."""
+    page = client.get("/api/docs").text
+    assert "`http://127.0.0.1${location.port" in page
+    assert "location.origin" not in page.split("curl-base")[1].split("\n")[0]
 
 
 def test_the_page_can_still_stream_when_the_description_fails(client):

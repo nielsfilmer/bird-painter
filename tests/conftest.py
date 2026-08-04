@@ -17,6 +17,13 @@ def _clean_env(monkeypatch):
             monkeypatch.delenv(name, raising=False)
 
 
+# The wall's own machine. /dev/paint is loopback-only, and TestClient's
+# default peer ("testclient") is not an address at all — so every client in
+# the suite has to say where it's calling from.
+LOCAL = ("127.0.0.1", 51000)
+REMOTE = ("192.168.1.50", 51000)
+
+
 @pytest.fixture
 def archive_dir(tmp_path: Path) -> Path:
     # Always an absolute throwaway dir — Config's default archive_dir is

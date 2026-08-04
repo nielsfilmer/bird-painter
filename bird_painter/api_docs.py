@@ -161,11 +161,19 @@ ENDPOINTS: list[dict] = [
             "Dev helper: paints the named species immediately, bypassing the "
             "microphone and the trigger gate. Uses the real brush when FAL_KEY "
             "is set, a placeholder plate otherwise. The painting has no "
-            "detection clip — nothing was heard."
+            "detection clip — nothing was heard. "
+            # Plain prose, no markdown: these descriptions are rendered as text
+            # on /api/docs (its `prose()` does code spans and nothing else), so
+            # a `**bold**` here would show its own asterisks to the reader.
+            "Reachable only from the wall's own machine — it skips the hourly "
+            "cap and, with a key set, spends real money per call, so "
+            "off-machine callers get a 404. Everything else here is open on "
+            "your network; this one isn't."
         ),
         "returns": "application/json",
         "statuses": {
             "201": "painted; `source` is `dev`, or `dev-placeholder` with no FAL_KEY",
+            "404": "you're not on the wall's own machine",
             "502": "the brush failed (fal outage) — nothing painted, try again",
         },
         "example": {"painted": EXAMPLE_PAINTING_FILE, "source": "dev"},

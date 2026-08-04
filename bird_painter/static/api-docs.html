@@ -120,8 +120,10 @@
     <div id="console">
       <div id="status" role="status"><span class="dot"></span><span id="status-text">connecting…</span>
         <button type="button" id="reconnect" hidden>reconnect</button></div>
-      <p class="empty" id="empty">Nothing heard yet. Paint one by hand to test the
-        stream: <code>curl -X POST <span id="curl-base"></span>/dev/paint/eurasian-jay</code></p>
+      <p class="empty" id="empty">Nothing heard yet. To test the stream, paint one
+        by hand <em>from the wall's own machine</em> — that endpoint answers
+        nowhere else:
+        <code>curl -X POST <span id="curl-base"></span>/dev/paint/eurasian-jay</code></p>
       <ul id="events" role="log" aria-live="polite" aria-label="birds heard, newest first"></ul>
     </div>
 
@@ -187,7 +189,11 @@
     describeFailure(error.message ?? error);
   }
 
-  document.getElementById("curl-base").textContent = location.origin;
+  // Loopback, not location.origin: /dev/paint answers only on the wall's own
+  // machine, so a LAN reader shown their own address would copy a command that
+  // 404s. This is the command to run THERE.
+  document.getElementById("curl-base").textContent =
+    `http://127.0.0.1${location.port ? `:${location.port}` : ""}`;
 
   function renderDescription(api) {
     document.getElementById("tagline").textContent = api.description;

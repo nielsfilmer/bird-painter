@@ -213,6 +213,15 @@ pinned, update **both** this file and the corresponding spot in
     Present targets: `review-checks` / `lint` / `test` / `test-js`, `run`
     (the wall), `qa-up` / `qa-down` (a throwaway instance on an off-port with
     its own archive, no mic, no key — what the QA agent gets pointed at).
+  - **One browser origin, forever: `http://127.0.0.1:8600`** (user complaint
+    2026-08-04, with a screenshot of "Allow Claude to act on
+    http://192.168.1.244:8621?"). The Browser pane approves access
+    **per origin**, so every new host:port asks again — and a session that
+    hosts instances on 8600, 8601, 8603, 8604, 8605, 8620, 8621 asks seven
+    times. `make qa-up` defaults to 8600 for exactly this reason: point the
+    browser there and nowhere else. **Never browse the LAN address** — check
+    off-machine behaviour with `curl` (no approval), which is also the honest
+    test, since what's being verified is the peer address, not the rendering.
   - **"Auto mode" is not blanket approval.** The session's accept-edits mode
     covers file edits, not Bash; this file's own policy keeps interpreters,
     package runners and destructive commands at `ask` on purpose. The way to
@@ -318,7 +327,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
     `/api/archive`, `/wall.png`, `/images/*`, `/audio/*` (`?download=1` for an
     attachment), `/ws/detections` (live event stream), `/api` + `/api/docs`
-    (the API's own documentation), `/dev/paint/*`.
+    (the API's own documentation), `/dev/paint/*` (loopback only — 404 from
+    off-machine; it skips the cap and spends money).
   - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
     (the collage placement maths), so `/wall.png` places birds identically to
     the live wall. A parity test keeps the two in sync.

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import ipaddress
 import logging
 import mimetypes
 import threading
@@ -19,7 +20,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import brush
@@ -35,6 +36,30 @@ from .trim import trim_to_bird
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _is_loopback(client: tuple[str, int] | None) -> bool:
+    """Whether a request came from this machine.
+
+    Decided on the peer address only — never on a header. `X-Forwarded-For`
+    and friends are attacker-supplied, and this wall has no authentication to
+    fall back on (__main__ turns uvicorn's proxy-header rewriting off so the
+    peer really is the peer). A missing peer — a transport that reports none —
+    counts as remote, so the restriction fails closed.
+
+    A dual-stack listener (BP_HOST=::) reports a v4 client as the
+    IPv4-mapped `::ffff:127.0.0.1`, which Python only calls loopback from
+    3.13; this project targets 3.11, and a Pi's own curl shouldn't depend on
+    the interpreter's minor version, so mapped addresses are unmapped first.
+    """
+    if client is None:
+        return False
+    try:
+        address = ipaddress.ip_address(client[0])
+    except ValueError:
+        return False
+    unmapped = getattr(address, "ipv4_mapped", None)
+    return (unmapped or address).is_loopback
 
 
 def _base_url(websocket: WebSocket) -> str:
@@ -176,6 +201,24 @@ def create_app(config: Config | None = None) -> FastAPI:
         return schema
 
     app.openapi = openapi
+
+    @app.middleware("http")
+    async def dev_routes_are_local_only(request: Request, call_next):
+        """Refuse /dev/* at the door, before routing.
+
+        Checking inside the handler still leaks the route's shape to the
+        network: a GET answers 405 and a trailing slash answers 307, and only
+        a real path answers either. Refusing here means an off-machine caller
+        sees the same 404 for /dev/paint as for /dev/anything-else. The
+        handler keeps its own check — this endpoint spends money, and one
+        misordered middleware shouldn't be all that stands between the LAN and
+        the brush."""
+        if request.url.path.startswith("/dev/") and not _is_loopback(request.client):
+            # Debug, not info: an unauthenticated remote caller would otherwise
+            # choose how fast this wall's disk fills up.
+            logger.debug("dev route refused for %s (loopback only)", request.client)
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        return await call_next(request)
 
     # Exposed for tests and debugging; not part of any API contract.
     app.state.config = config
@@ -367,10 +410,25 @@ def create_app(config: Config | None = None) -> FastAPI:
         return FileResponse(path, media_type=media_type)
 
     @app.post("/dev/paint/{species}")
-    def dev_paint(species: str) -> JSONResponse:
+    def dev_paint(species: str, request: Request) -> JSONResponse:
         """Paint a named species onto the wall — the real brush when FAL_KEY
         is set, a placeholder plate otherwise. Dev helper alongside the
-        detection-driven trigger gate."""
+        detection-driven trigger gate.
+
+        **Reachable only from the wall's own machine.** It bypasses the trigger
+        gate's hourly cap, and with FAL_KEY set every call spends real money,
+        so it must not be one curl away for anyone on the network (issue #66).
+
+        Off-machine callers get 404 — the middleware above turns away
+        everything under /dev/ before routing, so the path's shape doesn't
+        leak either. That isn't concealment: /api and /api/docs describe this
+        endpoint and its 404 to anyone who asks.
+
+        The check below is the second lock on the same door, deliberately:
+        this is the one endpoint that spends money."""
+        if not _is_loopback(request.client):
+            logger.debug("dev/paint refused for %s (loopback only)", request.client)
+            raise HTTPException(status_code=404)
         common = species.replace("-", " ").replace("_", " ").title()
         scientific = brush.UNKNOWN_SCIENTIFIC
         result = brush.paint(
