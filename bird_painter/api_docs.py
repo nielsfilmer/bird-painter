@@ -161,11 +161,14 @@ ENDPOINTS: list[dict] = [
             "Dev helper: paints the named species immediately, bypassing the "
             "microphone and the trigger gate. Uses the real brush when FAL_KEY "
             "is set, a placeholder plate otherwise. The painting has no "
-            "detection clip — nothing was heard.\n\n"
-            "**Reachable only from the wall's own machine.** It skips the "
-            "hourly cap and, with a key set, spends real money per call, so "
-            "off-machine callers get a 404 — everything else here is open on "
-            "your network, this one isn't."
+            "detection clip — nothing was heard. "
+            # Plain prose, no markdown: these descriptions are rendered as text
+            # on /api/docs (its `prose()` does code spans and nothing else), so
+            # a `**bold**` here would show its own asterisks to the reader.
+            "Reachable only from the wall's own machine — it skips the hourly "
+            "cap and, with a key set, spends real money per call, so "
+            "off-machine callers get a 404. Everything else here is open on "
+            "your network; this one isn't."
         ),
         "returns": "application/json",
         "statuses": {

@@ -202,6 +202,24 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     app.openapi = openapi
 
+    @app.middleware("http")
+    async def dev_routes_are_local_only(request: Request, call_next):
+        """Refuse /dev/* at the door, before routing.
+
+        Checking inside the handler still leaks the route's shape to the
+        network: a GET answers 405 and a trailing slash answers 307, and only
+        a real path answers either. Refusing here means an off-machine caller
+        sees the same 404 for /dev/paint as for /dev/anything-else. The
+        handler keeps its own check — this endpoint spends money, and one
+        misordered middleware shouldn't be all that stands between the LAN and
+        the brush."""
+        if request.url.path.startswith("/dev/") and not _is_loopback(request.client):
+            # Debug, not info: an unauthenticated remote caller would otherwise
+            # choose how fast this wall's disk fills up.
+            logger.debug("dev route refused for %s (loopback only)", request.client)
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        return await call_next(request)
+
     # Exposed for tests and debugging; not part of any API contract.
     app.state.config = config
     app.state.store = store
@@ -401,13 +419,14 @@ def create_app(config: Config | None = None) -> FastAPI:
         gate's hourly cap, and with FAL_KEY set every call spends real money,
         so it must not be one curl away for anyone on the network (issue #66).
 
-        Off-machine callers get 404: for them the endpoint genuinely isn't
-        routable, and that is what an unroutable path returns. This is not
-        concealment — /api and /api/docs describe the endpoint and this very
-        404 to anyone who asks."""
+        Off-machine callers get 404 — the middleware above turns away
+        everything under /dev/ before routing, so the path's shape doesn't
+        leak either. That isn't concealment: /api and /api/docs describe this
+        endpoint and its 404 to anyone who asks.
+
+        The check below is the second lock on the same door, deliberately:
+        this is the one endpoint that spends money."""
         if not _is_loopback(request.client):
-            # Debug, not info: an unauthenticated remote caller would otherwise
-            # choose how fast this wall's disk fills up.
             logger.debug("dev/paint refused for %s (loopback only)", request.client)
             raise HTTPException(status_code=404)
         common = species.replace("-", " ").replace("_", " ").title()

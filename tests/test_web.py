@@ -411,11 +411,32 @@ def test_replay_dedupe_matches_by_identity_and_ends_at_the_first_fresh_event():
 def test_dev_paint_is_refused_from_off_the_machine(config):
     """/dev/paint bypasses the hourly cap and, with a key set, spends real
     money per call — so it must not be one curl away for anyone on the LAN
-    (issue #66). A 404, not a 403: a 403 would advertise that it's there."""
+    (issue #66)."""
     app = create_app(config)
     with TestClient(app, client=REMOTE) as client:
         assert client.post("/dev/paint/robin").status_code == 404
         assert client.get("/api/live").json()["paintings"] == []  # nothing painted
+
+
+def test_dev_routes_do_not_leak_their_shape_to_the_network(config):
+    """QA on #92: checking inside the handler still answered 405 to a GET and
+    307 to a trailing slash — answers only a real route gives, so the endpoint
+    remained an existence oracle. Refused before routing, every shape looks
+    like every other missing path."""
+    app = create_app(config)
+    with TestClient(app, client=REMOTE) as remote:
+        probes = [
+            remote.get("/dev/paint/robin"),  # was 405
+            remote.post("/dev/paint/robin/", follow_redirects=False),  # was 307
+            remote.request("PUT", "/dev/paint/robin"),
+            remote.get("/dev/nope/robin"),  # a path that never existed
+        ]
+        assert [p.status_code for p in probes] == [404, 404, 404, 404]
+
+    with TestClient(app, client=LOCAL) as local:
+        # …while the machine itself still gets the real answers.
+        assert local.get("/dev/paint/robin").status_code == 405
+        assert local.post("/dev/paint/robin").status_code == 201
 
 
 def test_dev_paint_refuses_a_peer_it_cannot_place(config):

@@ -189,7 +189,11 @@
     describeFailure(error.message ?? error);
   }
 
-  document.getElementById("curl-base").textContent = location.origin;
+  // Loopback, not location.origin: /dev/paint answers only on the wall's own
+  // machine, so a LAN reader shown their own address would copy a command that
+  // 404s. This is the command to run THERE.
+  document.getElementById("curl-base").textContent =
+    `http://127.0.0.1:${location.port || "8537"}`;
 
   function renderDescription(api) {
     document.getElementById("tagline").textContent = api.description;
