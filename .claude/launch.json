@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bird-painter",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "bird_painter", "--no-prompt"],
+      "port": 8537
+    }
+  ]
+}

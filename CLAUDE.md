@@ -196,6 +196,27 @@ pinned, update **both** this file and the corresponding spot in
   a temp file, never inline in the command (inline multi-line `--body` trips
   approval prompts). Avoid compound `cd X && …` commands — use absolute paths
   so the permission matcher sees one operation.
+  - **Use the file tools, not the shell, for file work** (user complaint
+    2026-08-04: "you are still asking for permission all the time"). `Read`,
+    `Edit`, `Write`, `Grep`, `Glob` ride the session's edit mode and prompt
+    rarely; `python3 - <<PY … PY` heredocs, `sed -i`, `cat`, `head`, `tail` and
+    `grep` are Bash — and interpreters are deliberately never allowlisted, so
+    every such patch is its own approval dialog. Editing files by shelling out
+    to Python is the single biggest source of prompt spam.
+  - **Stay in the main checkout.** A `git worktree` outside the repo root puts
+    every path beyond the reach of the allowlisted `make` wrappers, forcing raw
+    `.venv/bin/pytest --rootdir=…` / `.venv/bin/ruff <path>` invocations that
+    each prompt. Use a branch and `git stash`; reach for a worktree only when
+    two branches genuinely must be live at once, and expect the friction.
+  - **Recurring chores get a `make` target, then an allowlist entry** — that's
+    the policy-consistent way to cut prompts (never a blanket `Bash(python:*)`).
+    Present targets: `review-checks` / `lint` / `test` / `test-js`, `run`
+    (the wall), `qa-up` / `qa-down` (a throwaway instance on an off-port with
+    its own archive, no mic, no key — what the QA agent gets pointed at).
+  - **"Auto mode" is not blanket approval.** The session's accept-edits mode
+    covers file edits, not Bash; this file's own policy keeps interpreters,
+    package runners and destructive commands at `ask` on purpose. The way to
+    fewer prompts is fewer shell calls, not a wider allowlist.
 - **Permission patterns split across global vs project `settings.json` by
   shape:**
   - **Non-aggressive, narrow-scope** (read-only subcommands, single-purpose ops
