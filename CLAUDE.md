@@ -268,6 +268,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     printed detections (ears + mic only, no painting); prints the selected
     input device + how to change it (`BP_INPUT_DEVICE`), and
     `--list-devices` lists mics.
+  - `events.py` — `EventHub` + the event shapes for the live detection stream
+    (`/ws/detections`): thread-safe fan-out from the mic thread to WebSocket
+    subscribers, bounded per-client queues, small replay backlog.
   - `gate.py` — `TriggerGate`: the paint-or-not decision — per-species TTL
     cooldown (via the store) + rolling per-hour cap.
   - `runner.py` — `PaintRunner`: detections → gate → brush → store; the
@@ -281,7 +284,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     on SVG placeholders/unreadable files.
   - `web.py` — FastAPI app via `create_app(config)` factory (no import-time
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
-    `/api/archive`, `/wall.png`, `/images/*`, `/audio/*`, `/dev/paint/*`.
+    `/api/archive`, `/wall.png`, `/images/*`, `/audio/*` (`?download=1` for an
+    attachment), `/ws/detections` (live event stream), `/dev/paint/*`.
   - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
     (the collage placement maths), so `/wall.png` places birds identically to
     the live wall. A parity test keeps the two in sync.
@@ -321,8 +325,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
 - `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API,
-  wall-layout port + JS-parity, /wall.png render, painting trim; import-purity
-  regression).
+  event hub + detection WebSocket, wall-layout port + JS-parity, /wall.png
+  render, painting trim; import-purity regression).
   Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
   milestones/issues (backs the `/status` skill).

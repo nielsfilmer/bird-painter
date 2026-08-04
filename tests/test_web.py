@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import subprocess
 import sys
@@ -6,6 +7,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from bird_painter.events import painted_event
 from bird_painter.web import create_app
 
 
@@ -195,3 +197,208 @@ def test_archive_button_and_overlay_only_in_the_browser_page(client):
     # …and the e-paper /wall.png is a server-side raster that renders paintings
     # only — no DOM, so no button can appear (see render.py). Sanity: PNG magic.
     assert client.get("/wall.png").content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_ws_streams_a_painted_bird_with_name_time_image_and_sound(config):
+    app = create_app(config)
+    with TestClient(app) as client, client.websocket_connect("/ws/detections") as ws:
+        assert ws.receive_json()["type"] == "hello"
+        # A detection-style painting (with an archived clip) reaches the socket.
+        store = app.state.store
+        painting = store.add(
+            image_bytes=b"<svg/>",
+            extension="svg",
+            species_common="Wren",
+            species_scientific="Troglodytes troglodytes",
+            confidence=0.81,
+            source="detection",
+            audio_bytes=b"RIFF....WAVE",
+        )
+        app.state.events.publish(
+            painted_event(painting, store.audio_file_for(painting.file))
+        )
+
+        event = ws.receive_json()
+        assert event["type"] == "painted"
+        assert event["species_common"] == "Wren"           # the name
+        assert event["time"] and event["at"] == painting.born_at  # the time
+        # urls are absolute for whoever connected, and both actually resolve
+        assert event["image"]["url"].startswith("http://testserver/images/")
+        assert client.get(event["image"]["url"]).status_code == 200
+        sound = client.get(event["audio"]["download_url"])
+        assert sound.status_code == 200
+        assert sound.content == b"RIFF....WAVE"
+        assert "attachment" in sound.headers["content-disposition"]
+
+
+def test_ws_replays_recent_events_to_a_late_client(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        client.post("/dev/paint/robin")  # happened before anyone connected
+        with client.websocket_connect("/ws/detections") as ws:
+            hello = ws.receive_json()
+            assert hello["type"] == "hello"
+            assert [e["species_common"] for e in hello["recent"]] == ["Robin"]
+            assert hello["recent"][0]["image"]["url"].startswith("http://testserver/")
+
+
+def test_ws_broadcasts_to_every_connected_client(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        with (
+            client.websocket_connect("/ws/detections") as first,
+            client.websocket_connect("/ws/detections") as second,
+        ):
+            assert first.receive_json()["type"] == "hello"
+            assert second.receive_json()["type"] == "hello"
+            client.post("/dev/paint/junco")
+            for ws in (first, second):
+                event = ws.receive_json()
+                assert (event["type"], event["species_common"]) == ("painted", "Junco")
+
+
+def test_audio_streams_inline_unless_download_is_asked_for(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        store = app.state.store
+        painting = store.add(
+            image_bytes=b"<svg/>",
+            extension="svg",
+            species_common="Wren",
+            species_scientific="Troglodytes troglodytes",
+            confidence=0.8,
+            source="detection",
+            audio_bytes=b"RIFF",
+        )
+        clip = store.audio_file_for(painting.file)
+        # The wall's click-to-replay must keep streaming, not download.
+        assert "content-disposition" not in client.get(f"/audio/{clip}").headers
+
+
+def test_ws_reaps_the_subscriber_when_a_client_drops_without_closing(config):
+    """The failure mode of a 24/7 wall: a client that vanishes without a close
+    frame (lid shut, wifi gone, process killed). The server sees that ONLY as a
+    `websocket.disconnect` delivered to receive() — writes to the dead
+    transport keep succeeding — so an endpoint that never receives leaks its
+    subscriber, its queue, and its coroutine forever.
+
+    Driven at the ASGI layer on purpose: TestClient always closes cleanly, so
+    it cannot express this drop.
+    """
+    app = create_app(config)
+    hub = app.state.events
+
+    async def scenario():
+        incoming: asyncio.Queue = asyncio.Queue()
+        sent: list[dict] = []
+
+        async def receive():
+            return await incoming.get()
+
+        async def send(message):
+            sent.append(message)  # a lost transport swallows sends silently
+
+        scope = {
+            "type": "websocket",
+            "asgi": {"version": "3.0"},
+            "scheme": "ws",
+            "http_version": "1.1",
+            "path": "/ws/detections",
+            "raw_path": b"/ws/detections",
+            "query_string": b"",
+            "root_path": "",
+            "headers": [(b"host", b"wall.local:8537")],
+            "client": ("10.0.0.9", 51000),
+            "server": ("10.0.0.2", 8537),
+            "subprotocols": [],
+            "state": {},
+        }
+        await incoming.put({"type": "websocket.connect"})
+        served = asyncio.create_task(app(scope, receive, send))
+
+        for _ in range(200):  # let the endpoint accept and greet
+            await asyncio.sleep(0)
+            if any(m["type"] == "websocket.send" for m in sent):
+                break
+        assert hub.subscriber_count == 1
+
+        # The drop: no close frame from the client, just the transport dying.
+        await incoming.put({"type": "websocket.disconnect", "code": 1006})
+        await asyncio.wait_for(served, timeout=5)
+        assert hub.subscriber_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_ws_does_not_replay_an_event_twice_to_a_fresh_client(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        client.post("/dev/paint/robin")
+        with client.websocket_connect("/ws/detections") as ws:
+            hello = ws.receive_json()
+            assert [e["species_common"] for e in hello["recent"]] == ["Robin"]
+            # A second bird proves the stream is still live AND that the
+            # replayed one didn't arrive again behind it.
+            client.post("/dev/paint/wren")
+            event = ws.receive_json()
+            assert (event["type"], event["species_common"]) == ("painted", "Wren")
+
+
+def test_ws_survives_a_clip_lookup_failure(config, monkeypatch):
+    """The painting is already archived when we announce it — a filesystem
+    hiccup reading the clip must not 500 the paint that succeeded."""
+    app = create_app(config)
+    with TestClient(app) as client:
+        monkeypatch.setattr(
+            app.state.store,
+            "audio_file_for",
+            lambda file: (_ for _ in ()).throw(OSError("disk gone")),
+        )
+        assert client.post("/dev/paint/robin").status_code == 201
+        assert [p.species_common for p in app.state.store.live()] == ["Robin"]
+
+
+def test_download_flag_is_read_leniently(config):
+    """It's a flag on a shared link, so a typo hands over the sound rather
+    than 422-ing; only an explicit no keeps it streaming."""
+    app = create_app(config)
+    with TestClient(app) as client:
+        store = app.state.store
+        painting = store.add(
+            image_bytes=b"<svg/>",
+            extension="svg",
+            species_common="Wren",
+            species_scientific="Troglodytes troglodytes",
+            confidence=0.8,
+            source="detection",
+            audio_bytes=b"RIFF",
+        )
+        clip = store.audio_file_for(painting.file)
+        for value in ("1", "true", "yes", "banana", ""):
+            headers = client.get(f"/audio/{clip}?download={value}").headers
+            expected = value != ""
+            assert ("content-disposition" in headers) is expected, value
+        for value in ("0", "false", "no", "off"):
+            assert "content-disposition" not in client.get(
+                f"/audio/{clip}?download={value}"
+            ).headers, value
+
+
+def test_replay_dedupe_matches_by_identity_and_ends_at_the_first_fresh_event():
+    """The round-2 review caught the integration test never reaching this
+    branch, so the rule is pinned directly: the same object is a duplicate, an
+    equal-but-distinct event is not, and the overlap ends at the first fresh
+    event."""
+    from bird_painter.web import _is_replay_duplicate
+
+    replayed_event = {"type": "painted", "species_common": "Robin"}
+    replayed = [replayed_event]
+
+    assert _is_replay_duplicate(replayed_event, replayed) is True
+    assert replayed == [replayed_event]  # still guarding the rest of the prefix
+
+    twin = {"type": "painted", "species_common": "Robin"}  # equal, not the same
+    assert _is_replay_duplicate(twin, replayed) is False
+    assert replayed == []  # a fresh event ends the overlap
+
+    assert _is_replay_duplicate(replayed_event, replayed) is False  # nothing left

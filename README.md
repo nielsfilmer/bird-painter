@@ -78,6 +78,45 @@ the collage before signing up for anything, drop in placeholder plates by hand:
 curl -X POST http://127.0.0.1:8537/dev/paint/eurasian-jay
 ```
 
+## Watch the birds arrive (WebSocket)
+
+The wall is the ambient view; `ws://<host>:8537/ws/detections` is the live one.
+Connect and you get a message every time BirdNET recognises something, and
+another when its painting lands — with the bird's name, the time, the image,
+and the sound that triggered it:
+
+```json
+{
+  "type": "painted",
+  "species_common": "Eurasian Wren",
+  "species_scientific": "Troglodytes troglodytes",
+  "confidence": 0.81,
+  "time": "2026-08-04T20:01:17.948883+02:00",
+  "at": 1785866477.948883,
+  "source": "detection",
+  "image": { "url": "http://host:8537/images/1785866477_eurasian-wren_e866.jpg" },
+  "audio": {
+    "url": "http://host:8537/audio/1785866477_eurasian-wren_e866.wav",
+    "download_url": "http://host:8537/audio/1785866477_eurasian-wren_e866.wav?download=1"
+  }
+}
+```
+
+- **`detected`** — a recognition, gated or not. Its `will_paint` is the trigger
+  gate's verdict: `false` means cooldown or the hourly cap swallowed this one,
+  so no painting follows.
+- **`painted`** — the painting that landed. `audio` is `null` when no clip was
+  archived (dev paints, or a clip that failed).
+- **`hello`** on connect, replaying the recent events so you don't open onto an
+  empty quiet hour, and a `ping` every 30s so an idle connection stays alive.
+
+Urls come back absolute, addressed the way *you* connected, so they work from
+another machine as-is. `?download=1` saves the clip instead of streaming it.
+
+```bash
+websocat ws://127.0.0.1:8537/ws/detections
+```
+
 ## Make it yours
 
 Everything is an environment variable — see [`.env.example`](.env.example):

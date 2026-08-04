@@ -2,6 +2,7 @@ import dataclasses
 from unittest.mock import patch
 
 from bird_painter.ears import Detection
+from bird_painter.events import EventHub
 from bird_painter.gate import TriggerGate
 from bird_painter.runner import PaintRunner
 from bird_painter.store import Store
@@ -92,3 +93,50 @@ def test_detections_without_window_still_paint(config, archive_dir):
     with patch("bird_painter.runner.paint_species", return_value=(b"img", "jpg")):
         runner.on_detections([detection("Robin")])  # legacy no-audio call
     assert [p.species_common for p in store.live()] == ["Robin"]
+
+
+def test_runner_broadcasts_detected_and_painted_events(config, archive_dir):
+    import numpy as np
+
+    hub = EventHub()
+    store = Store(archive_dir, config.paint_ttl_seconds)
+    gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
+    runner = PaintRunner(config, store, gate, hub)
+    window = np.zeros(15 * 48000, dtype="float32")
+    with patch("bird_painter.runner.paint_species", return_value=(b"img", "jpg")):
+        runner.on_detections([detection("Robin")], window, 48000)
+
+    detected, painted = hub.backlog()
+    assert detected["type"] == "detected"
+    assert (detected["species_common"], detected["will_paint"]) == ("Robin", True)
+    assert painted["type"] == "painted"
+    assert painted["species_common"] == "Robin"
+    assert painted["image"]["url"].startswith("/images/")
+    assert painted["audio"]["url"].startswith("/audio/")
+
+
+def test_gated_detection_is_broadcast_but_never_painted(config, archive_dir):
+    hub = EventHub()
+    store = Store(archive_dir, config.paint_ttl_seconds)
+    gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
+    runner = PaintRunner(config, store, gate, hub)
+    with patch("bird_painter.runner.paint_species", return_value=(b"img", "jpg")):
+        runner.on_detections([detection("Robin")])
+        runner.on_detections([detection("Robin")])  # cooldown blocks this one
+
+    types = [(e["type"], e.get("will_paint")) for e in hub.backlog()]
+    assert types == [
+        ("detected", True),
+        ("painted", None),
+        ("detected", False),  # heard again, gated — no painted event follows
+    ]
+
+
+def test_a_failed_paint_broadcasts_no_painted_event(config, archive_dir):
+    hub = EventHub()
+    store = Store(archive_dir, config.paint_ttl_seconds)
+    gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
+    runner = PaintRunner(config, store, gate, hub)
+    with patch("bird_painter.runner.paint_species", return_value=None):
+        runner.on_detections([detection("Robin")])
+    assert [e["type"] for e in hub.backlog()] == ["detected"]

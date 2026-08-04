@@ -1,6 +1,7 @@
-"""FastAPI app: serves the wall page, the live-set API, archived images, and
-a dev endpoint that paints a named species (real brush with FAL_KEY, else a
-placeholder) alongside the detection-driven trigger gate.
+"""FastAPI app: serves the wall page, the live-set API, the live detection
+WebSocket, archived images, and a dev endpoint that paints a named species
+(real brush with FAL_KEY, else a placeholder) alongside the detection-driven
+trigger gate.
 
 `create_app(config)` is the factory (tests inject throwaway config/archives).
 There is deliberately NO module-level app instance — importing this module has
@@ -9,18 +10,21 @@ no side effects; uvicorn builds the production app via
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import mimetypes
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import brush
 from .config import Config, load_config
+from .events import EventHub, absolutize, announce_painted
 from .gate import TriggerGate
 from .occasions import hat_for
 from .placeholder import placeholder_svg
@@ -30,6 +34,66 @@ from .trim import trim_to_bird
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
+
+# Idle keepalive on the detection socket. Birds are rare — an hour of silence
+# is normal — so the stream pings to keep proxies/NAT from reaping a healthy
+# connection. It does NOT detect a client that vanished: writes to a lost
+# transport succeed silently, which is what _watch_for_disconnect is for.
+WS_PING_SECONDS = 30
+
+
+def _base_url(websocket: WebSocket) -> str:
+    """The http origin matching how this client reached us ('ws' → 'http'), so
+    the urls in the stream are fetchable by whoever is listening — a phone on
+    the LAN gets the LAN address, not localhost.
+
+    Starlette builds the netloc from the Host header, falling back to the
+    socket the request arrived on, so a client that sends no Host still gets a
+    reachable origin."""
+    url = websocket.url
+    scheme = "https" if url.scheme == "wss" else "http"
+    return f"{scheme}://{url.netloc}"
+
+
+# The values that mean "no, stream it" — everything else hands the file over.
+# A bare `?download` is indistinguishable from `?download=` (both parse to the
+# empty string), so it streams too; the documented form is `?download=1`.
+_NOT_DOWNLOAD = {"", "0", "false", "no", "off"}
+
+
+def _asked_to_download(value: str | None) -> bool:
+    return value is not None and value.strip().lower() not in _NOT_DOWNLOAD
+
+
+def _is_replay_duplicate(event: dict, replayed: list[dict]) -> bool:
+    """Whether this event was already sent in the `hello` replay.
+
+    Matched by identity, never equality: two different birds can produce equal
+    dicts. The overlap can only be a PREFIX of the queue — everything the
+    snapshot held was published before everything that follows — so the first
+    fresh event ends it, and the list is dropped rather than searched forever.
+    """
+    if not replayed:
+        return False
+    if any(event is already_sent for already_sent in replayed):
+        return True
+    replayed.clear()
+    return False
+
+
+async def _watch_for_disconnect(websocket: WebSocket) -> None:
+    """Resolve when the client goes away. The stream is send-only, so anything
+    a client sends is ignored — but the receive itself is what makes a dropped
+    connection observable at all."""
+    try:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+    except (WebSocketDisconnect, RuntimeError, OSError):
+        # RuntimeError: starlette refuses a receive after the disconnect it
+        # already delivered — same meaning, the client is gone.
+        return
 
 
 def _start_listener(config: Config, runner: PaintRunner) -> None:
@@ -74,22 +138,30 @@ def create_app(config: Config | None = None) -> FastAPI:
         retention_seconds=config.retention_days * 24 * 60 * 60,
     )
     gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
-    runner = PaintRunner(config, store, gate)
+    events = EventHub()
+    runner = PaintRunner(config, store, gate, events)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # The mic thread publishes from off-loop; the hub needs the loop to
+        # hop onto before any detection can reach a socket.
+        events.bind(asyncio.get_running_loop())
         if config.enable_listener:
             threading.Thread(
                 target=_start_listener, args=(config, runner), daemon=True
             ).start()
         else:
             logger.info("listener disabled (BP_ENABLE_LISTENER); wall-only")
-        yield
+        try:
+            yield
+        finally:
+            events.unbind()
 
     app = FastAPI(title="bird-painter", lifespan=lifespan)
     # Exposed for tests and debugging; not part of any API contract.
     app.state.config = config
     app.state.store = store
+    app.state.events = events
 
     @app.get("/", response_class=HTMLResponse)
     def wall() -> str:
@@ -120,6 +192,70 @@ def create_app(config: Config | None = None) -> FastAPI:
                 ],
             }
         )
+
+    @app.websocket("/ws/detections")
+    async def ws_detections(websocket: WebSocket) -> None:
+        """Live stream of what the ears hear: a `detected` event per
+        recognition (gated or not) and a `painted` event per painting, the
+        latter carrying the bird's name, the time, the image url and the
+        detection clip's url. Connecting replays the recent backlog first, so
+        a client opening during a quiet hour still sees the last birds."""
+        await websocket.accept()
+        base = _base_url(websocket)
+        with events.subscribe() as queue:
+            # Subscribe FIRST, then snapshot: an event published in between is
+            # replayed and queued, never lost. The pump drops the duplicate.
+            replayed = events.backlog()
+            # A client that vanishes rudely — lid shut, wifi gone, process
+            # killed — never sends a close frame, and asyncio discards writes
+            # to a lost transport silently, so SENDING can't detect it. Only a
+            # pending receive can. Race it against the send pump so the
+            # subscriber is always reaped; otherwise a 24/7 wall accumulates
+            # zombie subscribers, each with a queue and a coroutine.
+            watcher = asyncio.create_task(_watch_for_disconnect(websocket))
+            getter: asyncio.Task | None = None
+            try:
+                await websocket.send_json(
+                    {
+                        "type": "hello",
+                        "at": time.time(),
+                        "ping_seconds": WS_PING_SECONDS,
+                        "recent": [absolutize(event, base) for event in replayed],
+                    }
+                )
+                while True:
+                    # The getter outlives a ping timeout on purpose: cancelling
+                    # a queue.get() that has already taken an item would drop
+                    # that bird on the floor.
+                    if getter is None:
+                        getter = asyncio.create_task(queue.get())
+                    done, _ = await asyncio.wait(
+                        {getter, watcher},
+                        timeout=WS_PING_SECONDS,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if watcher in done:
+                        break
+                    if getter not in done:
+                        await websocket.send_json({"type": "ping", "at": time.time()})
+                        continue
+                    event, getter = getter.result(), None
+                    # The backlog snapshot above was taken after subscribing —
+                    # safe against loss, but the same event can also arrive
+                    # here. Send it once.
+                    if _is_replay_duplicate(event, replayed):
+                        continue
+                    await websocket.send_json(absolutize(event, base))
+            except WebSocketDisconnect:
+                pass
+            except (RuntimeError, OSError):
+                # Socket died mid-send (connection reset) — normal for a
+                # long-lived stream, not worth a traceback.
+                logger.debug("ws: detection stream closed mid-send")
+            finally:
+                watcher.cancel()
+                if getter is not None:
+                    getter.cancel()
 
     @app.get("/wall.png")
     def wall_png() -> Response:
@@ -172,13 +308,23 @@ def create_app(config: Config | None = None) -> FastAPI:
         )
 
     @app.get("/audio/{filename}")
-    def audio(filename: str) -> FileResponse:
+    def audio(filename: str, download: str | None = None) -> FileResponse:
         """The archived detection clip behind a painting (see /api/live's
-        `audio` field). 404 for birds painted without one."""
+        `audio` field). 404 for birds painted without one. `?download=1`
+        serves it as an attachment — the same bytes, saved rather than
+        streamed (the wall's click-to-replay uses the plain url).
+
+        `download` is read leniently: it's a flag on a link people type and
+        share, so anything but an explicit no counts as yes — a typo should
+        still hand over the sound, not a 422."""
         path = store.audio_path(filename)
         if path is None:
             raise HTTPException(status_code=404)
-        return FileResponse(path, media_type="audio/wav")
+        return FileResponse(
+            path,
+            media_type="audio/wav",
+            filename=filename if _asked_to_download(download) else None,
+        )
 
     @app.get("/images/{filename}")
     def image(filename: str) -> FileResponse:
@@ -221,6 +367,9 @@ def create_app(config: Config | None = None) -> FastAPI:
             confidence=1.0,
             source=source,
         )
+        # Dev paints ride the same stream as heard birds (no clip — nothing
+        # was heard), so the socket can be exercised without waiting on a bird.
+        announce_painted(events, store, painting)
         return JSONResponse(
             {"painted": painting.file, "source": source}, status_code=201
         )
