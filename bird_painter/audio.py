@@ -43,7 +43,16 @@ def detection_clip_wav(
     if enhance:
         from .clip_clean import enhance as clean
 
-        clip = clean(clip, samplerate)
+        # Hand over where the detection sits inside the cut. The padding
+        # around it is the same room without the bird, which is a far better
+        # noise profile than anything the cleanup could infer from the mixture
+        # — and the only one that holds when the bird sings right through its
+        # own detection.
+        bird_span = (
+            max(0, int(start_seconds * samplerate) - start),
+            min(end - start, int(end_seconds * samplerate) - start),
+        )
+        clip = clean(clip, samplerate, bird_span=bird_span)
     clip = np.clip(clip, -1.0, 1.0)
     pcm = (clip * 32767.0).astype("<i2")
     buf = io.BytesIO()

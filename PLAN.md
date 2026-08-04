@@ -376,11 +376,27 @@ whole magic; ship it first.
   in every bin and a plain fraction-of-peak threshold would call the whole
   spectrum "the bird".
 
-  Measured after the fix: the nine real clips now land on bands from 234 Hz
-  (elf owl) to 11.6 kHz (cuckoo), with sub-200 Hz energy down from 75–95% to
-  **≤3.5%**, and every clip at -0.3 dBFS. On synthetic mixtures, in-band SNR
-  improves 6×–115× including cases built to defeat it (a 300 Hz thump 25× the
-  bird's amplitude; a 800 Hz hum 90× its amplitude). Fail-soft throughout
-  (`BP_ENHANCE_CLIPS=false` archives the raw cut): a clip in the archive beats
-  a traceback in the mic thread. The recording policy is unchanged — still only
-  the seconds around a painted detection, still never leaving the house.
+  Measured after the fix: the nine real clips land on bands from 234 Hz (elf
+  owl) to 11.7 kHz (cuckoo), with sub-200 Hz energy down from 75–95% to
+  **≤3.6%**, and every clip at -0.3 dBFS.
+
+  **The noise profile comes from the padding, not from statistics.** Round-2
+  review found the remaining failure: a bird that sings through its own
+  detection becomes its own noise profile and is subtracted away, leaving
+  amplified hiss at full level — silently, in the only copy — and a clip is
+  detection ± 1.5 s, so a 3 s song hits that case exactly. The fix uses what
+  the caller already knows: `detection_clip_wav` passes the detection's
+  position, and the padding either side is the same room without the bird —
+  both the noise profile and the "which bins are louder during the detection"
+  comparison come from it. Measured across bird-fills-20/50/80/100%-of-its-
+  detection: 8/8 kept at every level, where before it was erased about half
+  the time at 50%. A clip with no quiet moment anywhere, padding included, is
+  archived raw rather than cleaned — nothing can learn a room that never goes
+  quiet, and a raw clip beats a confident wall of hiss.
+
+  On synthetic mixtures in-band SNR improves 6×–115×, including cases built
+  to defeat it (a 300 Hz thump 25× the bird's amplitude; an 800 Hz hum 90×).
+  Fail-soft throughout (`BP_ENHANCE_CLIPS=false` archives the raw cut): a clip
+  in the archive beats a traceback in the mic thread. The recording policy is
+  unchanged — still only the seconds around a painted detection, still never
+  leaving the house.

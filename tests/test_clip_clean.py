@@ -171,3 +171,61 @@ def test_a_faint_bird_outranks_a_far_louder_steady_hum():
     mixture = mixture + 0.9 * np.sin(2 * np.pi * 800 * t)  # a very loud mains-ish hum
     cleaned = enhance(mixture, SAMPLERATE)
     assert band_energy(cleaned, 5500, 6500) > band_energy(cleaned, 700, 900)
+
+
+def a_detection(duty: float, seed: int = 0, freq: float = 4200.0):
+    """A clip shaped like the ones this app actually archives: 1.5 s of
+    padding, a 3 s BirdNET detection, 1.5 s of padding. `duty` is how much of
+    the DETECTION the bird fills — 1.0 means it sings right through it, which
+    is the case round-2 review found erased the bird entirely."""
+    pad, detection = 1.5, 3.0
+    seconds = detection + 2 * pad
+    rng = np.random.default_rng(seed)
+    t = np.linspace(0, seconds, int(seconds * SAMPLERATE), endpoint=False)
+    first, last = int(pad * SAMPLERATE), int((pad + detection) * SAMPLERATE)
+    envelope = np.zeros_like(t)
+    length = int(duty * (last - first))
+    start = first + ((last - first) - length) // 2
+    envelope[start : start + length] = 1.0
+    mixture = (
+        0.02 * envelope * np.sin(2 * np.pi * freq * t)
+        + 0.05 * rng.standard_normal(len(t))
+        + 0.25 * np.sin(2 * np.pi * 90 * t)
+    )
+    return mixture, (first, last)
+
+
+@pytest.mark.parametrize("duty", [0.2, 0.5, 0.8, 1.0])
+def test_the_bird_survives_however_much_of_its_detection_it_fills(duty):
+    """Round-2 review of #96: a bird singing through its own detection became
+    its own noise profile and was subtracted away, leaving amplified hiss at
+    full level — silently, in the only copy. The padding either side is the
+    same room without it, so that's what the noise profile is built from."""
+    mixture, span = a_detection(duty)
+    cleaned = enhance(mixture, SAMPLERATE, bird_span=span)
+    bird = band_energy(cleaned, 4000, 4400)
+    assert bird / band_energy(cleaned, 0, 24000) > 0.5, f"bird lost at {duty:.0%}"
+
+
+def test_a_clip_with_no_quiet_moment_at_all_is_archived_raw():
+    """The one case nothing can learn from: the bird never stops, not even in
+    the padding. Better a raw clip than a confident wall of hiss."""
+    t = np.linspace(0, 6.0, 6 * SAMPLERATE, endpoint=False)
+    rng = np.random.default_rng(0)
+    mixture = (
+        0.02 * np.sin(2 * np.pi * 4200 * t)
+        + 0.05 * rng.standard_normal(len(t))
+        + 0.25 * np.sin(2 * np.pi * 90 * t)
+    )
+    span = (int(1.5 * SAMPLERATE), int(4.5 * SAMPLERATE))
+    assert np.array_equal(enhance(mixture, SAMPLERATE, bird_span=span), mixture)
+
+
+def test_the_span_is_ignored_when_the_padding_is_too_short_to_learn_from():
+    """A degenerate span must not crash or produce a worse clip — it falls
+    back to estimating the noise from the mixture."""
+    mixture, _ = a_detection(0.5)
+    for span in [(0, len(mixture)), (0, 0), (len(mixture), len(mixture))]:
+        cleaned = enhance(mixture, SAMPLERATE, bird_span=span)
+        assert np.isfinite(cleaned).all()
+        assert cleaned.shape == mixture.shape
