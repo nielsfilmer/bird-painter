@@ -37,7 +37,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 # Idle keepalive on the detection socket. Birds are rare — an hour of silence
 # is normal — so the stream pings to keep proxies/NAT from reaping a healthy
-# connection, and to notice a client that vanished without a FIN.
+# connection. It does NOT detect a client that vanished: writes to a lost
+# transport succeed silently, which is what _watch_for_disconnect is for.
 WS_PING_SECONDS = 30
 
 
@@ -61,6 +62,22 @@ _NOT_DOWNLOAD = {"", "0", "false", "no", "off"}
 
 def _asked_to_download(value: str | None) -> bool:
     return value is not None and value.strip().lower() not in _NOT_DOWNLOAD
+
+
+def _is_replay_duplicate(event: dict, replayed: list[dict]) -> bool:
+    """Whether this event was already sent in the `hello` replay.
+
+    Matched by identity, never equality: two different birds can produce equal
+    dicts. The overlap can only be a PREFIX of the queue — everything the
+    snapshot held was published before everything that follows — so the first
+    fresh event ends it, and the list is dropped rather than searched forever.
+    """
+    if not replayed:
+        return False
+    if any(event is already_sent for already_sent in replayed):
+        return True
+    replayed.clear()
+    return False
 
 
 async def _watch_for_disconnect(websocket: WebSocket) -> None:
@@ -225,8 +242,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                     # The backlog snapshot above was taken after subscribing —
                     # safe against loss, but the same event can also arrive
                     # here. Send it once.
-                    if any(event is already_sent for already_sent in replayed):
-                        replayed.remove(event)
+                    if _is_replay_duplicate(event, replayed):
                         continue
                     await websocket.send_json(absolutize(event, base))
             except WebSocketDisconnect:

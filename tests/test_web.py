@@ -382,3 +382,23 @@ def test_download_flag_is_read_leniently(config):
             assert "content-disposition" not in client.get(
                 f"/audio/{clip}?download={value}"
             ).headers, value
+
+
+def test_replay_dedupe_matches_by_identity_and_ends_at_the_first_fresh_event():
+    """The round-2 review caught the integration test never reaching this
+    branch, so the rule is pinned directly: the same object is a duplicate, an
+    equal-but-distinct event is not, and the overlap ends at the first fresh
+    event."""
+    from bird_painter.web import _is_replay_duplicate
+
+    replayed_event = {"type": "painted", "species_common": "Robin"}
+    replayed = [replayed_event]
+
+    assert _is_replay_duplicate(replayed_event, replayed) is True
+    assert replayed == [replayed_event]  # still guarding the rest of the prefix
+
+    twin = {"type": "painted", "species_common": "Robin"}  # equal, not the same
+    assert _is_replay_duplicate(twin, replayed) is False
+    assert replayed == []  # a fresh event ends the overlap
+
+    assert _is_replay_duplicate(replayed_event, replayed) is False  # nothing left

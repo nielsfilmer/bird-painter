@@ -320,6 +320,9 @@ whole magic; ship it first.
   (both producers announce through one guarded path). A client that vanishes
   without closing is only observable via the ASGI receive channel, so the
   endpoint races a receive against its send pump — otherwise a wall running for
-  months accumulates zombie subscribers. Stays inside the house like everything
-  else — no
+  months accumulates zombie subscribers. **A gated detection stays a bare fact**
+  (owner decision, 2026-08-04, when the review asked): name, time, confidence,
+  `will_paint: false` — no image and no clip, because attaching an older
+  painting's would describe a different hearing than the one being announced.
+  Stays inside the house like everything else — no
   auth, LAN-scoped, same trust boundary as `/api/live` and `/audio/*`.
