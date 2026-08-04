@@ -355,17 +355,32 @@ whole magic; ship it first.
 - **2026-08-04** — **Archived detection clips are cleaned and levelled**
   (owner request: "can you cleanup the actual detected sound better and boost
   it so it can be heard clearer?"). A raw window off a window-facing mic is
-  mostly traffic rumble with a bird somewhere in it — the first real clip in
-  the archive peaked at **-46 dBFS with 87% of its energy below 200 Hz**.
+  mostly traffic rumble with a bird somewhere in it — the nine clips in the
+  archive averaged **-46 dBFS with 75–95% of their energy below 200 Hz**.
   `clip_clean.enhance` now runs before archiving: spectral subtraction against
   a noise profile the clip supplies itself, band-limiting to the band the bird
   actually occupies, then normalise with a soft limiter (ceiling 0.97, never
-  full scale). The band is found from which bins **change** rather than which
-  are loudest — a lorry holds one note for the whole clip, a bird is an event
-  — so a 400 Hz pigeon and a 8 kHz wren both survive where a fixed high-pass
-  would keep the traffic or delete the pigeon. Measured on synthetic mixtures:
-  27×–1500× improvement in in-band signal-to-noise; on that real clip, -46 →
-  -0.3 dBFS with the energy moved off the rumble. Fail-soft throughout
+  full scale).
+
+  **The band is chosen by CONTRAST — how far a bin rises above its own steady
+  level, at the 90th percentile over the clip — not by loudness and not by
+  absolute transient energy.** Review caught the first two attempts: loudness
+  picks the traffic outright, and absolute transient energy also picks the
+  traffic (rumble fluctuates, and 40 dB of fluctuating rumble beats a faint
+  bird) — it pinned **all nine real clips to the 200 Hz floor**, i.e. the
+  cleanup was band-limiting to the noise and deleting the bird. Contrast is
+  scale-free, so a faint 6 kHz bird outranks a loud 300 Hz lorry; the 90th
+  percentile adds duration, so a door slam or a knock on the mic stand — loud,
+  transient, brief — can't win a band a sustained note holds. Growth from the
+  peak stops against the metric's own background level, since hiss has contrast
+  in every bin and a plain fraction-of-peak threshold would call the whole
+  spectrum "the bird".
+
+  Measured after the fix: the nine real clips now land on bands from 234 Hz
+  (elf owl) to 11.6 kHz (cuckoo), with sub-200 Hz energy down from 75–95% to
+  **≤3.5%**, and every clip at -0.3 dBFS. On synthetic mixtures, in-band SNR
+  improves 6×–115× including cases built to defeat it (a 300 Hz thump 25× the
+  bird's amplitude; a 800 Hz hum 90× its amplitude). Fail-soft throughout
   (`BP_ENHANCE_CLIPS=false` archives the raw cut): a clip in the archive beats
-  a traceback in the mic thread. The recording policy is unchanged — still
-  only the seconds around a painted detection, still never leaving the house.
+  a traceback in the mic thread. The recording policy is unchanged — still only
+  the seconds around a painted detection, still never leaving the house.
