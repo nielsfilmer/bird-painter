@@ -20,7 +20,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import brush
@@ -36,7 +35,6 @@ from .trim import trim_to_bird
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
-
 
 
 def _base_url(websocket: WebSocket) -> str:
@@ -166,19 +164,16 @@ def create_app(config: Config | None = None) -> FastAPI:
         ),
         lifespan=lifespan,
     )
+    generated_openapi = app.openapi
+
     def openapi() -> dict:
-        """The generated schema, plus the WebSocket FastAPI can't see. Without
-        this a reader of /docs never learns the stream exists."""
-        if app.openapi_schema is None:
-            schema = get_openapi(
-                title=app.title,
-                version=app.version,
-                description=app.description,
-                routes=app.routes,
-            )
-            schema["paths"].update(openapi_websocket_path())
-            app.openapi_schema = schema
-        return app.openapi_schema
+        """FastAPI's own schema, plus the WebSocket it cannot see — otherwise a
+        reader of /docs never learns the stream exists. Decorating rather than
+        rebuilding keeps everything FastAPI puts in there (tags, servers, its
+        own caching) instead of quietly dropping it."""
+        schema = generated_openapi()
+        schema["paths"].update(openapi_websocket_path())
+        return schema
 
     app.openapi = openapi
 

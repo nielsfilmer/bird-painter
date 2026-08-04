@@ -51,7 +51,7 @@ def test_every_documented_endpoint_actually_exists(client):
         for method in getattr(route, "methods", set())
     }
     for endpoint in ENDPOINTS:
-        path = endpoint["path"].replace("{file}", "{filename}")
+        path = endpoint["path"]
         assert (endpoint["method"], path) in routes, f"undocumented drift: {path}"
 
 
@@ -63,9 +63,7 @@ def test_every_real_api_route_is_documented(client):
     that a new POST on an already-documented GET path slipped straight
     through — and WebSocket routes count, since the stream is the half most
     worth documenting."""
-    documented = {
-        (e["method"], e["path"].replace("{file}", "{filename}")) for e in ENDPOINTS
-    }
+    documented = {(e["method"], e["path"]) for e in ENDPOINTS}
     documented.add(("WEBSOCKET", WEBSOCKET["path"]))
     # FastAPI's own generated routes + the wall's ES module: not API surface.
     documented |= {
@@ -80,8 +78,9 @@ def test_every_real_api_route_is_documented(client):
             served.add(("WEBSOCKET", route.path))
             continue
         for method in getattr(route, "methods", set()):
-            if method in {"GET", "POST"}:
-                served.add((method, route.path))
+            if method in {"HEAD", "OPTIONS"}:  # FastAPI adds these itself
+                continue
+            served.add((method, route.path))
     assert served - documented == set()
 
 
@@ -232,3 +231,38 @@ def test_the_page_can_still_stream_when_the_description_fails(client):
     assert 'const WS_PATH = "/ws/detections"' in page
     assert "describeFailure" in page
     assert "response.ok" in page
+
+
+def test_documented_download_values_are_the_ones_the_code_refuses():
+    """The `?download` prose was the one documented constant not pinned — and
+    it is exactly the sentence that was wrong in round 1."""
+    from bird_painter.web import _NOT_DOWNLOAD
+
+    note = next(
+        p["note"]
+        for e in ENDPOINTS
+        if e["path"] == "/audio/{filename}"
+        for p in e["params"]
+        if p["name"] == "download"
+    )
+    for refused in _NOT_DOWNLOAD - {""}:
+        assert refused in note
+    assert "empty" in note  # the "" case, which reads as a word not a value
+
+
+def test_openapi_documents_the_status_a_plain_get_actually_returns(client):
+    """Round-2 review: the schema claimed 400, but Starlette never matches a
+    WebSocket route for an http request — it is a 404."""
+    schema = client.get("/openapi.json").json()
+    assert set(schema["paths"]["/ws/detections"]["get"]["responses"]) == {"101", "404"}
+    assert client.get("/ws/detections").status_code == 404
+
+
+def test_openapi_keeps_what_fastapi_generates(client):
+    """The WebSocket is folded into FastAPI's own schema, not a rebuilt one —
+    a rebuild silently dropped fields it fills in."""
+    schema = client.get("/openapi.json").json()
+    assert schema["info"]["title"] == "bird-painter"
+    assert schema["openapi"].startswith("3.")
+    assert "/api/live" in schema["paths"]  # the generated half survives
+    assert "/ws/detections" in schema["paths"]  # and the added half is there

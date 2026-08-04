@@ -84,6 +84,10 @@ ENDPOINTS: list[dict] = [
             },
         ],
         "returns": "application/json",
+        "statuses": {
+            "200": "a page of the archive",
+            "422": "offset/limit weren't numbers (out-of-range values are clamped)",
+        },
         "example": {
             "total": 137,
             "offset": 0,
@@ -99,17 +103,21 @@ ENDPOINTS: list[dict] = [
     },
     {
         "method": "GET",
-        "path": "/images/{file}",
+        "path": "/images/{filename}",
         "summary": "A painting",
         "description": (
             "An archived painting by filename (as given in `file` fields). "
             "Images only — the archive's metadata is not reachable here."
         ),
         "returns": "image/jpeg, image/png, image/webp or image/svg+xml",
+        "statuses": {
+            "200": "the painting",
+            "404": "no such painting, or a name that isn't a servable image",
+        },
     },
     {
         "method": "GET",
-        "path": "/audio/{file}",
+        "path": "/audio/{filename}",
         "summary": "The sound a bird was recognised from",
         "description": (
             "The archived detection clip: the seconds of microphone audio that "
@@ -130,6 +138,10 @@ ENDPOINTS: list[dict] = [
             }
         ],
         "returns": "audio/wav",
+        "statuses": {
+            "200": "the clip",
+            "404": "no clip for that painting, or a name that isn't a .wav",
+        },
     },
     {
         "method": "GET",
@@ -333,9 +345,16 @@ def openapi_websocket_path() -> dict:
                     f"{WEBSOCKET['description']}\n\n"
                     f"{notes}\n\n### Events\n\n{events}"
                 ),
+                "operationId": "detections_stream",
                 "responses": {
                     "101": {"description": "Switching Protocols — the stream is open"},
-                    "400": {"description": "Not a WebSocket handshake"},
+                    "404": {
+                        "description": (
+                            "A plain GET. This path answers a WebSocket upgrade "
+                            "and nothing else, so an ordinary request finds no "
+                            "route here — including Swagger's own 'Try it out'."
+                        )
+                    },
                 },
             }
         }

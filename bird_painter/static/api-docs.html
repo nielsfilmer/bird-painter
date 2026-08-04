@@ -255,10 +255,17 @@
 
   const when = (event) => new Date(event.at * 1000).toLocaleTimeString();
 
+  // A reconnect replays the backlog, so the same bird can arrive twice; the
+  // server dedupes only within one connection.
+  const shown = new Set();
+  const keyOf = (event) => `${event.type}|${event.at}|${event.species_common}`;
+
   function render(event) {
     // Only the two bird-shaped events belong in the list; anything else the
     // stream grows later would otherwise render as "undefined · Invalid Date".
     if (event.type !== "painted" && event.type !== "detected") return;
+    if (shown.has(keyOf(event))) return;
+    shown.add(keyOf(event));
     empty.hidden = true;
     const row = document.createElement("li");
     if (event.image) {
@@ -294,6 +301,7 @@
     row.append(body);
     list.prepend(row);
     while (list.children.length > MAX_ROWS) list.lastElementChild.remove();
+    if (shown.size > MAX_ROWS * 4) shown.clear();  // replays are recent, not old
   }
 
   let socket = null;
@@ -339,8 +347,14 @@
   });
 
   // Everything is defined; now use it. The description is optional — the
-  // console is not, so it starts either way.
-  if (api) renderDescription(api);
+  // console is not, so it starts either way, whatever /api did.
+  if (api) {
+    try {
+      renderDescription(api);
+    } catch (error) {
+      describeFailure(`unreadable description (${error.message ?? error})`);
+    }
+  }
   connect();
 </script>
 </body>
