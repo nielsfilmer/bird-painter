@@ -315,6 +315,11 @@ whole magic; ship it first.
   the push side of the same story, for anything that wants to *watch*
   recognition happen. Urls are absolutised per connection, so a LAN client gets
   fetchable links. Fan-out is best-effort: bounded per-client queues drop their
-  oldest events rather than ever stalling the mic thread, and a broken socket
-  can never cost a painting. Stays inside the house like everything else — no
+  oldest events rather than ever stalling the mic thread, and neither a broken
+  socket nor a failed clip lookup can cost a painting that already landed
+  (both producers announce through one guarded path). A client that vanishes
+  without closing is only observable via the ASGI receive channel, so the
+  endpoint races a receive against its send pump — otherwise a wall running for
+  months accumulates zombie subscribers. Stays inside the house like everything
+  else — no
   auth, LAN-scoped, same trust boundary as `/api/live` and `/audio/*`.

@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import subprocess
 import sys
@@ -272,3 +273,112 @@ def test_audio_streams_inline_unless_download_is_asked_for(config):
         clip = store.audio_file_for(painting.file)
         # The wall's click-to-replay must keep streaming, not download.
         assert "content-disposition" not in client.get(f"/audio/{clip}").headers
+
+
+def test_ws_reaps_the_subscriber_when_a_client_drops_without_closing(config):
+    """The failure mode of a 24/7 wall: a client that vanishes without a close
+    frame (lid shut, wifi gone, process killed). The server sees that ONLY as a
+    `websocket.disconnect` delivered to receive() — writes to the dead
+    transport keep succeeding — so an endpoint that never receives leaks its
+    subscriber, its queue, and its coroutine forever.
+
+    Driven at the ASGI layer on purpose: TestClient always closes cleanly, so
+    it cannot express this drop.
+    """
+    app = create_app(config)
+    hub = app.state.events
+
+    async def scenario():
+        incoming: asyncio.Queue = asyncio.Queue()
+        sent: list[dict] = []
+
+        async def receive():
+            return await incoming.get()
+
+        async def send(message):
+            sent.append(message)  # a lost transport swallows sends silently
+
+        scope = {
+            "type": "websocket",
+            "asgi": {"version": "3.0"},
+            "scheme": "ws",
+            "http_version": "1.1",
+            "path": "/ws/detections",
+            "raw_path": b"/ws/detections",
+            "query_string": b"",
+            "root_path": "",
+            "headers": [(b"host", b"wall.local:8537")],
+            "client": ("10.0.0.9", 51000),
+            "server": ("10.0.0.2", 8537),
+            "subprotocols": [],
+            "state": {},
+        }
+        await incoming.put({"type": "websocket.connect"})
+        served = asyncio.create_task(app(scope, receive, send))
+
+        for _ in range(200):  # let the endpoint accept and greet
+            await asyncio.sleep(0)
+            if any(m["type"] == "websocket.send" for m in sent):
+                break
+        assert hub.subscriber_count == 1
+
+        # The drop: no close frame from the client, just the transport dying.
+        await incoming.put({"type": "websocket.disconnect", "code": 1006})
+        await asyncio.wait_for(served, timeout=5)
+        assert hub.subscriber_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_ws_does_not_replay_an_event_twice_to_a_fresh_client(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        client.post("/dev/paint/robin")
+        with client.websocket_connect("/ws/detections") as ws:
+            hello = ws.receive_json()
+            assert [e["species_common"] for e in hello["recent"]] == ["Robin"]
+            # A second bird proves the stream is still live AND that the
+            # replayed one didn't arrive again behind it.
+            client.post("/dev/paint/wren")
+            event = ws.receive_json()
+            assert (event["type"], event["species_common"]) == ("painted", "Wren")
+
+
+def test_ws_survives_a_clip_lookup_failure(config, monkeypatch):
+    """The painting is already archived when we announce it — a filesystem
+    hiccup reading the clip must not 500 the paint that succeeded."""
+    app = create_app(config)
+    with TestClient(app) as client:
+        monkeypatch.setattr(
+            app.state.store,
+            "audio_file_for",
+            lambda file: (_ for _ in ()).throw(OSError("disk gone")),
+        )
+        assert client.post("/dev/paint/robin").status_code == 201
+        assert [p.species_common for p in app.state.store.live()] == ["Robin"]
+
+
+def test_download_flag_is_read_leniently(config):
+    """It's a flag on a shared link, so a typo hands over the sound rather
+    than 422-ing; only an explicit no keeps it streaming."""
+    app = create_app(config)
+    with TestClient(app) as client:
+        store = app.state.store
+        painting = store.add(
+            image_bytes=b"<svg/>",
+            extension="svg",
+            species_common="Wren",
+            species_scientific="Troglodytes troglodytes",
+            confidence=0.8,
+            source="detection",
+            audio_bytes=b"RIFF",
+        )
+        clip = store.audio_file_for(painting.file)
+        for value in ("1", "true", "yes", "banana", ""):
+            headers = client.get(f"/audio/{clip}?download={value}").headers
+            expected = value != ""
+            assert ("content-disposition" in headers) is expected, value
+        for value in ("0", "false", "no", "off"):
+            assert "content-disposition" not in client.get(
+                f"/audio/{clip}?download={value}"
+            ).headers, value

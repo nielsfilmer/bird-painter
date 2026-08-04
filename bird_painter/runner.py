@@ -14,7 +14,7 @@ from .audio import detection_clip_wav
 from .brush import paint as paint_species
 from .config import Config
 from .ears import Detection
-from .events import EventHub, detected_event, painted_event
+from .events import EventHub, announce_painted, detected_event
 from .gate import TriggerGate
 from .occasions import hat_for
 from .store import Store
@@ -107,11 +107,11 @@ class PaintRunner:
             audio_bytes=audio_bytes,
         )
         self.gate.record()
-        self._publish(painted_event(painting, self.store.audio_file_for(painting.file)))
+        announce_painted(self.events, self.store, painting)
         logger.info("painted %s (%.2f)", species, detection.confidence)
 
     def _publish(self, event: dict) -> None:
-        """Broadcasting must never cost a painting — the hub swallows its own
+        """Broadcasting must never cost a detection — the hub swallows its own
         errors, and a missing hub is simply a wall nobody is watching."""
         if self.events is not None:
             self.events.publish(event)

@@ -89,6 +89,22 @@ def painted_event(painting, audio_file: str | None) -> dict:
     }
 
 
+def announce_painted(hub: EventHub | None, store, painting) -> None:
+    """Broadcast a painting that landed — from either producer (the mic thread
+    or a /dev/paint request).
+
+    Everything here is best-effort by contract: the painting is already
+    archived, so neither the clip lookup (filesystem I/O, so it CAN raise) nor
+    the broadcast may cost it. Both producers go through this, so that promise
+    lives in one place."""
+    if hub is None:
+        return
+    try:
+        hub.publish(painted_event(painting, store.audio_file_for(painting.file)))
+    except OSError:
+        logger.exception("events: could not announce %s", painting.file)
+
+
 def absolutize(event: dict, base_url: str) -> dict:
     """Rewrite the event's root-relative urls against `base_url`
     ('http://host:port'), leaving the rest of the payload untouched."""
@@ -141,27 +157,34 @@ class EventHub:
         client, never raises into the caller (a mic thread must not die
         because a socket did)."""
         with self._lock:
+            # Append and schedule under the SAME lock: with two producer
+            # threads, releasing between them would let the backlog and the
+            # subscribers see the two events in opposite orders.
             self._backlog.append(event)
-            loop = self._loop
-        if loop is None:
-            return
-        try:
-            loop.call_soon_threadsafe(self._fanout, event)
-        except RuntimeError:
-            # Loop already closed (shutdown race) — the backlog still has it.
-            logger.debug("events: loop closed, dropping fan-out")
+            if self._loop is None:
+                return
+            try:
+                self._loop.call_soon_threadsafe(self._fanout, event)
+            except RuntimeError:
+                # Loop already closed (shutdown race) — the backlog still has it.
+                logger.debug("events: loop closed, dropping fan-out")
 
     def _fanout(self, event: dict) -> None:
         """Runs on the event loop, so touching the queues is safe."""
         for queue in list(self._subscribers):
-            if queue.full():
-                # Drop the oldest so the newest bird still gets through.
-                try:
-                    queue.get_nowait()
-                except asyncio.QueueEmpty:  # pragma: no cover — drained meanwhile
-                    pass
-                logger.warning("events: subscriber too slow, dropped an event")
-            queue.put_nowait(event)
+            # One bad subscriber must never cost the others their event, so
+            # each delivery stands alone.
+            try:
+                if queue.full():
+                    # Drop the oldest so the newest bird still gets through.
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:  # pragma: no cover — drained
+                        pass
+                    logger.warning("events: subscriber too slow, dropped an event")
+                queue.put_nowait(event)
+            except asyncio.QueueFull:  # pragma: no cover — lost a get() race
+                logger.warning("events: subscriber queue full, dropped an event")
 
     @contextmanager
     def subscribe(self) -> Iterator[asyncio.Queue]:
