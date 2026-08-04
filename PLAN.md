@@ -352,3 +352,20 @@ whole magic; ship it first.
   before merge. Reaching it from elsewhere is an ssh tunnel's job. Everything else stays open on the network: the wall, the
   archive, the stream, and the images and sounds its events link to — the
   phone and the e-paper frame depend on them.
+- **2026-08-04** — **Archived detection clips are cleaned and levelled**
+  (owner request: "can you cleanup the actual detected sound better and boost
+  it so it can be heard clearer?"). A raw window off a window-facing mic is
+  mostly traffic rumble with a bird somewhere in it — the first real clip in
+  the archive peaked at **-46 dBFS with 87% of its energy below 200 Hz**.
+  `clip_clean.enhance` now runs before archiving: spectral subtraction against
+  a noise profile the clip supplies itself, band-limiting to the band the bird
+  actually occupies, then normalise with a soft limiter (ceiling 0.97, never
+  full scale). The band is found from which bins **change** rather than which
+  are loudest — a lorry holds one note for the whole clip, a bird is an event
+  — so a 400 Hz pigeon and a 8 kHz wren both survive where a fixed high-pass
+  would keep the traffic or delete the pigeon. Measured on synthetic mixtures:
+  27×–1500× improvement in in-band signal-to-noise; on that real clip, -46 →
+  -0.3 dBFS with the energy moved off the rumble. Fail-soft throughout
+  (`BP_ENHANCE_CLIPS=false` archives the raw cut): a clip in the archive beats
+  a traceback in the mic thread. The recording policy is unchanged — still
+  only the seconds around a painted detection, still never leaving the house.

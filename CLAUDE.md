@@ -292,6 +292,11 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `api_docs.py` — the API's self-description: one structure describing
     every endpoint + WebSocket event (with examples), served as JSON by
     `/api` and rendered by `/api/docs`.
+  - `clip_clean.py` — `enhance(...)`: makes an archived detection clip
+    listenable — spectral subtraction against the clip's own noise profile,
+    band-limiting to the band the bird actually occupies (found per clip from
+    which bins CHANGE, not which are loudest), then normalise + soft-limit.
+    Fail-soft: returns the raw samples on anything unexpected.
   - `config.py` — knobs (defaults = PLAN.md v0 table, env-overridable).
   - `store.py` — permanent archive (files + `meta.jsonl`) + ephemeral live
     view + per-species `last_painted_at` (the cooldown key).

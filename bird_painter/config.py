@@ -225,6 +225,12 @@ class Config:
     enable_listener: bool = field(
         default_factory=lambda: _env_bool("BP_ENABLE_LISTENER", True)
     )
+    # Clean up the archived detection clip — denoise, band-limit to the bird's
+    # own band, normalise — so the wall's replay is audible rather than a
+    # rumble with a bird somewhere in it. Off archives the raw cut instead.
+    enhance_clips: bool = field(
+        default_factory=lambda: _env_bool("BP_ENHANCE_CLIPS", True)
+    )
 
     def __post_init__(self) -> None:
         # The location filter keys on a lat/lon pair — one without the other is
