@@ -10,11 +10,15 @@ from bird_painter.events import EVENT_TYPES, PING_SECONDS, detected_event, paint
 from bird_painter.store import Painting
 from bird_painter.web import create_app
 
+# The wall's own machine — /dev/paint is loopback-only, and
+# TestClient's default peer ('testclient') is not an address.
+LOCAL = ("127.0.0.1", 51000)
+
 
 @pytest.fixture
 def client(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         yield client
 
 
@@ -175,13 +179,16 @@ def test_documented_endpoint_examples_match_the_live_responses(client):
 
 
 def test_documented_statuses_are_the_ones_the_endpoint_returns(client):
-    """/dev/paint documents 201 and 502 — the 201 is exercised here; the 502
-    path (a failing brush with a key set) is covered in test_web.py."""
+    """/dev/paint documents 201, 404 and 502 — the 201 and the 404 are
+    exercised here; the 502 (a failing brush with a key set) is covered in
+    test_web.py."""
     statuses = next(
         e["statuses"] for e in ENDPOINTS if e["path"] == "/dev/paint/{species}"
     )
-    assert set(statuses) == {"201", "502"}
-    assert client.post("/dev/paint/junco").status_code == 201
+    assert set(statuses) == {"201", "404", "502"}
+    assert client.post("/dev/paint/junco").status_code == 201  # client is LOCAL
+    with TestClient(client.app, client=("192.168.1.50", 51000)) as remote:
+        assert remote.post("/dev/paint/junco").status_code == 404
 
 
 def test_documented_ping_interval_is_the_one_the_stream_uses(client):

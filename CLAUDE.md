@@ -318,7 +318,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
     `/api/archive`, `/wall.png`, `/images/*`, `/audio/*` (`?download=1` for an
     attachment), `/ws/detections` (live event stream), `/api` + `/api/docs`
-    (the API's own documentation), `/dev/paint/*`.
+    (the API's own documentation), `/dev/paint/*` (loopback only — 404 from
+    off-machine; it skips the cap and spends money).
   - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
     (the collage placement maths), so `/wall.png` places birds identically to
     the live wall. A parity test keeps the two in sync.

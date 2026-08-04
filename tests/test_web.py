@@ -10,11 +10,15 @@ from fastapi.testclient import TestClient
 from bird_painter.events import painted_event
 from bird_painter.web import create_app
 
+# The wall's own machine — /dev/paint is loopback-only, and
+# TestClient's default peer ('testclient') is not an address.
+LOCAL = ("127.0.0.1", 51000)
+
 
 @pytest.fixture
 def client(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         yield client
 
 
@@ -59,7 +63,7 @@ def test_images_refuses_missing_traversal_and_non_images(client):
 
 def test_live_caps_at_wall_max_live(config):
     app = create_app(dataclasses.replace(config, wall_max_live=2))
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         for species in ("robin", "wren", "junco"):
             client.post(f"/dev/paint/{species}")
         assert len(client.get("/api/live").json()["paintings"]) == 2
@@ -68,7 +72,7 @@ def test_live_caps_at_wall_max_live(config):
 def test_wall_png_renders_at_configured_size(config):
     small = dataclasses.replace(config, wall_png_width=320, wall_png_height=240)
     app = create_app(small)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         client.post("/dev/paint/robin")  # a (placeholder-SVG) plate to render
         response = client.get("/wall.png")
         assert response.status_code == 200
@@ -84,7 +88,7 @@ def test_wall_png_renders_when_empty(config):
     app = create_app(
         dataclasses.replace(config, wall_png_width=200, wall_png_height=150)
     )
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         response = client.get("/wall.png")
         assert response.status_code == 200
         assert response.headers["content-type"] == "image/png"
@@ -111,7 +115,7 @@ def test_dev_paint_returns_502_when_the_brush_fails_with_a_key(monkeypatch, conf
     keyed = dataclasses.replace(config, fal_key="present")
     monkeypatch.setattr(brush, "paint", lambda *a, **k: None)
     app = create_app(keyed)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         response = client.post("/dev/paint/robin")
         assert response.status_code == 502
         assert client.get("/api/live").json()["paintings"] == []
@@ -123,7 +127,7 @@ def test_dev_paint_uses_the_real_brush_when_a_key_is_set(monkeypatch, config):
     keyed = dataclasses.replace(config, fal_key="present")
     monkeypatch.setattr(brush, "paint", lambda *a, **k: (b"JPGBYTES", "jpg"))
     app = create_app(keyed)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         response = client.post("/dev/paint/song-thrush")
         assert response.status_code == 201
         assert response.json()["source"] == "dev"
@@ -140,7 +144,7 @@ def test_layout_js_is_served_as_a_module(client):
 
 def test_audio_endpoint_serves_clip_and_api_live_links_it(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         client.post("/dev/paint/robin")  # placeholder path: no audio
         live = client.get("/api/live").json()["paintings"]
         assert live[0]["audio"] is None  # dev birds have no clip
@@ -168,7 +172,7 @@ def test_audio_endpoint_serves_clip_and_api_live_links_it(config):
 
 def test_api_archive_paginates_everything_newest_first(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         for species in ("robin", "wren", "junco"):
             client.post(f"/dev/paint/{species}")
         body = client.get("/api/archive?limit=2").json()
@@ -184,7 +188,7 @@ def test_api_archive_paginates_everything_newest_first(config):
 
 def test_api_archive_clamps_junk_paging(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         client.post("/dev/paint/robin")
         assert client.get("/api/archive?offset=-5&limit=9999").json()["total"] == 1
         assert client.get("/api/archive?offset=999").json()["paintings"] == []
@@ -201,7 +205,10 @@ def test_archive_button_and_overlay_only_in_the_browser_page(client):
 
 def test_ws_streams_a_painted_bird_with_name_time_image_and_sound(config):
     app = create_app(config)
-    with TestClient(app) as client, client.websocket_connect("/ws/detections") as ws:
+    with (
+        TestClient(app, client=LOCAL) as client,
+        client.websocket_connect("/ws/detections") as ws,
+    ):
         assert ws.receive_json()["type"] == "hello"
         # A detection-style painting (with an archived clip) reaches the socket.
         store = app.state.store
@@ -233,7 +240,7 @@ def test_ws_streams_a_painted_bird_with_name_time_image_and_sound(config):
 
 def test_ws_replays_recent_events_to_a_late_client(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         client.post("/dev/paint/robin")  # happened before anyone connected
         with client.websocket_connect("/ws/detections") as ws:
             hello = ws.receive_json()
@@ -244,7 +251,7 @@ def test_ws_replays_recent_events_to_a_late_client(config):
 
 def test_ws_broadcasts_to_every_connected_client(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         with (
             client.websocket_connect("/ws/detections") as first,
             client.websocket_connect("/ws/detections") as second,
@@ -259,7 +266,7 @@ def test_ws_broadcasts_to_every_connected_client(config):
 
 def test_audio_streams_inline_unless_download_is_asked_for(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         store = app.state.store
         painting = store.add(
             image_bytes=b"<svg/>",
@@ -332,7 +339,7 @@ def test_ws_reaps_the_subscriber_when_a_client_drops_without_closing(config):
 
 def test_ws_does_not_replay_an_event_twice_to_a_fresh_client(config):
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         client.post("/dev/paint/robin")
         with client.websocket_connect("/ws/detections") as ws:
             hello = ws.receive_json()
@@ -348,7 +355,7 @@ def test_ws_survives_a_clip_lookup_failure(config, monkeypatch):
     """The painting is already archived when we announce it — a filesystem
     hiccup reading the clip must not 500 the paint that succeeded."""
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         monkeypatch.setattr(
             app.state.store,
             "audio_file_for",
@@ -362,7 +369,7 @@ def test_download_flag_is_read_leniently(config):
     """It's a flag on a shared link, so a typo hands over the sound rather
     than 422-ing; only an explicit no keeps it streaming."""
     app = create_app(config)
-    with TestClient(app) as client:
+    with TestClient(app, client=LOCAL) as client:
         store = app.state.store
         painting = store.add(
             image_bytes=b"<svg/>",
@@ -402,3 +409,52 @@ def test_replay_dedupe_matches_by_identity_and_ends_at_the_first_fresh_event():
     assert replayed == []  # a fresh event ends the overlap
 
     assert _is_replay_duplicate(replayed_event, replayed) is False  # nothing left
+
+
+def test_dev_paint_is_refused_from_off_the_machine(config):
+    """/dev/paint bypasses the hourly cap and, with a key set, spends real
+    money per call — so it must not be one curl away for anyone on the LAN
+    (issue #66). A 404, not a 403: a 403 would advertise that it's there."""
+    app = create_app(config)
+    with TestClient(app, client=("192.168.1.50", 51000)) as client:
+        assert client.post("/dev/paint/robin").status_code == 404
+        assert client.get("/api/live").json()["paintings"] == []  # nothing painted
+
+
+def test_dev_paint_refuses_a_peer_it_cannot_place(config):
+    """Fails closed: an unparseable or absent peer counts as remote."""
+    app = create_app(config)
+    with TestClient(app, client=("not-an-address", 1)) as client:
+        assert client.post("/dev/paint/robin").status_code == 404
+
+
+def test_dev_paint_ignores_a_forwarded_for_header(config):
+    """The decision is made on the peer address alone — a header can be typed
+    by anyone, and this wall has no authentication to fall back on."""
+    app = create_app(config)
+    with TestClient(app, client=("192.168.1.50", 51000)) as client:
+        response = client.post(
+            "/dev/paint/robin", headers={"X-Forwarded-For": "127.0.0.1"}
+        )
+        assert response.status_code == 404
+
+
+def test_dev_paint_still_works_from_the_wall_itself(config):
+    app = create_app(config)
+    for peer in (("127.0.0.1", 5000), ("::1", 5000)):
+        with TestClient(app, client=peer) as client:
+            assert client.post("/dev/paint/robin").status_code == 201
+
+
+def test_everything_else_stays_reachable_from_the_network(config):
+    """Only /dev/paint is local — the wall, the stream and their assets are
+    what the phone and the e-paper frame come for."""
+    app = create_app(config)
+    with TestClient(app, client=LOCAL) as local:
+        painted = local.post("/dev/paint/wren").json()["painted"]
+    with TestClient(app, client=("192.168.1.50", 51000)) as remote:
+        for path in ("/", "/api", "/api/docs", "/api/live", "/api/archive",
+                     "/wall.png", "/docs", f"/images/{painted}"):
+            assert remote.get(path).status_code == 200, path
+        with remote.websocket_connect("/ws/detections") as ws:
+            assert ws.receive_json()["type"] == "hello"

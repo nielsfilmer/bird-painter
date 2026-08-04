@@ -161,11 +161,16 @@ ENDPOINTS: list[dict] = [
             "Dev helper: paints the named species immediately, bypassing the "
             "microphone and the trigger gate. Uses the real brush when FAL_KEY "
             "is set, a placeholder plate otherwise. The painting has no "
-            "detection clip — nothing was heard."
+            "detection clip — nothing was heard.\n\n"
+            "**Reachable only from the wall's own machine.** It skips the "
+            "hourly cap and, with a key set, spends real money per call, so "
+            "off-machine callers get a 404 — everything else here is open on "
+            "your network, this one isn't."
         ),
         "returns": "application/json",
         "statuses": {
             "201": "painted; `source` is `dev`, or `dev-placeholder` with no FAL_KEY",
+            "404": "you're not on the wall's own machine",
             "502": "the brush failed (fal outage) — nothing painted, try again",
         },
         "example": {"painted": EXAMPLE_PAINTING_FILE, "source": "dev"},

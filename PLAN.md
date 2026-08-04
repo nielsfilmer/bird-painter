@@ -335,3 +335,14 @@ whole magic; ship it first.
   drift from the app. FastAPI's generated `/docs` stays as the OpenAPI
   reference for the REST half — it cannot express a WebSocket, which is why
   the hand-written surface exists.
+- **2026-08-04** — **`/dev/paint` is loopback-only** (owner decision: "the API
+  should not be completely public, only the websocket should be reachable" —
+  narrowed, on being asked, to everything-except-`/dev/paint`, enforced by
+  client address). It bypasses the hourly cap and spends real money per call
+  with a key set, so on an unauthenticated LAN it was the one endpoint that
+  could cost something (issue #66). Off-machine callers get 404, not 403 — a
+  403 advertises what's there. The decision is made on the peer address only,
+  never on `X-Forwarded-For`, and an unplaceable peer counts as remote, so it
+  fails closed. Everything else stays open on the network: the wall, the
+  archive, the stream, and the images and sounds its events link to — the
+  phone and the e-paper frame depend on them.

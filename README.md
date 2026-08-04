@@ -78,6 +78,11 @@ the collage before signing up for anything, drop in placeholder plates by hand:
 curl -X POST http://127.0.0.1:8537/dev/paint/eurasian-jay
 ```
 
+That one endpoint answers **only on the machine running the wall**. Everything
+else — the wall, the archive, the stream, the images and sounds — is served to
+your whole network as before; painting by hand isn't, because it skips the
+hourly cap and, with a key set, spends real money per call.
+
 ## Watch the birds arrive (WebSocket)
 
 The wall is the ambient view; `ws://<host>:8537/ws/detections` is the live one.

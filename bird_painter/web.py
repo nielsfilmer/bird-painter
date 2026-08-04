@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import ipaddress
 import logging
 import mimetypes
 import threading
@@ -19,7 +20,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import brush
@@ -35,6 +36,23 @@ from .trim import trim_to_bird
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+
+def _is_loopback(client: tuple[str, int] | None) -> bool:
+    """Whether a request came from this machine.
+
+    Decided on the peer address only — never on a header. `X-Forwarded-For`
+    and friends are attacker-supplied, and this wall runs on an
+    unauthenticated LAN; a missing peer (a transport that reports none) counts
+    as remote, so the restriction fails closed.
+    """
+    if client is None:
+        return False
+    try:
+        return ipaddress.ip_address(client[0]).is_loopback
+    except ValueError:
+        return False
 
 
 def _base_url(websocket: WebSocket) -> str:
@@ -367,10 +385,22 @@ def create_app(config: Config | None = None) -> FastAPI:
         return FileResponse(path, media_type=media_type)
 
     @app.post("/dev/paint/{species}")
-    def dev_paint(species: str) -> JSONResponse:
+    def dev_paint(species: str, request: Request) -> JSONResponse:
         """Paint a named species onto the wall — the real brush when FAL_KEY
         is set, a placeholder plate otherwise. Dev helper alongside the
-        detection-driven trigger gate."""
+        detection-driven trigger gate.
+
+        **Reachable only from the wall's own machine.** It bypasses the trigger
+        gate's hourly cap, and with FAL_KEY set every call spends real money,
+        so it must not be one curl away for anyone on the network (issue #66).
+        Off-machine callers get a 404 — the endpoint simply isn't there for
+        them; a 403 would advertise it."""
+        if not _is_loopback(request.scope.get("client")):
+            logger.info(
+                "dev/paint refused for %s (loopback only)",
+                request.scope.get("client"),
+            )
+            raise HTTPException(status_code=404)
         common = species.replace("-", " ").replace("_", " ").title()
         scientific = brush.UNKNOWN_SCIENTIFIC
         result = brush.paint(
