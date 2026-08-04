@@ -25,6 +25,16 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
+# Idle keepalive on the detection socket. Birds are rare — an hour of silence is
+# normal — so the stream pings to keep proxies/NAT from reaping a healthy
+# connection. It does NOT detect a client that vanished: writes to a lost
+# transport succeed silently (see web.py's _watch_for_disconnect).
+PING_SECONDS = 30
+
+# Every event type the stream can emit. The roster lives here so the docs can
+# be checked against it — add a type here when you add one.
+EVENT_TYPES = frozenset({"hello", "detected", "painted", "ping"})
+
 # Per-subscriber buffer. A client too slow to drain this loses its OLDEST
 # events (never blocks the mic thread) — birds are rare, so overflow means a
 # client that's effectively gone.

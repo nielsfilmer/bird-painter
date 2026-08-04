@@ -326,3 +326,12 @@ whole magic; ship it first.
   painting's would describe a different hearing than the one being announced.
   Stays inside the house like everything else — no
   auth, LAN-scoped, same trust boundary as `/api/live` and `/audio/*`.
+- **2026-08-04** — **The API documents itself** (owner request, same day):
+  `/api/docs` is a page describing every endpoint and every stream event, with
+  a live console wired to `/ws/detections` so the documentation demonstrates
+  the thing it documents; `/api` serves the same description as JSON, with the
+  instance's live settings. One structure (`api_docs.py`) feeds both, and tests
+  assert docs-vs-routes parity in both directions, so the docs can't quietly
+  drift from the app. FastAPI's generated `/docs` stays as the OpenAPI
+  reference for the REST half — it cannot express a WebSocket, which is why
+  the hand-written surface exists.
