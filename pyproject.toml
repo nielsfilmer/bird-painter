@@ -18,6 +18,10 @@ dependencies = [
     "pillow>=10.1",      # /wall.png render; 10.1 for ImageFont.load_default(size)
     "numpy>=1.24",       # feather-mask maths for the /wall.png render
     "websockets>=12",    # uvicorn's WebSocket protocol (/ws/detections)
+    # Detection-clip cleanup (clip_clean). It arrives via librosa anyway, but
+    # librosa only asks for >=1.6 — and ShortTimeFFT landed in 1.12, so a valid
+    # resolve could otherwise disable the cleanup silently.
+    "scipy>=1.12",
 ]
 
 [project.optional-dependencies]

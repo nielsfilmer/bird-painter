@@ -150,6 +150,7 @@ Everything is an environment variable — see [`.env.example`](.env.example):
 | `BP_WALL_MAX_LIVE` | 12 | how many birds the collage holds at once |
 | `BP_LATITUDE` / `BP_LONGITUDE` | off | restrict BirdNET to species plausible where (and when) you are |
 | `BP_INPUT_DEVICE` | system default | which microphone to listen on (index or name); essential on a headless box |
+| `BP_ENHANCE_CLIPS` | on | clean up the archived clip — denoise, band-limit to the bird, normalise. Off archives the raw cut |
 | `BP_FAL_MODEL` | `fal-ai/flux/schnell` | `fal-ai/flux/dev` follows the house-style prompt more faithfully, at a higher price |
 
 ## Hang it on the wall for real

@@ -352,3 +352,51 @@ whole magic; ship it first.
   before merge. Reaching it from elsewhere is an ssh tunnel's job. Everything else stays open on the network: the wall, the
   archive, the stream, and the images and sounds its events link to — the
   phone and the e-paper frame depend on them.
+- **2026-08-04** — **Archived detection clips are cleaned and levelled**
+  (owner request: "can you cleanup the actual detected sound better and boost
+  it so it can be heard clearer?"). A raw window off a window-facing mic is
+  mostly traffic rumble with a bird somewhere in it — the nine clips in the
+  archive averaged **-46 dBFS with 75–95% of their energy below 200 Hz**.
+  `clip_clean.enhance` now runs before archiving: spectral subtraction against
+  a noise profile the clip supplies itself, band-limiting to the band the bird
+  actually occupies, then normalise with a soft limiter (ceiling 0.97, never
+  full scale).
+
+  **The band is chosen by CONTRAST — how far a bin rises above its own steady
+  level, at the 90th percentile over the clip — not by loudness and not by
+  absolute transient energy.** Review caught the first two attempts: loudness
+  picks the traffic outright, and absolute transient energy also picks the
+  traffic (rumble fluctuates, and 40 dB of fluctuating rumble beats a faint
+  bird) — it pinned **all nine real clips to the 200 Hz floor**, i.e. the
+  cleanup was band-limiting to the noise and deleting the bird. Contrast is
+  scale-free, so a faint 6 kHz bird outranks a loud 300 Hz lorry; the 90th
+  percentile adds duration, so a door slam or a knock on the mic stand — loud,
+  transient, brief — can't win a band a sustained note holds. Growth from the
+  peak stops against the metric's own background level, since hiss has contrast
+  in every bin and a plain fraction-of-peak threshold would call the whole
+  spectrum "the bird".
+
+  Measured after the fix: the nine real clips land on bands from 234 Hz (elf
+  owl) to 11.7 kHz (cuckoo), with sub-200 Hz energy down from 75–95% to
+  **≤3.6%**, and every clip at -0.3 dBFS.
+
+  **The noise profile comes from the padding, not from statistics.** Round-2
+  review found the remaining failure: a bird that sings through its own
+  detection becomes its own noise profile and is subtracted away, leaving
+  amplified hiss at full level — silently, in the only copy — and a clip is
+  detection ± 1.5 s, so a 3 s song hits that case exactly. The fix uses what
+  the caller already knows: `detection_clip_wav` passes the detection's
+  position, and the padding either side is the same room without the bird —
+  both the noise profile and the "which bins are louder during the detection"
+  comparison come from it. Measured across bird-fills-20/50/80/100%-of-its-
+  detection: 8/8 kept at every level, where before it was erased about half
+  the time at 50%. A clip with no quiet moment anywhere, padding included, is
+  archived raw rather than cleaned — nothing can learn a room that never goes
+  quiet, and a raw clip beats a confident wall of hiss.
+
+  On synthetic mixtures in-band SNR improves 6×–115×, including cases built
+  to defeat it (a 300 Hz thump 25× the bird's amplitude; an 800 Hz hum 90×).
+  Fail-soft throughout (`BP_ENHANCE_CLIPS=false` archives the raw cut): a clip
+  in the archive beats a traceback in the mic thread. The recording policy is
+  unchanged — still only the seconds around a painted detection, still never
+  leaving the house.

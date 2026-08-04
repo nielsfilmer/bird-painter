@@ -94,6 +94,7 @@ class PaintRunner:
                     samplerate,
                     detection.start_seconds,
                     detection.end_seconds,
+                    enhance=self.config.enhance_clips,
                 )
             except Exception:  # noqa: BLE001
                 logger.exception("clip failed for %s; painting without audio", species)
