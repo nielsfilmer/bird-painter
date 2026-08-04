@@ -81,9 +81,17 @@ Every task ends with a pull request. Do **not** push directly to `main`.
      re-attempts: "you fixed it, but inadequately" is still the round-1 nit.
    - **Code-quality, doc, and naming nits: fix without asking** — that's what
      the reviewer is for.
-   - **Only bounce to the user for a product/UX decision** — user-facing copy,
-     a default value, behaviour visible in the UI. Internal naming, logs, code
-     comments, developer-facing wording are NOT product/UX decisions; fix them.
+   - **Decide product/UX calls yourself too — the user is on auto mode**
+     (instruction 2026-08-04, standing, supersedes the earlier "bounce
+     product/UX decisions to the user"). User-facing copy, defaults, visible
+     behaviour: pick the option you'd defend, state the choice and the
+     reasoning in the notification, and keep going. Internal naming, logs, code
+     comments and developer-facing wording were never worth asking about
+     anyway. Ask only when proceeding either way would be unsafe or
+     hard-to-reverse, or when the answer genuinely can't be inferred (a fact
+     only the user has — an account, a physical constraint, a preference with
+     no defensible default). A stream of permission prompts is the failure
+     mode being corrected here, not thoroughness.
    - **Off-topic nits → a follow-up issue / separate PR** (one PR = one
      concern). Mention the spawn in the user notification.
    - **Capture every deferred remark the moment you triage it — never leave it
@@ -356,6 +364,13 @@ workflow/process decisions:
   permanently.** Claude merges clean, fully-reviewed PRs itself and notifies
   (workflow step 5). Scope: PR merges only; the review loop still gates. Mirror
   of the `crypto-trader` arrangement. Also recorded in global `~/.claude/CLAUDE.md`.
+- **2026-08-04** — **User is on auto mode: Claude decides, including
+  product/UX calls.** "Stop asking for permission all the time, you are on auto
+  mode." Supersedes the earlier rule to bounce user-facing copy / defaults /
+  visible behaviour to the user (workflow step 4). Claude picks the option it
+  would defend, says so in the notification, and continues; questions are for
+  unsafe or hard-to-reverse actions, or facts only the user has. Applies to
+  this repo; mirrored in memory as a cross-repo preference.
 - **2026-07-27** — **Review/QA agents always run on Opus** (`model: "opus"`),
   regardless of the main session's model. User instruction, standing.
 
