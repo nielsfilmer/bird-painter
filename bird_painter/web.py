@@ -1,6 +1,7 @@
-"""FastAPI app: serves the wall page, the live-set API, archived images, and
-a dev endpoint that paints a named species (real brush with FAL_KEY, else a
-placeholder) alongside the detection-driven trigger gate.
+"""FastAPI app: serves the wall page, the live-set API, the live detection
+WebSocket, archived images, and a dev endpoint that paints a named species
+(real brush with FAL_KEY, else a placeholder) alongside the detection-driven
+trigger gate.
 
 `create_app(config)` is the factory (tests inject throwaway config/archives).
 There is deliberately NO module-level app instance — importing this module has
@@ -9,18 +10,21 @@ no side effects; uvicorn builds the production app via
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import mimetypes
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from . import brush
 from .config import Config, load_config
+from .events import EventHub, absolutize, painted_event
 from .gate import TriggerGate
 from .occasions import hat_for
 from .placeholder import placeholder_svg
@@ -30,6 +34,21 @@ from .trim import trim_to_bird
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
+
+# Idle keepalive on the detection socket. Birds are rare — an hour of silence
+# is normal — so the stream pings to keep proxies/NAT from reaping a healthy
+# connection, and to notice a client that vanished without a FIN.
+WS_PING_SECONDS = 30
+
+
+def _base_url(websocket: WebSocket) -> str:
+    """The http origin matching how this client reached us ('ws' → 'http'), so
+    the urls in the stream are fetchable by whoever is listening — a phone on
+    the LAN gets the LAN address, not localhost."""
+    url = websocket.url
+    scheme = "https" if url.scheme == "wss" else "http"
+    host = url.netloc or f"{url.hostname}:{url.port}"
+    return f"{scheme}://{host}"
 
 
 def _start_listener(config: Config, runner: PaintRunner) -> None:
@@ -74,22 +93,30 @@ def create_app(config: Config | None = None) -> FastAPI:
         retention_seconds=config.retention_days * 24 * 60 * 60,
     )
     gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
-    runner = PaintRunner(config, store, gate)
+    events = EventHub()
+    runner = PaintRunner(config, store, gate, events)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # The mic thread publishes from off-loop; the hub needs the loop to
+        # hop onto before any detection can reach a socket.
+        events.bind(asyncio.get_running_loop())
         if config.enable_listener:
             threading.Thread(
                 target=_start_listener, args=(config, runner), daemon=True
             ).start()
         else:
             logger.info("listener disabled (BP_ENABLE_LISTENER); wall-only")
-        yield
+        try:
+            yield
+        finally:
+            events.unbind()
 
     app = FastAPI(title="bird-painter", lifespan=lifespan)
     # Exposed for tests and debugging; not part of any API contract.
     app.state.config = config
     app.state.store = store
+    app.state.events = events
 
     @app.get("/", response_class=HTMLResponse)
     def wall() -> str:
@@ -120,6 +147,43 @@ def create_app(config: Config | None = None) -> FastAPI:
                 ],
             }
         )
+
+    @app.websocket("/ws/detections")
+    async def ws_detections(websocket: WebSocket) -> None:
+        """Live stream of what the ears hear: a `detected` event per
+        recognition (gated or not) and a `painted` event per painting, the
+        latter carrying the bird's name, the time, the image url and the
+        detection clip's url. Connecting replays the recent backlog first, so
+        a client opening during a quiet hour still sees the last birds."""
+        await websocket.accept()
+        base = _base_url(websocket)
+        with events.subscribe() as queue:
+            try:
+                await websocket.send_json(
+                    {
+                        "type": "hello",
+                        "at": time.time(),
+                        "ping_seconds": WS_PING_SECONDS,
+                        "recent": [
+                            absolutize(event, base) for event in events.backlog()
+                        ],
+                    }
+                )
+                while True:
+                    try:
+                        event = await asyncio.wait_for(
+                            queue.get(), timeout=WS_PING_SECONDS
+                        )
+                    except TimeoutError:
+                        await websocket.send_json({"type": "ping", "at": time.time()})
+                        continue
+                    await websocket.send_json(absolutize(event, base))
+            except WebSocketDisconnect:
+                pass
+            except (RuntimeError, OSError):
+                # Socket died mid-send (client vanished, connection reset) —
+                # normal for a long-lived stream, not worth a traceback.
+                logger.debug("ws: detection stream closed mid-send")
 
     @app.get("/wall.png")
     def wall_png() -> Response:
@@ -172,13 +236,19 @@ def create_app(config: Config | None = None) -> FastAPI:
         )
 
     @app.get("/audio/{filename}")
-    def audio(filename: str) -> FileResponse:
+    def audio(filename: str, download: bool = False) -> FileResponse:
         """The archived detection clip behind a painting (see /api/live's
-        `audio` field). 404 for birds painted without one."""
+        `audio` field). 404 for birds painted without one. `?download=1`
+        serves it as an attachment — the same bytes, saved rather than
+        streamed (the wall's click-to-replay uses the plain url)."""
         path = store.audio_path(filename)
         if path is None:
             raise HTTPException(status_code=404)
-        return FileResponse(path, media_type="audio/wav")
+        return FileResponse(
+            path,
+            media_type="audio/wav",
+            filename=filename if download else None,
+        )
 
     @app.get("/images/{filename}")
     def image(filename: str) -> FileResponse:
@@ -221,6 +291,9 @@ def create_app(config: Config | None = None) -> FastAPI:
             confidence=1.0,
             source=source,
         )
+        # Dev paints ride the same stream as heard birds (no clip — nothing
+        # was heard), so the socket can be exercised without waiting on a bird.
+        events.publish(painted_event(painting, store.audio_file_for(painting.file)))
         return JSONResponse(
             {"painted": painting.file, "source": source}, status_code=201
         )

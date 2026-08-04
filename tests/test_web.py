@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from bird_painter.events import painted_event
 from bird_painter.web import create_app
 
 
@@ -195,3 +196,79 @@ def test_archive_button_and_overlay_only_in_the_browser_page(client):
     # …and the e-paper /wall.png is a server-side raster that renders paintings
     # only — no DOM, so no button can appear (see render.py). Sanity: PNG magic.
     assert client.get("/wall.png").content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_ws_streams_a_painted_bird_with_name_time_image_and_sound(config):
+    app = create_app(config)
+    with TestClient(app) as client, client.websocket_connect("/ws/detections") as ws:
+        assert ws.receive_json()["type"] == "hello"
+        # A detection-style painting (with an archived clip) reaches the socket.
+        store = app.state.store
+        painting = store.add(
+            image_bytes=b"<svg/>",
+            extension="svg",
+            species_common="Wren",
+            species_scientific="Troglodytes troglodytes",
+            confidence=0.81,
+            source="detection",
+            audio_bytes=b"RIFF....WAVE",
+        )
+        app.state.events.publish(
+            painted_event(painting, store.audio_file_for(painting.file))
+        )
+
+        event = ws.receive_json()
+        assert event["type"] == "painted"
+        assert event["species_common"] == "Wren"           # the name
+        assert event["time"] and event["at"] == painting.born_at  # the time
+        # urls are absolute for whoever connected, and both actually resolve
+        assert event["image"]["url"].startswith("http://testserver/images/")
+        assert client.get(event["image"]["url"]).status_code == 200
+        sound = client.get(event["audio"]["download_url"])
+        assert sound.status_code == 200
+        assert sound.content == b"RIFF....WAVE"
+        assert "attachment" in sound.headers["content-disposition"]
+
+
+def test_ws_replays_recent_events_to_a_late_client(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        client.post("/dev/paint/robin")  # happened before anyone connected
+        with client.websocket_connect("/ws/detections") as ws:
+            hello = ws.receive_json()
+            assert hello["type"] == "hello"
+            assert [e["species_common"] for e in hello["recent"]] == ["Robin"]
+            assert hello["recent"][0]["image"]["url"].startswith("http://testserver/")
+
+
+def test_ws_broadcasts_to_every_connected_client(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        with (
+            client.websocket_connect("/ws/detections") as first,
+            client.websocket_connect("/ws/detections") as second,
+        ):
+            assert first.receive_json()["type"] == "hello"
+            assert second.receive_json()["type"] == "hello"
+            client.post("/dev/paint/junco")
+            for ws in (first, second):
+                event = ws.receive_json()
+                assert (event["type"], event["species_common"]) == ("painted", "Junco")
+
+
+def test_audio_streams_inline_unless_download_is_asked_for(config):
+    app = create_app(config)
+    with TestClient(app) as client:
+        store = app.state.store
+        painting = store.add(
+            image_bytes=b"<svg/>",
+            extension="svg",
+            species_common="Wren",
+            species_scientific="Troglodytes troglodytes",
+            confidence=0.8,
+            source="detection",
+            audio_bytes=b"RIFF",
+        )
+        clip = store.audio_file_for(painting.file)
+        # The wall's click-to-replay must keep streaming, not download.
+        assert "content-disposition" not in client.get(f"/audio/{clip}").headers

@@ -306,3 +306,15 @@ whole magic; ship it first.
   shelf is PACKED (oldest→newest, left→right, centred), then newer birds
   spiral the full-height oval with the shelf as obstacles and a vertical
   clearance (never level with it); one shared widen/shrink loop.
+- **2026-08-04** — **Live detection WebSocket** (owner feature request):
+  `/ws/detections` pushes what the ears hear — a `detected` event per
+  recognition (carrying the trigger gate's `will_paint` verdict) and a
+  `painted` event per painting, with the species name, the time, the image url
+  and the detection clip's url (plus a `?download=1` variant that serves the
+  clip as an attachment). The wall's poll of `/api/live` is unchanged; this is
+  the push side of the same story, for anything that wants to *watch*
+  recognition happen. Urls are absolutised per connection, so a LAN client gets
+  fetchable links. Fan-out is best-effort: bounded per-client queues drop their
+  oldest events rather than ever stalling the mic thread, and a broken socket
+  can never cost a painting. Stays inside the house like everything else — no
+  auth, LAN-scoped, same trust boundary as `/api/live` and `/audio/*`.

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import time
 
 import numpy as np
 
@@ -13,6 +14,7 @@ from .audio import detection_clip_wav
 from .brush import paint as paint_species
 from .config import Config
 from .ears import Detection
+from .events import EventHub, detected_event, painted_event
 from .gate import TriggerGate
 from .occasions import hat_for
 from .store import Store
@@ -22,10 +24,19 @@ logger = logging.getLogger(__name__)
 
 
 class PaintRunner:
-    def __init__(self, config: Config, store: Store, gate: TriggerGate):
+    def __init__(
+        self,
+        config: Config,
+        store: Store,
+        gate: TriggerGate,
+        events: EventHub | None = None,
+    ):
         self.config = config
         self.store = store
         self.gate = gate
+        # Where recognitions are broadcast from (the /ws/detections stream);
+        # optional so tests and any headless use can run without one.
+        self.events = events
 
     def on_detections(
         self,
@@ -43,7 +54,19 @@ class PaintRunner:
         samplerate: int | None = None,
     ) -> None:
         species = detection.species_common
-        if not self.gate.allows(species):
+        allowed = self.gate.allows(species)
+        # Every recognition is broadcast, gated or not — the stream is about
+        # what was HEARD; the wall is about what got painted.
+        self._publish(
+            detected_event(
+                species_common=species,
+                species_scientific=detection.species_scientific,
+                confidence=detection.confidence,
+                at=time.time(),
+                will_paint=allowed,
+            )
+        )
+        if not allowed:
             return
         result = paint_species(
             species,
@@ -74,7 +97,7 @@ class PaintRunner:
                 )
             except Exception:  # noqa: BLE001
                 logger.exception("clip failed for %s; painting without audio", species)
-        self.store.add(
+        painting = self.store.add(
             image_bytes=image_bytes,
             extension=extension,
             species_common=species,
@@ -84,4 +107,11 @@ class PaintRunner:
             audio_bytes=audio_bytes,
         )
         self.gate.record()
+        self._publish(painted_event(painting, self.store.audio_file_for(painting.file)))
         logger.info("painted %s (%.2f)", species, detection.confidence)
+
+    def _publish(self, event: dict) -> None:
+        """Broadcasting must never cost a painting — the hub swallows its own
+        errors, and a missing hub is simply a wall nobody is watching."""
+        if self.events is not None:
+            self.events.publish(event)
