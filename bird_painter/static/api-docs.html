@@ -193,7 +193,7 @@
   // machine, so a LAN reader shown their own address would copy a command that
   // 404s. This is the command to run THERE.
   document.getElementById("curl-base").textContent =
-    `http://127.0.0.1:${location.port || "8537"}`;
+    `http://127.0.0.1${location.port ? `:${location.port}` : ""}`;
 
   function renderDescription(api) {
     document.getElementById("tagline").textContent = api.description;

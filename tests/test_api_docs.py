@@ -148,7 +148,14 @@ def test_endpoint_prose_carries_no_markdown_the_page_cannot_render(config):
     Descriptions bound for the page stay plain prose; the OpenAPI-only text
     (rendered by Swagger) may use markdown."""
     description = describe(config)
-    prose = [e["description"] for e in description["endpoints"]]
+    prose = []
+    for endpoint in description["endpoints"]:
+        # Everything the page prints, not just descriptions: status meanings
+        # and param notes reach the reader the same way (round-2 review of
+        # #92 — the first version of this guard walked descriptions only).
+        prose.append(endpoint["description"])
+        prose += endpoint.get("statuses", {}).values()
+        prose += [p.get("note", "") for p in endpoint.get("params", [])]
     prose += [description["websocket"]["description"]]
     prose += description["websocket"]["notes"]
     prose += [e["description"] for e in description["websocket"]["events"]]
@@ -246,7 +253,7 @@ def test_the_pages_curl_hint_points_at_the_wall_not_at_the_reader(client):
     """QA on #92: the empty state said "from the wall's own machine" and then
     printed the reader's own LAN origin, a command that 404s for them."""
     page = client.get("/api/docs").text
-    assert 'http://127.0.0.1:${location.port' in page
+    assert "`http://127.0.0.1${location.port" in page
     assert "location.origin" not in page.split("curl-base")[1].split("\n")[0]
 
 
