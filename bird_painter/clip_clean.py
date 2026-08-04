@@ -92,9 +92,13 @@ STEADY_PERCENTILE = 10.0
 # the subtraction. A bird that sings through nearly the whole clip has no
 # bird-free moments for the noise profile to learn from, so the profile
 # becomes the bird and subtracts it away — leaving hiss that the makeup gain
-# then delivers at a confident -0.3 dBFS. Measured: a surviving bird keeps
-# ~20% of its band's energy; an erased one keeps under 0.5%.
-MIN_RETAINED = 0.02
+# then delivers at a confident -0.3 dBFS.
+#
+# Calibrated by measurement over 180 erased clips and the real archive, not
+# guessed: an erased clip keeps 0.4–2.1% of its band's energy, a surviving one
+# keeps 3.4–89%. The first cut at 0.02 sat INSIDE the erased range and let
+# 6 of 180 through; the gap between the distributions is where this belongs.
+MIN_RETAINED = 0.025
 
 # Target level. Peak-normalising to 1.0 invites inter-sample clipping on
 # playback; -1 dBFS is the usual compromise.
@@ -139,9 +143,15 @@ def _frame_roles(
     if bird_span is None or frames < 8:
         return None, None
     start, end = bird_span
-    centres = (np.arange(frames) * HOP + FRAME / 2) / max(samples, 1)
-    bird = (centres >= start / max(samples, 1)) & (centres <= end / max(samples, 1))
-    noise = ~bird
+    # scipy's ShortTimeFFT starts at p_min = -1, so frame p is centred on
+    # p*HOP - HOP, not p*HOP + FRAME/2. Getting this wrong skews every frame
+    # by 16 ms AND invents frames past the end of the clip — which a
+    # whole-clip span would then happily accept as "padding", making the noise
+    # profile the transform's own zero-padding.
+    centres = np.arange(frames) * HOP - HOP
+    real = (centres >= 0) & (centres < samples)
+    bird = real & (centres >= start) & (centres <= end)
+    noise = real & ~bird
     if bird.sum() < MIN_NOISE_FRAMES or noise.sum() < MIN_NOISE_FRAMES:
         return None, None
     return bird, noise

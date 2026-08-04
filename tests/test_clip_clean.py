@@ -229,3 +229,35 @@ def test_the_span_is_ignored_when_the_padding_is_too_short_to_learn_from():
         cleaned = enhance(mixture, SAMPLERATE, bird_span=span)
         assert np.isfinite(cleaned).all()
         assert cleaned.shape == mixture.shape
+
+
+def test_frames_are_placed_where_the_transform_actually_puts_them():
+    """Round-3 review of #96: frame centres were computed as `p*HOP + FRAME/2`,
+    but scipy's ShortTimeFFT starts at p_min = -1, so the true centre is
+    `p*HOP - HOP`. Besides a 16 ms skew, the old maths invented frames past
+    the end of the clip — which a span covering the whole clip then accepted
+    as "padding", making the noise profile the transform's own zero-padding
+    and band-limiting to the one place the bird isn't."""
+    from bird_painter.clip_clean import _frame_roles
+
+    samples = 6 * SAMPLERATE
+    frames = samples // 256 + 8  # a few more than exist, as scipy reports
+    bird, noise = _frame_roles(frames, samples, (0, samples))
+    # A span covering everything leaves no padding to learn from, so the
+    # statistical path must take over rather than inventing quiet frames.
+    assert bird is None and noise is None
+
+    bird, noise = _frame_roles(frames, samples, (2 * SAMPLERATE, 4 * SAMPLERATE))
+    assert bird is not None and noise is not None
+    # No frame is claimed beyond the clip's own samples.
+    centres = np.arange(frames) * 256 - 256
+    assert not (bird | noise)[(centres < 0) | (centres >= samples)].any()
+
+
+def test_a_bird_filling_a_short_clip_is_not_band_limited_to_silence():
+    """The same bug, end to end: a short analysis window (BP_ANALYSIS_WINDOW_
+    SECONDS is a documented knob) leaves little padding, and the phantom
+    frames made the cleanup pick a band with no bird in it."""
+    mixture, _ = a_detection(1.0)
+    cleaned = enhance(mixture, SAMPLERATE, bird_span=(0, len(mixture)))
+    assert band_energy(cleaned, 4000, 4400) / band_energy(cleaned, 0, 24000) > 0.5
