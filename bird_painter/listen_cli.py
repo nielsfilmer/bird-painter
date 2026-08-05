@@ -47,6 +47,7 @@ def main() -> None:
         confidence_floor=config.confidence_floor,
         latitude=config.latitude,
         longitude=config.longitude,
+        seasonal=config.seasonal_filter,
     )
     listener = MicListener(
         ears,

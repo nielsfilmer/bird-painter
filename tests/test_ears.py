@@ -8,7 +8,7 @@ import pytest
 from bird_painter.ears import NON_BIRD_SCIENTIFIC, Ears, _silence_load, is_bird
 
 
-def _ears_without_model(latitude=None, longitude=None):
+def _ears_without_model(latitude=None, longitude=None, seasonal=False):
     """An Ears with its location fields set but WITHOUT loading BirdNET (the
     real __init__ constructs a heavy TF-Lite Analyzer). Exercises the pure
     location-kwargs logic in isolation."""
@@ -16,6 +16,7 @@ def _ears_without_model(latitude=None, longitude=None):
     ears.confidence_floor = 0.6
     ears.latitude = latitude
     ears.longitude = longitude
+    ears.seasonal = seasonal
     return ears
 
 
@@ -23,12 +24,51 @@ def test_location_kwargs_empty_when_no_location():
     assert _ears_without_model()._location_kwargs() == {}
 
 
-def test_location_kwargs_carries_lat_lon_and_today():
+def test_location_kwargs_carries_lat_lon_but_no_date_by_default():
+    """Place, not calendar. birdnetlib leaves week_48 at -1 without a date,
+    which BirdNET reads as "any week" — so a bird singing outside its expected
+    weeks is still heard. (2026-08-05: with the season on, a nightingale
+    identified at 0.87 confidence was dropped silently, which from the console
+    is indistinguishable from a dead microphone.)"""
     ears = _ears_without_model(latitude=52.37, longitude=4.90)
     kwargs = ears._location_kwargs()
     assert kwargs["lat"] == 52.37
     assert kwargs["lon"] == 4.90
-    assert kwargs["date"] == datetime.date.today()
+    assert "date" not in kwargs
+
+
+def test_location_kwargs_adds_the_date_when_the_season_filter_is_on():
+    ears = _ears_without_model(latitude=52.37, longitude=4.90, seasonal=True)
+    assert ears._location_kwargs()["date"] == datetime.date.today()
+
+
+def test_the_species_list_probe_maps_a_date_to_birdnets_week():
+    """BirdNET counts 48 weeks, and -1 means "any"."""
+    from bird_painter.ears import _SpeciesListProbe
+
+    year_round = _SpeciesListProbe(lat=52.0, lon=4.0)
+    assert year_round.week_48 == -1
+    for day, expected in (
+        (datetime.date(2026, 1, 1), 1),
+        (datetime.date(2026, 12, 31), 48),
+        (datetime.date(2026, 8, 5), 32),
+    ):
+        probe = _SpeciesListProbe(lat=52.0, lon=4.0, date=day)
+        assert probe.week_48 == expected
+
+
+def test_counting_the_allowed_species_is_only_a_diagnostic():
+    """It feeds a startup log line; it must never be what breaks the wall."""
+    assert _ears_without_model().allowed_species_count() is None
+
+    ears = _ears_without_model(latitude=52.37, longitude=4.90)
+
+    class Exploding:
+        def set_predicted_species_list_from_position(self, probe):
+            raise RuntimeError("meta model unavailable")
+
+    ears._analyzer = Exploding()
+    assert ears.allowed_species_count() is None
 
 
 def test_location_kwargs_nudges_bare_zero_so_filter_still_engages():

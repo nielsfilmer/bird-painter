@@ -42,7 +42,7 @@ mic → BirdNET (local) → trigger gate → painting (FLUX via fal.ai) → arch
 - **Ears** — [BirdNET](https://birdnet.cornell.edu/) via `birdnetlib`, running
   offline on your machine. Non-bird labels (traffic, voices, insects, machines)
   are filtered out. Optionally restrict it to species plausible at your
-  latitude/longitude and season.
+  latitude/longitude — and, if you want, to the current week of the year too.
 - **Trigger gate** — a per-species cooldown plus an hourly cap, so a talkative
   robin can't flood the wall or your image bill.
 - **Brush** — one stateless call to [FLUX](https://blackforestlabs.ai/) on
@@ -148,7 +148,8 @@ Everything is an environment variable — see [`.env.example`](.env.example):
 | `BP_CONFIDENCE_FLOOR` | 0.6 | how sure BirdNET must be — raise it if you get odd species |
 | `BP_MAX_PAINTS_PER_HOUR` | 20 | hard ceiling on image generation, so a dawn chorus can't run away |
 | `BP_WALL_MAX_LIVE` | 12 | how many birds the collage holds at once |
-| `BP_LATITUDE` / `BP_LONGITUDE` | off | restrict BirdNET to species plausible where (and when) you are |
+| `BP_LATITUDE` / `BP_LONGITUDE` | off | restrict BirdNET to species plausible where you are |
+| `BP_SEASONAL_FILTER` | off | also restrict to species plausible *this week* — halves the list, and drops out-of-season singers silently |
 | `BP_INPUT_DEVICE` | system default | which microphone to listen on (index or name); essential on a headless box |
 | `BP_ENHANCE_CLIPS` | on | clean up the archived clip — denoise, band-limit to the bird, normalise. Off archives the raw cut |
 | `BP_FAL_MODEL` | `fal-ai/flux/schnell` | `fal-ai/flux/dev` follows the house-style prompt more faithfully, at a higher price |

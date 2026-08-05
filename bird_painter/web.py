@@ -129,17 +129,27 @@ def _start_listener(config: Config, runner: PaintRunner) -> None:
             confidence_floor=config.confidence_floor,
             latitude=config.latitude,
             longitude=config.longitude,
+            seasonal=config.seasonal_filter,
         )
         listener = MicListener(
             ears,
             window_seconds=config.analysis_window_seconds,
             device=config.input_device,
         )
-        location = (
-            f"; location filter {config.latitude}, {config.longitude}"
-            if config.latitude is not None
-            else ""
-        )
+        # Say what the filter allows, not just that one is on. A species the
+        # filter excludes produces no detection and no log line, so without
+        # this a working microphone and a filtered-out bird look identical
+        # from the console.
+        location = ""
+        if config.latitude is not None:
+            allowed = ears.allowed_species_count()
+            season = "location + season" if config.seasonal_filter else "location"
+            location = (
+                f"; {season} filter {config.latitude}, {config.longitude}"
+                f" — {allowed} species"
+                if allowed is not None
+                else f"; {season} filter {config.latitude}, {config.longitude}"
+            )
         logger.info(
             "listener: painting birds heard on the mic (floor %.2f%s)",
             config.confidence_floor,

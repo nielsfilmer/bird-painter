@@ -136,6 +136,27 @@ class Detection:
     end_seconds: float
 
 
+@dataclass
+class _SpeciesListProbe:
+    """What birdnetlib's meta model reads off a recording to build its species
+    list. Standing in for a Recording lets the startup log ask "how many
+    species does this filter allow?" without analysing any audio."""
+
+    lat: float
+    lon: float
+    date: datetime.date | None = None
+    sensitivity: float = 1.0
+    filter_threshold: float = 0.03
+
+    @property
+    def week_48(self) -> int:
+        """BirdNET's 48-week calendar, or -1 for "any week" — which is exactly
+        the difference between filtering by place and by place-and-season."""
+        if self.date is None:
+            return -1
+        return min(48, max(1, int(self.date.strftime("%j")) // 7 + 1))
+
+
 class Ears:
     def __init__(
         self,
@@ -143,14 +164,23 @@ class Ears:
         *,
         latitude: float | None = None,
         longitude: float | None = None,
+        seasonal: bool = False,
     ):
         self.confidence_floor = confidence_floor
         # Optional location filter: when a lat/lon is set, BirdNET restricts
-        # predictions to species plausible at that place + time of year (its
-        # meta model), cutting implausible detections. Both must be set to
-        # enable it; None = no filter (global model).
+        # predictions to species plausible at that place (its meta model),
+        # cutting implausible detections. Both must be set to enable it;
+        # None = no filter (global model).
         self.latitude = latitude
         self.longitude = longitude
+        # …and optionally to the time of year as well. Off by default: the
+        # seasonal list is roughly half the size (143 species vs 259 for
+        # Haarlem in August), and everything it removes is removed SILENTLY —
+        # a nightingale singing out of its expected week is dropped with no
+        # detection and no log line, which is indistinguishable from a broken
+        # microphone. Location alone still rejects the wrong continent, which
+        # is what the filter is really for.
+        self.seasonal = seasonal
         # Loading BirdNET is noisy: pydub warns about missing ffmpeg (we never
         # decode compressed audio — we feed raw 48 kHz samples), TF Lite warns
         # about deprecation + prints an XNNPACK line, and birdnetlib print()s
@@ -163,12 +193,17 @@ class Ears:
             self._analyzer = Analyzer()
 
     def _location_kwargs(self) -> dict:
-        """lat/lon/date to pass to birdnetlib when the location filter is on.
-        The date is 'now' so the species list tracks the season; empty when no
-        location is configured (global model)."""
+        """lat/lon (and optionally the date) to pass to birdnetlib when the
+        location filter is on; empty when no location is configured (global
+        model).
+
+        Without a date, birdnetlib leaves `week_48` at -1, which BirdNET reads
+        as "any week" — the place is filtered, the calendar isn't."""
         if self.latitude is None or self.longitude is None:
             return {}
+        seasonal = {"date": datetime.date.today()} if self.seasonal else {}
         return {
+            **seasonal,
             # birdnetlib gates the location model on a truthiness check
             # (`if recording.lon and recording.lat`), so an exact 0.0 — the
             # equator or the prime meridian, both legal populated coordinates —
@@ -177,8 +212,22 @@ class Ears:
             # far below BirdNET's coarse location-grid resolution.
             "lat": self.latitude or 1e-6,
             "lon": self.longitude or 1e-6,
-            "date": datetime.date.today(),
         }
+
+    def allowed_species_count(self) -> int | None:
+        """How many species the location filter currently lets through, so the
+        startup log can say. None when no filter is configured, or when asking
+        fails — a diagnostic must never be the thing that stops the wall."""
+        if self.latitude is None or self.longitude is None:
+            return None
+        try:
+            with _silence_load():
+                probe = _SpeciesListProbe(**self._location_kwargs())
+                self._analyzer.set_predicted_species_list_from_position(probe)
+                return len(self._analyzer.custom_species_list)
+        except Exception:  # noqa: BLE001 — a log line is not worth a crash
+            logger.debug("could not count the filtered species list", exc_info=True)
+            return None
 
     def detect_file(self, path: str | Path) -> list[Detection]:
         from birdnetlib import Recording

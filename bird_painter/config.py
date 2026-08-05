@@ -225,6 +225,14 @@ class Config:
     enable_listener: bool = field(
         default_factory=lambda: _env_bool("BP_ENABLE_LISTENER", True)
     )
+    # Narrow the location filter to the time of year as well. Off by default:
+    # BirdNET's seasonal list is about half the size of the year-round one for
+    # the same place, and a bird singing outside its expected week is dropped
+    # silently — which looks exactly like a dead microphone (2026-08-05: a
+    # nightingale at 0.87 confidence vanished this way).
+    seasonal_filter: bool = field(
+        default_factory=lambda: _env_bool("BP_SEASONAL_FILTER", False)
+    )
     # Clean up the archived detection clip — denoise, band-limit to the bird's
     # own band, normalise — so the wall's replay is audible rather than a
     # rumble with a bird somewhere in it. Off archives the raw cut instead.

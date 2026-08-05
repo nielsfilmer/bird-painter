@@ -400,3 +400,22 @@ whole magic; ship it first.
   in the archive beats a traceback in the mic thread. The recording policy is
   unchanged — still only the seconds around a painted detection, still never
   leaving the house.
+- **2026-08-05** — **The location filter no longer implies the season**
+  (owner question: "can we use location without season?"). BirdNET's meta
+  model takes a place AND a week; passing a date opted into both. Now
+  `BP_LATITUDE`/`BP_LONGITUDE` filter by place only, and the calendar is
+  opt-in via `BP_SEASONAL_FILTER` (default off).
+
+  Found the hard way the same afternoon: with the season on, a nightingale
+  played into the microphone was identified at **0.87 confidence and then
+  discarded**, because week 32 has nightingales gone from the Netherlands.
+  From the console this is indistinguishable from a broken microphone — no
+  detection, no log line — and it cost an hour of hunting the audio chain.
+  For Haarlem the seasonal list is 143 species against 259 year-round, so the
+  filter's own accuracy comes at the price of silently deleting anything
+  early, late, or simply unusual — which is exactly the bird worth painting.
+  Place alone still rejects the wrong continent, which is what the filter was
+  added for.
+
+  The listener's startup line now names the filter and how many species it
+  allows, so a filtered-out bird and a dead microphone stop looking the same.
