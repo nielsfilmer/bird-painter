@@ -42,12 +42,11 @@ def test_location_kwargs_adds_the_date_when_the_season_filter_is_on():
     assert ears._location_kwargs()["date"] == datetime.date.today()
 
 
-def test_the_seasonal_week_comes_from_birdnetlib_not_from_our_own_maths():
-    """Review of #99 caught a hand-rolled `day_of_year // 7 + 1`: BirdNET's
-    calendar is 48 weeks, not 52, so that disagreed with birdnetlib on 32 of 36
-    sampled days — by up to a month. The startup log would then name a filter
-    the analysis wasn't running. Derived from the installed library, like the
-    non-bird denylist above, so a version bump can't quietly desync them."""
+def test_birdnets_calendar_is_48_weeks_not_52():
+    """A characterisation test of the installed library, pinning the fact that
+    tripped up #99: BirdNET counts 48 weeks, so the obvious `day_of_year // 7`
+    is wrong for most of the year. This documents the library; the guard on
+    OUR code is the seasonal-week test below."""
     from birdnetlib.utils import return_week_48_from_datetime
 
     for day in (
@@ -56,9 +55,8 @@ def test_the_seasonal_week_comes_from_birdnetlib_not_from_our_own_maths():
         datetime.date(2026, 8, 5),
         datetime.date(2026, 12, 31),
     ):
-        week = return_week_48_from_datetime(day)
-        assert 1 <= week <= 48
-    # The specific disagreement that was shipped: our old maths said 32.
+        assert 1 <= return_week_48_from_datetime(day) <= 48
+    # The specific day the shipped bug got wrong: `// 7 + 1` said 32.
     assert return_week_48_from_datetime(datetime.date(2026, 8, 5)) == 29
 
 
@@ -99,9 +97,20 @@ def test_counting_species_asks_without_changing_the_recognizer():
     assert analyzer.asked[0]["week_48"] == -1  # place only: any week
 
 
-def test_counting_species_passes_the_week_when_the_season_filter_is_on():
+def test_counting_species_passes_the_week_when_the_season_filter_is_on(monkeypatch):
+    """Pinned to a fixed date, not to today: the bug this guards against
+    (`day_of_year // 7 + 1`) happens to agree with the library on about an
+    eighth of the year, so a test run on the wrong day would pass with the bug
+    reinstated. 5 August is one of the days where they differ — 29 vs 32."""
+    import bird_painter.ears as ears_module
     from birdnetlib.utils import return_week_48_from_datetime
 
+    class FixedDate(datetime.date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 8, 5)
+
+    monkeypatch.setattr(ears_module.datetime, "date", FixedDate)
     ears = _ears_without_model(latitude=52.37, longitude=4.90, seasonal=True)
 
     class Analyzer:
@@ -115,9 +124,11 @@ def test_counting_species_passes_the_week_when_the_season_filter_is_on():
     analyzer = Analyzer()
     ears._analyzer = analyzer
     ears.allowed_species_count()
-    assert analyzer.asked[0]["week_48"] == return_week_48_from_datetime(
-        datetime.date.today()
-    )
+    expected = return_week_48_from_datetime(datetime.date(2026, 8, 5))
+    assert expected == 29  # the library's answer, not ours
+    assert analyzer.asked[0]["week_48"] == expected
+
+
 def test_location_kwargs_nudges_bare_zero_so_filter_still_engages():
     # birdnetlib gates the filter on `lon and lat` truthiness, so an exact 0.0
     # (equator / prime meridian) would silently disable it. The nudge keeps it

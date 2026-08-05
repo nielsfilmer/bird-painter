@@ -145,12 +145,12 @@ def _start_listener(config: Config, runner: PaintRunner) -> None:
         if config.latitude is not None:
             scope = "location + season" if config.seasonal_filter else "location"
             allowed = ears.allowed_species_count()
-            total = ears.species_count()
             counts = ""
             if allowed is not None:
-                counts = f" — {allowed} species"
-                if total:
-                    counts += f" of {total}"
+                # Only ask for the baseline once there's a number to compare
+                # it against.
+                total = ears.species_count()
+                counts = f" — {allowed} species" + (f" of {total}" if total else "")
             filter_note = (
                 f"; {scope} filter {config.latitude}, {config.longitude}{counts}"
             )
