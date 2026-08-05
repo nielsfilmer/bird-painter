@@ -143,14 +143,23 @@ class Ears:
         *,
         latitude: float | None = None,
         longitude: float | None = None,
+        seasonal: bool = False,
     ):
         self.confidence_floor = confidence_floor
         # Optional location filter: when a lat/lon is set, BirdNET restricts
-        # predictions to species plausible at that place + time of year (its
-        # meta model), cutting implausible detections. Both must be set to
-        # enable it; None = no filter (global model).
+        # predictions to species plausible at that place (its meta model),
+        # cutting implausible detections. Both must be set to enable it;
+        # None = no filter (global model).
         self.latitude = latitude
         self.longitude = longitude
+        # …and optionally to the time of year as well. Off by default: the
+        # seasonal list is roughly half the size (140 species vs 259 for
+        # Haarlem in August), and everything it removes is removed SILENTLY —
+        # a nightingale singing out of its expected week is dropped with no
+        # detection and no log line, which is indistinguishable from a broken
+        # microphone. Location alone still rejects the wrong continent, which
+        # is what the filter is really for.
+        self.seasonal = seasonal
         # Loading BirdNET is noisy: pydub warns about missing ffmpeg (we never
         # decode compressed audio — we feed raw 48 kHz samples), TF Lite warns
         # about deprecation + prints an XNNPACK line, and birdnetlib print()s
@@ -163,12 +172,17 @@ class Ears:
             self._analyzer = Analyzer()
 
     def _location_kwargs(self) -> dict:
-        """lat/lon/date to pass to birdnetlib when the location filter is on.
-        The date is 'now' so the species list tracks the season; empty when no
-        location is configured (global model)."""
+        """lat/lon (and optionally the date) to pass to birdnetlib when the
+        location filter is on; empty when no location is configured (global
+        model).
+
+        Without a date, birdnetlib leaves `week_48` at -1, which BirdNET reads
+        as "any week" — the place is filtered, the calendar isn't."""
         if self.latitude is None or self.longitude is None:
             return {}
+        seasonal = {"date": datetime.date.today()} if self.seasonal else {}
         return {
+            **seasonal,
             # birdnetlib gates the location model on a truthiness check
             # (`if recording.lon and recording.lat`), so an exact 0.0 — the
             # equator or the prime meridian, both legal populated coordinates —
@@ -177,8 +191,49 @@ class Ears:
             # far below BirdNET's coarse location-grid resolution.
             "lat": self.latitude or 1e-6,
             "lon": self.longitude or 1e-6,
-            "date": datetime.date.today(),
         }
+
+    def species_count(self) -> int | None:
+        """How many species the model knows at all — the baseline that makes a
+        filtered count mean something. None if birdnetlib doesn't say."""
+        try:
+            return len(self._analyzer.labels)
+        except Exception:  # noqa: BLE001 — diagnostics never break the wall
+            return None
+
+    def allowed_species_count(self) -> int | None:
+        """How many species the location filter currently lets through, so the
+        startup log can say. None when no filter is configured, or when asking
+        fails — a diagnostic must never be the thing that stops the wall.
+
+        Asks birdnetlib's public list API rather than the one that installs a
+        list on the shared analyzer: answering a question shouldn't leave the
+        recognizer in a different state than it found it."""
+        if self.latitude is None or self.longitude is None:
+            return None
+        try:
+            with _silence_load():
+                from birdnetlib.utils import return_week_48_from_datetime
+
+                # birdnetlib's own conversion, never a local reimplementation:
+                # BirdNET's calendar is 48 weeks, so a hand-rolled //7 is
+                # wrong by up to a month for most of the year — and the whole
+                # point of this number is that it describes the filter the
+                # analysis actually runs.
+                week = (
+                    return_week_48_from_datetime(datetime.date.today())
+                    if self.seasonal
+                    else -1  # -1 is BirdNET's "any week"
+                )
+                species = self._analyzer.return_predicted_species_list(
+                    lat=self.latitude or 1e-6,
+                    lon=self.longitude or 1e-6,
+                    week_48=week,
+                )
+                return len(species)
+        except Exception:  # noqa: BLE001 — a log line is not worth a crash
+            logger.debug("could not count the filtered species list", exc_info=True)
+            return None
 
     def detect_file(self, path: str | Path) -> list[Detection]:
         from birdnetlib import Recording

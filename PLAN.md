@@ -400,3 +400,29 @@ whole magic; ship it first.
   in the archive beats a traceback in the mic thread. The recording policy is
   unchanged — still only the seconds around a painted detection, still never
   leaving the house.
+- **2026-08-05** — **The location filter no longer implies the season**
+  (owner question: "can we use location without season?"). BirdNET's meta
+  model takes a place AND a week; passing a date opted into both. Now
+  `BP_LATITUDE`/`BP_LONGITUDE` filter by place only, and the calendar is
+  opt-in via `BP_SEASONAL_FILTER` (default off).
+
+  The trigger was a nightingale played into the microphone: identified at 0.87
+  confidence, then discarded, because BirdNET's list for this week has
+  nightingales gone from the Netherlands. That is not evidence the seasonal
+  model is *wrong* — a nightingale singing here in August is genuinely
+  unlikely, and the recording was a speaker. What it does show is the failure
+  MODE: the filter deletes silently. No detection, no log line, nothing to
+  distinguish a filtered bird from a dead microphone — and it cost an hour of
+  measuring input devices and spectra to find.
+
+  So the default is chosen on which mistake is cheaper. Place alone still
+  rejects the wrong continent, which is what the filter was added for (it
+  binned a Broad-winged Hawk the same afternoon). Adding the calendar roughly
+  halves the list — 140 species against 259 for Haarlem — and what it removes
+  is the early, the late and the unusual, which on a wall meant to reward
+  noticing is the bird most worth painting. A false hummingbird is a visible,
+  self-correcting error; a deleted real bird is invisible.
+
+  The listener's startup line now names the filter and how many species it
+  allows, against the model's own total, so the two stop looking the same:
+  `location filter 52.3874, 4.6462 — 259 species of 6522`.

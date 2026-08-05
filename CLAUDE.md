@@ -303,7 +303,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `brush.py` — the brush: species → fal FLUX `schnell` REST call →
     painting bytes; house-style prompt template; soft-failure policy.
   - `ears.py` — the ears: BirdNET via `birdnetlib`; `detect_file` /
-    `detect_samples` → `Detection`s above the confidence floor.
+    `detect_samples` → `Detection`s above the confidence floor. Optional
+    location filter (lat/lon); the SEASONAL half of it is opt-in
+    (`BP_SEASONAL_FILTER`) because it drops out-of-week singers silently.
   - `detect_cli.py` — `python -m bird_painter.detect_cli <clip> [floor]`,
     prints detections (demo/verify the ears).
   - `capture.py` — `MicListener`: records rolling 48 kHz mono windows from

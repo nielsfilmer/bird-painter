@@ -48,6 +48,7 @@ def main() -> None:
                 confidence_floor=floor,
                 latitude=config.latitude,
                 longitude=config.longitude,
+                seasonal=config.seasonal_filter,
             )
             detections = ears.detect_file(path)
     except Exception as exc:  # noqa: BLE001 — demo CLI: a bad clip shouldn't traceback

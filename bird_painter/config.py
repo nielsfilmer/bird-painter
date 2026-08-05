@@ -152,8 +152,9 @@ class Config:
     )
     confidence_floor: float = field(default_factory=_confidence_floor)
     # Location filter: when both a latitude and longitude are set, BirdNET
-    # restricts predictions to species plausible at that place and time of year
-    # (its meta model), cutting implausible detections. Both must be set to
+    # restricts predictions to species plausible at that PLACE (its meta
+    # model), cutting implausible detections. The time of year is a separate
+    # opt-in — see seasonal_filter below. Both coordinates must be set to
     # enable it; unset = off (global model). Validated in __post_init__.
     latitude: float | None = field(
         default_factory=lambda: _env_float_opt("BP_LATITUDE")
@@ -224,6 +225,15 @@ class Config:
     # QA, or a machine with no mic); the /dev/paint endpoint still works.
     enable_listener: bool = field(
         default_factory=lambda: _env_bool("BP_ENABLE_LISTENER", True)
+    )
+    # Narrow the location filter to the time of year as well. OFF by default,
+    # so BP_LATITUDE/BP_LONGITUDE mean "plausible here" rather than "plausible
+    # here, this week": BirdNET's seasonal list is about half the size for the
+    # same place, and what it removes is removed silently — no detection, no
+    # log line, indistinguishable from a dead microphone (2026-08-05: a
+    # nightingale identified at 0.87 confidence vanished exactly this way).
+    seasonal_filter: bool = field(
+        default_factory=lambda: _env_bool("BP_SEASONAL_FILTER", False)
     )
     # Clean up the archived detection clip — denoise, band-limit to the bird's
     # own band, normalise — so the wall's replay is audible rather than a
