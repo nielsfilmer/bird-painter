@@ -136,27 +136,6 @@ class Detection:
     end_seconds: float
 
 
-@dataclass
-class _SpeciesListProbe:
-    """What birdnetlib's meta model reads off a recording to build its species
-    list. Standing in for a Recording lets the startup log ask "how many
-    species does this filter allow?" without analysing any audio."""
-
-    lat: float
-    lon: float
-    date: datetime.date | None = None
-    sensitivity: float = 1.0
-    filter_threshold: float = 0.03
-
-    @property
-    def week_48(self) -> int:
-        """BirdNET's 48-week calendar, or -1 for "any week" — which is exactly
-        the difference between filtering by place and by place-and-season."""
-        if self.date is None:
-            return -1
-        return min(48, max(1, int(self.date.strftime("%j")) // 7 + 1))
-
-
 class Ears:
     def __init__(
         self,
@@ -174,7 +153,7 @@ class Ears:
         self.latitude = latitude
         self.longitude = longitude
         # …and optionally to the time of year as well. Off by default: the
-        # seasonal list is roughly half the size (143 species vs 259 for
+        # seasonal list is roughly half the size (140 species vs 259 for
         # Haarlem in August), and everything it removes is removed SILENTLY —
         # a nightingale singing out of its expected week is dropped with no
         # detection and no log line, which is indistinguishable from a broken
@@ -214,17 +193,44 @@ class Ears:
             "lon": self.longitude or 1e-6,
         }
 
+    def species_count(self) -> int | None:
+        """How many species the model knows at all — the baseline that makes a
+        filtered count mean something. None if birdnetlib doesn't say."""
+        try:
+            return len(self._analyzer.labels)
+        except Exception:  # noqa: BLE001 — diagnostics never break the wall
+            return None
+
     def allowed_species_count(self) -> int | None:
         """How many species the location filter currently lets through, so the
         startup log can say. None when no filter is configured, or when asking
-        fails — a diagnostic must never be the thing that stops the wall."""
+        fails — a diagnostic must never be the thing that stops the wall.
+
+        Asks birdnetlib's public list API rather than the one that installs a
+        list on the shared analyzer: answering a question shouldn't leave the
+        recognizer in a different state than it found it."""
         if self.latitude is None or self.longitude is None:
             return None
         try:
             with _silence_load():
-                probe = _SpeciesListProbe(**self._location_kwargs())
-                self._analyzer.set_predicted_species_list_from_position(probe)
-                return len(self._analyzer.custom_species_list)
+                from birdnetlib.utils import return_week_48_from_datetime
+
+                # birdnetlib's own conversion, never a local reimplementation:
+                # BirdNET's calendar is 48 weeks, so a hand-rolled //7 is
+                # wrong by up to a month for most of the year — and the whole
+                # point of this number is that it describes the filter the
+                # analysis actually runs.
+                week = (
+                    return_week_48_from_datetime(datetime.date.today())
+                    if self.seasonal
+                    else -1  # -1 is BirdNET's "any week"
+                )
+                species = self._analyzer.return_predicted_species_list(
+                    lat=self.latitude or 1e-6,
+                    lon=self.longitude or 1e-6,
+                    week_48=week,
+                )
+                return len(species)
         except Exception:  # noqa: BLE001 — a log line is not worth a crash
             logger.debug("could not count the filtered species list", exc_info=True)
             return None

@@ -406,16 +406,23 @@ whole magic; ship it first.
   `BP_LATITUDE`/`BP_LONGITUDE` filter by place only, and the calendar is
   opt-in via `BP_SEASONAL_FILTER` (default off).
 
-  Found the hard way the same afternoon: with the season on, a nightingale
-  played into the microphone was identified at **0.87 confidence and then
-  discarded**, because week 32 has nightingales gone from the Netherlands.
-  From the console this is indistinguishable from a broken microphone — no
-  detection, no log line — and it cost an hour of hunting the audio chain.
-  For Haarlem the seasonal list is 143 species against 259 year-round, so the
-  filter's own accuracy comes at the price of silently deleting anything
-  early, late, or simply unusual — which is exactly the bird worth painting.
-  Place alone still rejects the wrong continent, which is what the filter was
-  added for.
+  The trigger was a nightingale played into the microphone: identified at 0.87
+  confidence, then discarded, because BirdNET's list for this week has
+  nightingales gone from the Netherlands. That is not evidence the seasonal
+  model is *wrong* — a nightingale singing here in August is genuinely
+  unlikely, and the recording was a speaker. What it does show is the failure
+  MODE: the filter deletes silently. No detection, no log line, nothing to
+  distinguish a filtered bird from a dead microphone — and it cost an hour of
+  measuring input devices and spectra to find.
+
+  So the default is chosen on which mistake is cheaper. Place alone still
+  rejects the wrong continent, which is what the filter was added for (it
+  binned a Broad-winged Hawk the same afternoon). Adding the calendar roughly
+  halves the list — 140 species against 259 for Haarlem — and what it removes
+  is the early, the late and the unusual, which on a wall meant to reward
+  noticing is the bird most worth painting. A false hummingbird is a visible,
+  self-correcting error; a deleted real bird is invisible.
 
   The listener's startup line now names the filter and how many species it
-  allows, so a filtered-out bird and a dead microphone stop looking the same.
+  allows, against the model's own total, so the two stop looking the same:
+  `location filter 52.3874, 4.6462 — 259 species of 6522`.

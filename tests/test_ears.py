@@ -42,19 +42,24 @@ def test_location_kwargs_adds_the_date_when_the_season_filter_is_on():
     assert ears._location_kwargs()["date"] == datetime.date.today()
 
 
-def test_the_species_list_probe_maps_a_date_to_birdnets_week():
-    """BirdNET counts 48 weeks, and -1 means "any"."""
-    from bird_painter.ears import _SpeciesListProbe
+def test_the_seasonal_week_comes_from_birdnetlib_not_from_our_own_maths():
+    """Review of #99 caught a hand-rolled `day_of_year // 7 + 1`: BirdNET's
+    calendar is 48 weeks, not 52, so that disagreed with birdnetlib on 32 of 36
+    sampled days — by up to a month. The startup log would then name a filter
+    the analysis wasn't running. Derived from the installed library, like the
+    non-bird denylist above, so a version bump can't quietly desync them."""
+    from birdnetlib.utils import return_week_48_from_datetime
 
-    year_round = _SpeciesListProbe(lat=52.0, lon=4.0)
-    assert year_round.week_48 == -1
-    for day, expected in (
-        (datetime.date(2026, 1, 1), 1),
-        (datetime.date(2026, 12, 31), 48),
-        (datetime.date(2026, 8, 5), 32),
+    for day in (
+        datetime.date(2026, 1, 1),
+        datetime.date(2026, 4, 15),
+        datetime.date(2026, 8, 5),
+        datetime.date(2026, 12, 31),
     ):
-        probe = _SpeciesListProbe(lat=52.0, lon=4.0, date=day)
-        assert probe.week_48 == expected
+        week = return_week_48_from_datetime(day)
+        assert 1 <= week <= 48
+    # The specific disagreement that was shipped: our old maths said 32.
+    assert return_week_48_from_datetime(datetime.date(2026, 8, 5)) == 29
 
 
 def test_counting_the_allowed_species_is_only_a_diagnostic():
@@ -64,13 +69,55 @@ def test_counting_the_allowed_species_is_only_a_diagnostic():
     ears = _ears_without_model(latitude=52.37, longitude=4.90)
 
     class Exploding:
-        def set_predicted_species_list_from_position(self, probe):
+        def return_predicted_species_list(self, **kwargs):
             raise RuntimeError("meta model unavailable")
 
     ears._analyzer = Exploding()
     assert ears.allowed_species_count() is None
 
 
+def test_counting_species_asks_without_changing_the_recognizer():
+    """Answering a question must not install a species list on the shared
+    analyzer — `return_predicted_species_list` returns one,
+    `set_predicted_species_list_from_position` installs one, and the listener
+    asks BEFORE its first analysis."""
+    ears = _ears_without_model(latitude=52.37, longitude=4.90)
+
+    class Recording:
+        def __init__(self):
+            self.asked = []
+            self.custom_species_list = ["untouched"]
+
+        def return_predicted_species_list(self, **kwargs):
+            self.asked.append(kwargs)
+            return ["a", "b", "c"]
+
+    analyzer = Recording()
+    ears._analyzer = analyzer
+    assert ears.allowed_species_count() == 3
+    assert analyzer.custom_species_list == ["untouched"]
+    assert analyzer.asked[0]["week_48"] == -1  # place only: any week
+
+
+def test_counting_species_passes_the_week_when_the_season_filter_is_on():
+    from birdnetlib.utils import return_week_48_from_datetime
+
+    ears = _ears_without_model(latitude=52.37, longitude=4.90, seasonal=True)
+
+    class Analyzer:
+        def __init__(self):
+            self.asked = []
+
+        def return_predicted_species_list(self, **kwargs):
+            self.asked.append(kwargs)
+            return []
+
+    analyzer = Analyzer()
+    ears._analyzer = analyzer
+    ears.allowed_species_count()
+    assert analyzer.asked[0]["week_48"] == return_week_48_from_datetime(
+        datetime.date.today()
+    )
 def test_location_kwargs_nudges_bare_zero_so_filter_still_engages():
     # birdnetlib gates the filter on `lon and lat` truthiness, so an exact 0.0
     # (equator / prime meridian) would silently disable it. The nudge keeps it

@@ -149,7 +149,7 @@ Everything is an environment variable — see [`.env.example`](.env.example):
 | `BP_MAX_PAINTS_PER_HOUR` | 20 | hard ceiling on image generation, so a dawn chorus can't run away |
 | `BP_WALL_MAX_LIVE` | 12 | how many birds the collage holds at once |
 | `BP_LATITUDE` / `BP_LONGITUDE` | off | restrict BirdNET to species plausible where you are |
-| `BP_SEASONAL_FILTER` | off | also restrict to species plausible *this week* — halves the list, and drops out-of-season singers silently |
+| `BP_SEASONAL_FILTER` | off | also restrict to species plausible *this week* — roughly halves the list, and drops out-of-season singers silently |
 | `BP_INPUT_DEVICE` | system default | which microphone to listen on (index or name); essential on a headless box |
 | `BP_ENHANCE_CLIPS` | on | clean up the archived clip — denoise, band-limit to the bird, normalise. Off archives the raw cut |
 | `BP_FAL_MODEL` | `fal-ai/flux/schnell` | `fal-ai/flux/dev` follows the house-style prompt more faithfully, at a higher price |

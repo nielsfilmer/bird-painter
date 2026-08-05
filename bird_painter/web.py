@@ -139,21 +139,25 @@ def _start_listener(config: Config, runner: PaintRunner) -> None:
         # Say what the filter allows, not just that one is on. A species the
         # filter excludes produces no detection and no log line, so without
         # this a working microphone and a filtered-out bird look identical
-        # from the console.
-        location = ""
+        # from the console. The count carries the model's own total beside it,
+        # since "259 species" means nothing without knowing it started at 6522.
+        filter_note = ""
         if config.latitude is not None:
+            scope = "location + season" if config.seasonal_filter else "location"
             allowed = ears.allowed_species_count()
-            season = "location + season" if config.seasonal_filter else "location"
-            location = (
-                f"; {season} filter {config.latitude}, {config.longitude}"
-                f" — {allowed} species"
-                if allowed is not None
-                else f"; {season} filter {config.latitude}, {config.longitude}"
+            total = ears.species_count()
+            counts = ""
+            if allowed is not None:
+                counts = f" — {allowed} species"
+                if total:
+                    counts += f" of {total}"
+            filter_note = (
+                f"; {scope} filter {config.latitude}, {config.longitude}{counts}"
             )
         logger.info(
             "listener: painting birds heard on the mic (floor %.2f%s)",
             config.confidence_floor,
-            location,
+            filter_note,
         )
         listener.listen(runner.on_detections)
     except Exception:  # noqa: BLE001 — the wall must survive a broken listener
