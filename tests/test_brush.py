@@ -180,7 +180,9 @@ def test_giving_up_paints_nothing_rather_than_hanging_a_bad_plate(monkeypatch):
         lambda *a, **k: (calls.append(1), (b"bad", "jpg"))[1],
     )
     monkeypatch.setattr(brush_module, "describe_problem", lambda i, e: "still wrong")
-    assert brush_module.paint("Wren", "T. troglodytes", fal_key="k") is None
+    outcome = brush_module.paint("Wren", "T. troglodytes", fal_key="k")
+    assert isinstance(outcome, brush_module.Rejected)  # NOT None: see runner
+    assert outcome.reason == "still wrong"
     assert len(calls) == brush_module.MAX_ATTEMPTS  # bounded, not a spend loop
 
 

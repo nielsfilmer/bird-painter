@@ -49,6 +49,19 @@ PROMPT_TEMPLATE = (
     "filling the frame."
 )
 
+class Rejected:
+    """Every attempt came back as something other than a bird on white.
+
+    Distinct from None (fal was unreachable, or there's no key) because the
+    two deserve opposite treatment: an outage should retry freely on the next
+    detection, while a species the model keeps painting wrongly is DETERMINISTIC
+    — left free to retry, one persistent singer would spend 480 paid calls an
+    hour against a cap of 20. The caller charges this to the hourly cap."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+
+
 # How many times to ask for a plate before giving up. A small share of
 # generations come back as something other than a bird on white (see
 # plate_check); one retry catches most of those for a fraction of a cent,
@@ -83,13 +96,15 @@ def paint(
     model: str = DEFAULT_MODEL,
     hat: str | None = None,
     attempts: int = MAX_ATTEMPTS,
-) -> tuple[bytes, str] | None:
+) -> tuple[bytes, str] | Rejected | None:
     """Paint one bird. Returns (image_bytes, extension) or None on failure.
 
     A plate that clearly isn't a bird on white — a photograph of a painting on
     a desk, a flat block of colour — is asked for again rather than hung on the
-    wall; see plate_check. Giving up returns None, which the callers already
-    treat as "no painting this time" (nothing stored, no cap slot spent)."""
+    wall; see plate_check. Giving up returns `Rejected`, which the caller
+    charges to the hourly cap: unlike an outage, a model that keeps painting
+    one species wrongly will keep doing so, and free retries on every detection
+    would be a spend loop."""
     if not fal_key:
         logger.warning("brush: FAL_KEY not set; cannot paint %s", species_common)
         return None
@@ -114,7 +129,7 @@ def paint(
         species_common,
         attempts,
     )
-    return None
+    return Rejected(problem)
 
 
 def _paint_once(

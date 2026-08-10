@@ -11,6 +11,7 @@ import time
 import numpy as np
 
 from .audio import detection_clip_wav
+from .brush import Rejected
 from .brush import paint as paint_species
 from .config import Config
 from .ears import Detection
@@ -77,6 +78,18 @@ class PaintRunner:
                 datetime.date.today(), self.config.hat_days, self.config.hat_dates
             ),
         )
+        if isinstance(result, Rejected):
+            # The model keeps painting this species as something that isn't a
+            # bird on white. That's deterministic, not transient, so it costs a
+            # cap slot: otherwise every detection of a persistent singer buys
+            # another two generations, without limit.
+            self.gate.record()
+            logger.warning(
+                "gave up on %s for now (%s); it counts against the hourly cap",
+                species,
+                result.reason,
+            )
+            return
         if result is None:
             # Soft failure (fal outage / no key): nothing marked painted, no
             # cap slot consumed — the species retries on its next detection.

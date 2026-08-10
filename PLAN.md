@@ -426,3 +426,33 @@ whole magic; ship it first.
   The listener's startup line now names the filter and how many species it
   allows, against the model's own total, so the two stop looking the same:
   `location filter 52.3874, 4.6462 — 259 species of 6522`.
+- **2026-08-06** — **Plates that aren't a bird on white are rejected, not hung**
+  (owner: "a few weird results from the drawing API", with a screenshot). Two
+  failure shapes reach the wall: a photograph OF a painting — a watercolour
+  sheet on a desk, pen and signature included, which `trim` can't rescue
+  because the desk fills the frame — and a flat block of colour across part of
+  the canvas with the bird squeezed beside it. `plate_check.describe_problem`
+  measures two things and returns the reason: how much white margin surrounds
+  the painting (a bird has ground on every side; a desk photo runs to the
+  edge), and what share of the SUBJECT the flattest single colour covers
+  (measured against the non-white pixels, so padding can't change the answer).
+  The brush asks once more, then gives up.
+
+  **Calibrated over all 277 archived plates, not the 9 that prompted it.** The
+  first cut was tuned on the most recent handful and, worse, compared
+  post-trim numbers against pre-trim images; review caught it rejecting three
+  good birds, including a flawless hummingbird scoring 89% — a quantisation
+  boundary counted a warm off-white ground as one enormous flat colour. As
+  shipped: 3 of 277 rejected, all genuinely broken, none good.
+
+  **Giving up costs an hourly-cap slot** (`brush.Rejected`, distinct from the
+  `None` that means fal was unreachable). A model that paints one species
+  wrongly does so deterministically, so free retries on every detection would
+  be a spend loop — at a 15 s window, one persistent singer is ~480 paid calls
+  an hour against a cap of 20. An outage still retries freely; only a
+  reproducible bad plate is charged.
+
+  Known blind spot, accepted: a print photographed on PALE GREY passes, since
+  grey that light reads as ground. Tightening that threshold rejects good
+  plates painted on warm off-white. A bad plate on the wall is visible and
+  fades in three hours; a bird deleted for looking wrong is invisible.
