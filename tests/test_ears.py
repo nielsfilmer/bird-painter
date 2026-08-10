@@ -102,8 +102,9 @@ def test_counting_species_passes_the_week_when_the_season_filter_is_on(monkeypat
     (`day_of_year // 7 + 1`) happens to agree with the library on about an
     eighth of the year, so a test run on the wrong day would pass with the bug
     reinstated. 5 August is one of the days where they differ — 29 vs 32."""
-    import bird_painter.ears as ears_module
     from birdnetlib.utils import return_week_48_from_datetime
+
+    import bird_painter.ears as ears_module
 
     class FixedDate(datetime.date):
         @classmethod

@@ -56,3 +56,26 @@ def test_failed_paint_consumes_nothing():
     assert gate.allows("Finch", now=5000.0)
     # no record() — the paint failed
     assert gate.allows("Finch", now=5001.0)
+
+
+def test_a_species_the_brush_gave_up_on_waits_out_its_cooldown(store):
+    """Round-2 review of #101: giving up left the species free to try again on
+    its very next detection — every 15 seconds for a persistent singer, two
+    paid generations each time."""
+    gate = TriggerGate(store, ttl_seconds=100, max_paints_per_hour=20)
+    assert gate.allows("Robin", now=1000) is True
+
+    gate.record_failure("Robin", now=1000)
+    assert gate.allows("Robin", now=1010) is False  # still cooling down
+    assert gate.allows("Wren", now=1010) is True  # and only this species
+    assert gate.allows("Robin", now=1101) is True  # cooldown served
+
+
+def test_giving_up_on_one_species_does_not_spend_the_other_birds_hourly_cap(store):
+    """The measured alternative was worse: charging the cap bounded the spend
+    but let one bad species exhaust it in ~5 minutes, so a good bird singing
+    every 5 minutes got 1 painting instead of 12."""
+    gate = TriggerGate(store, ttl_seconds=100, max_paints_per_hour=3)
+    for minute in range(20):
+        gate.record_failure("Broken Species", now=1000 + minute * 60)
+    assert gate.allows("Robin", now=2200) is True  # the cap is untouched

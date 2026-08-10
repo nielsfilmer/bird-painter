@@ -452,6 +452,13 @@ def create_app(config: Config | None = None) -> FastAPI:
             model=config.fal_model,
             hat=hat_for(datetime.date.today(), config.hat_days, config.hat_dates),
         )
+        if isinstance(result, brush.Rejected):
+            # The model painted something that isn't a bird on white, twice.
+            # 502 rather than 201: nothing was stored, and the reason is the
+            # actionable part.
+            raise HTTPException(
+                status_code=502, detail=f"no usable plate: {result.reason}"
+            )
         if result is not None:
             image_bytes, extension = result
             image_bytes = trim_to_bird(image_bytes, extension)

@@ -143,3 +143,57 @@ def test_prompt_has_no_field_guide_or_text_triggers():
     assert "no text" in prompt
     for trigger in ("field guide plate", "audubon", "engraving"):
         assert trigger not in prompt
+
+
+def test_a_bad_plate_is_asked_for_again(monkeypatch):
+    """A photo-of-a-painting or a flat block gets one more go rather than
+    landing on the wall (2026-08-06: both reached it)."""
+    from bird_painter import brush as brush_module
+
+    attempts = []
+
+    def fake_paint_once(*args, **kwargs):
+        attempts.append(1)
+        # first plate is rubbish, second is fine
+        return (b"bad" if len(attempts) == 1 else b"good", "jpg")
+
+    monkeypatch.setattr(brush_module, "_paint_once", fake_paint_once)
+    monkeypatch.setattr(
+        brush_module,
+        "describe_problem",
+        lambda image, ext: "a block, not a painting" if image == b"bad" else None,
+    )
+    assert brush_module.paint("Wren", "T. troglodytes", fal_key="k") == (b"good", "jpg")
+    assert len(attempts) == 2
+
+
+def test_giving_up_reports_rejection_rather_than_a_bare_failure(monkeypatch):
+    """`Rejected` rather than `None`, because the two deserve opposite
+    treatment: an outage should retry on the next detection, a species the
+    model paints wrongly every time should wait out its cooldown first."""
+    from bird_painter import brush as brush_module
+
+    calls = []
+    monkeypatch.setattr(
+        brush_module,
+        "_paint_once",
+        lambda *a, **k: (calls.append(1), (b"bad", "jpg"))[1],
+    )
+    monkeypatch.setattr(brush_module, "describe_problem", lambda i, e: "still wrong")
+    outcome = brush_module.paint("Wren", "T. troglodytes", fal_key="k")
+    assert isinstance(outcome, brush_module.Rejected)  # NOT None: see runner
+    assert outcome.reason == "still wrong"
+    assert len(calls) == brush_module.MAX_ATTEMPTS  # bounded, not a spend loop
+
+
+def test_a_network_failure_is_not_retried_as_if_it_were_a_bad_plate(monkeypatch):
+    """Retrying is for plates that came back wrong, not for fal being down —
+    the existing backoff-free soft failure still applies."""
+    from bird_painter import brush as brush_module
+
+    calls = []
+    monkeypatch.setattr(
+        brush_module, "_paint_once", lambda *a, **k: (calls.append(1), None)[1]
+    )
+    assert brush_module.paint("Wren", "T. troglodytes", fal_key="k") is None
+    assert len(calls) == 1

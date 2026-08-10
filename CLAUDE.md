@@ -327,6 +327,12 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     personal days come only from env (`BP_HAT_DAYS`/`BP_HAT_DATES`), never
     committed (public repo).
   - `placeholder.py` — SVG placeholder plates (used when FAL_KEY unset).
+  - `plate_check.py` — `describe_problem(...)`: is this a bird on white, or has
+    the model drifted (a photo of a painting on a desk, a flat block)? Two
+    measures calibrated over the whole archive — white margin per side, and the
+    flattest colour's share OF THE SUBJECT (padding-invariant, so it reads the
+    same before and after `trim`). Returns the reason, not a bool; fail-soft
+    (anything unreadable is kept).
   - `trim.py` — `trim_to_bird(...)`: crops the flat-white margin off a painting
     at store time (padded back to 4:5) so the bird fills its plate; fail-soft
     on SVG placeholders/unreadable files.
@@ -376,6 +382,10 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   test-js via `node --test` for the wall layout); the deterministic-check
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
+- `tests/fixtures/plates/` — three real plates (downscaled) pinning the
+  plate-check thresholds: one good, one desk photo, one grey block. `data/` is
+  gitignored and purged monthly, so without these the calibration would have no
+  durable evidence.
 - `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API,
   event hub + detection WebSocket, API docs (incl. docs-vs-routes drift
   guards), wall-layout port + JS-parity, /wall.png render, painting trim;

@@ -12,6 +12,8 @@ import logging
 
 import httpx
 
+from .plate_check import describe_problem
+
 logger = logging.getLogger(__name__)
 
 # Sync route is right for schnell (~1-2 s renders). If PLAN.md's upgrade to
@@ -41,8 +43,35 @@ PROMPT_TEMPLATE = (
     "background, the bird is the only thing in the image. No text, no words, "
     "no letters, no caption, no label, no numbers, no signature, no watermark, "
     "no border, no frame, no paper texture, no vignette, no scenery, no "
-    "background objects."
+    "background objects. Not a photograph of a painting: no sheet of paper, "
+    "no desk or table, no pencils, brushes or art supplies, no hands, no "
+    "sketchbook, no plain coloured blocks or panels — just the bird itself, "
+    # NOT "filling the frame": plate_check rejects a subject that reaches the
+    # edges, because that's what a photographed desk looks like. Asking for the
+    # opposite of what we then throw away would be a slow, expensive way to
+    # paint nothing — caught in review before it ever ran unattended.
+    "centred with clear white space all around it."
 )
+
+class Rejected:
+    """Every attempt came back as something other than a bird on white.
+
+    Distinct from None (fal was unreachable, or there's no key) because the
+    two deserve opposite treatment: an outage should retry freely on the next
+    detection, while a species the model keeps painting wrongly is DETERMINISTIC
+    — left free to retry, one persistent singer would spend 480 paid calls an
+    hour against a cap of 20. The caller charges this to the hourly cap."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+
+
+# How many times to ask for a plate before giving up. A small share of
+# generations come back as something other than a bird on white (see
+# plate_check); one retry catches most of those for a fraction of a cent,
+# while a hard cap keeps a persistently confused model from spending in a
+# loop.
+MAX_ATTEMPTS = 2
 
 
 def build_prompt(
@@ -70,11 +99,53 @@ def paint(
     fal_key: str,
     model: str = DEFAULT_MODEL,
     hat: str | None = None,
-) -> tuple[bytes, str] | None:
-    """Paint one bird. Returns (image_bytes, extension) or None on failure."""
+    attempts: int = MAX_ATTEMPTS,
+) -> tuple[bytes, str] | Rejected | None:
+    """Paint one bird. Returns (image_bytes, extension) or None on failure.
+
+    A plate that clearly isn't a bird on white — a photograph of a painting on
+    a desk, a flat block of colour — is asked for again rather than hung on the
+    wall; see plate_check. Giving up returns `Rejected`, which the caller
+    charges to the hourly cap: unlike an outage, a model that keeps painting
+    one species wrongly will keep doing so, and free retries on every detection
+    would be a spend loop."""
     if not fal_key:
         logger.warning("brush: FAL_KEY not set; cannot paint %s", species_common)
         return None
+    for attempt in range(1, max(1, attempts) + 1):
+        painted = _paint_once(
+            species_common, species_scientific, fal_key=fal_key, model=model, hat=hat
+        )
+        if painted is None:
+            return None
+        problem = describe_problem(*painted)
+        if problem is None:
+            return painted
+        logger.warning(
+            "brush: discarding plate for %s (attempt %d/%d): %s",
+            species_common,
+            attempt,
+            attempts,
+            problem,
+        )
+    logger.error(
+        "brush: no usable plate for %s after %d attempts; skipping",
+        species_common,
+        attempts,
+    )
+    return Rejected(problem)
+
+
+def _paint_once(
+    species_common: str,
+    species_scientific: str,
+    *,
+    fal_key: str,
+    model: str,
+    hat: str | None,
+) -> tuple[bytes, str] | None:
+    """One generation: prompt in, image bytes out. No judgement about what came
+    back — that's the caller's, so a retry doesn't re-enter the whole policy."""
     prompt = build_prompt(species_common, species_scientific, hat)
     try:
         response = httpx.post(
