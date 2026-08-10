@@ -16,13 +16,16 @@ Two measurements, each aimed at one of those, calibrated over the whole archive
 1. **The painting must be surrounded by white.** A bird painted on white has
    ground on every side; a photograph of a desk runs to the frame edge. Asked
    as "how much empty margin is there per side", not by sampling the outermost
-   pixels, so the answer survives `trim` padding a plate back to 4:5 — the same
-   plate reads the same before and after, and a threshold measured on one is
-   valid on the other.
+   pixels, which was circular (crop to the content and the "border" IS the
+   bird). Padding a plate makes its margins LARGER, never smaller, so trimming
+   can only make this rule more lenient — never reject something it would
+   otherwise have passed.
 2. **No single flat colour may dominate the SUBJECT.** Measured against the
-   non-white pixels, not the canvas — otherwise the answer changes with how
-   much white surrounds the bird, and a number calibrated post-trim would be
-   meaningless applied pre-trim, which is where this actually runs.
+   non-white pixels, not the canvas — which makes it exactly padding-invariant
+   (verified to four decimal places), so a threshold calibrated on the archive
+   is valid pre-trim, where this actually runs. The first version measured
+   against the canvas and was therefore calibrated on one thing and applied to
+   another.
 
 Both thresholds sit in a measured gap rather than at a guess. Flat share of the
 subject: 273 good plates 1.4–28.4%, grey block 93.3%, letterbox bars 72.9%,
@@ -35,11 +38,13 @@ thresholds sit on the loose side of those gaps, and anything the check can't
 read is kept rather than thrown away. Over the whole archive it rejects 3
 plates, all of them genuinely broken, and no good one.
 
-Known blind spot: a print photographed on PALE GREY passes, because grey that
-light counts as ground (see the Eurasian Oystercatcher in the archive — a sheet
-on grey with a signature). Tightening the white threshold to catch it also
-rejects good plates painted on a warm off-white, so it stays a miss; a bad
-plate on the wall is visible, a deleted bird isn't.
+This catches the two shapes above, and is not a general "is this good art"
+judgement. Known misses, all of which stay visible on the wall rather than
+silently deleting a bird: a print photographed on PALE GREY (the Eurasian
+Oystercatcher in the archive — grey that light counts as ground; tightening
+the threshold rejects good plates painted on warm off-white), a photograph on
+a WHITE desk, a caption baked into the image, a drawn frame, and a textured
+rather than flat block.
 """
 
 from __future__ import annotations
@@ -53,8 +58,8 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # Analysis size. Every measure here is a ratio, so the answers are unchanged by
-# working on a thumbnail — and it turns a ~400 ms check into a ~5 ms one, which
-# matters in the mic thread between detections.
+# working on a thumbnail — and it takes the check from ~400 ms to ~100 ms,
+# which matters in the mic thread between detections.
 ANALYSIS_PIXELS = 512
 
 # Colour buckets for the flatness test: 16 levels per channel. Fine enough that
@@ -78,6 +83,9 @@ WHITE_BUCKET = (WHITE // QUANTISE) * QUANTISE
 # A side counts as having white ground when at least this fraction of the
 # canvas beyond the painting is empty.
 MIN_MARGIN = 0.02
+# The subject's extent is taken between these percentiles of its pixels, so a
+# few stray specks can't stand in for the painting's edge.
+EDGE_PERCENTILE = 0.5
 MAX_FLAT_SHARE = 0.50
 
 
@@ -96,7 +104,11 @@ def _white_margins(pixels: np.ndarray) -> tuple[float, ...]:
     if len(coloured) == 0:
         return (1.0, 1.0, 1.0, 1.0)  # blank: all ground, no painting
     height, width, _ = pixels.shape
-    (top, left), (bottom, right) = coloured.min(0), coloured.max(0) + 1
+    # A percentile rather than the raw extremes: with min/max, two stray dark
+    # pixels in opposite corners — a speck of JPEG noise — describe a subject
+    # spanning the whole canvas and reject a perfectly good plate.
+    (top, left) = np.percentile(coloured, EDGE_PERCENTILE, axis=0)
+    (bottom, right) = np.percentile(coloured, 100 - EDGE_PERCENTILE, axis=0)
     return (
         top / height,
         (height - bottom) / height,

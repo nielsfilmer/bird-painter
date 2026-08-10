@@ -27,6 +27,10 @@ class TriggerGate:
         self.ttl_seconds = ttl_seconds
         self.max_paints_per_hour = max_paints_per_hour
         self._paint_times: deque[float] = deque()
+        # Species the brush couldn't paint acceptably, and when we gave up.
+        # Kept here rather than in the store because nothing was archived —
+        # there is no painting to carry a timestamp.
+        self._gave_up_at: dict[str, float] = {}
 
     def _prune(self, now: float) -> None:
         cutoff = now - HOUR_SECONDS
@@ -41,7 +45,24 @@ class TriggerGate:
         last = self.store.last_painted_at(species_common)
         if last is not None and now - last < self.ttl_seconds:
             return False
+        # A species the model kept painting wrongly waits out the same
+        # cooldown before costing another generation. Without this, giving up
+        # freed the species to try again on its very next detection — which,
+        # for a persistent singer, is every 15 seconds.
+        gave_up = self._gave_up_at.get(species_common)
+        if gave_up is not None and now - gave_up < self.ttl_seconds:
+            return False
         return True
+
+    def record_failure(self, species_common: str, now: float | None = None) -> None:
+        """Mark that this species couldn't be painted acceptably.
+
+        Deliberately NOT a cap slot. Charging the hourly cap bounds the spend
+        but spends the wrong budget: measured over an hour, one bad species
+        exhausted the cap in ~5 minutes and a good bird singing every 5 minutes
+        got 1 painting instead of 12. The per-species cooldown bounds the same
+        spend without letting one species crowd out the others."""
+        self._gave_up_at[species_common] = time.time() if now is None else now
 
     def record(self, now: float | None = None) -> None:
         """Mark that a paint succeeded — consumes one hourly-cap slot. The

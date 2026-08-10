@@ -174,7 +174,11 @@ ENDPOINTS: list[dict] = [
         "statuses": {
             "201": "painted; `source` is `dev`, or `dev-placeholder` with no FAL_KEY",
             "404": "you're not on the wall's own machine",
-            "502": "the brush failed (fal outage) — nothing painted, try again",
+            "502": (
+                "no painting: either the brush failed (fal outage — try again) "
+                "or every plate came back as something that isn't a bird on "
+                "white; the reason says which"
+            ),
         },
         "example": {"painted": EXAMPLE_PAINTING_FILE, "source": "dev"},
     },

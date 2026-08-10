@@ -80,12 +80,14 @@ class PaintRunner:
         )
         if isinstance(result, Rejected):
             # The model keeps painting this species as something that isn't a
-            # bird on white. That's deterministic, not transient, so it costs a
-            # cap slot: otherwise every detection of a persistent singer buys
-            # another two generations, without limit.
-            self.gate.record()
+            # bird on white. That's deterministic, not transient — so the
+            # species waits out its cooldown rather than buying two more
+            # generations on the next detection a few seconds from now. The
+            # hourly cap is left alone on purpose: it belongs to the other
+            # birds, and one bad species shouldn't spend it.
+            self.gate.record_failure(species)
             logger.warning(
-                "gave up on %s for now (%s); it counts against the hourly cap",
+                "gave up on %s for now (%s); it waits out the cooldown",
                 species,
                 result.reason,
             )

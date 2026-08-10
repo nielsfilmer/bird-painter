@@ -167,10 +167,10 @@ def test_a_bad_plate_is_asked_for_again(monkeypatch):
     assert len(attempts) == 2
 
 
-def test_giving_up_paints_nothing_rather_than_hanging_a_bad_plate(monkeypatch):
-    """None is the soft-failure the whole pipeline already understands: no
-    painting stored, no cap slot spent, the species free to retry when it's
-    next heard."""
+def test_giving_up_reports_rejection_rather_than_a_bare_failure(monkeypatch):
+    """`Rejected` rather than `None`, because the two deserve opposite
+    treatment: an outage should retry on the next detection, a species the
+    model paints wrongly every time should wait out its cooldown first."""
     from bird_painter import brush as brush_module
 
     calls = []

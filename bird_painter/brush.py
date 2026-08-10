@@ -46,7 +46,11 @@ PROMPT_TEMPLATE = (
     "background objects. Not a photograph of a painting: no sheet of paper, "
     "no desk or table, no pencils, brushes or art supplies, no hands, no "
     "sketchbook, no plain coloured blocks or panels — just the bird itself, "
-    "filling the frame."
+    # NOT "filling the frame": plate_check rejects a subject that reaches the
+    # edges, because that's what a photographed desk looks like. Asking for the
+    # opposite of what we then throw away would be a slow, expensive way to
+    # paint nothing — caught in review before it ever ran unattended.
+    "centred with clear white space all around it."
 )
 
 class Rejected:
