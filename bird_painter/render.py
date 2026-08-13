@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
-from .frame_layout import compute_frame_grid
+from .frame_layout import compute_frame_scatter
 from .wall_layout import PLATE_ASPECT, compute_collage
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,9 @@ GROUND_TOLERANCE = 6
 CAPTION_GAP_VMIN = 1.4
 # The panel's top margin, once the title is gone.
 PANEL_TOP_MARGIN = 0.045
+# The plate width (in vmin) at which a caption earns the full font size; the
+# scatter's smaller plates scale down from here.
+REF_PLATE_VMIN = 33
 # Glyphs in the text-layer mask: white where ink goes, so the frame can paste
 # a single colour through it.
 MASK_INK = 255
@@ -227,6 +230,20 @@ def _paste_bird(
     img.paste(region, (x0, y0))
 
 
+def _fit_species(draw, text, fonts, size, plate_w) -> int:
+    """Shrink a species name until it fits its plate (plus the 25% overhang the
+    neighbouring footprints leave room for). BLACK-THROATED GREEN WARBLER on
+    the scatter's smallest plate is the case that needs this."""
+    while size > 7:
+        font = fonts.get(size)
+        tracking = size * 0.05 + 0.5
+        width = sum(draw.textlength(c, font=font) + tracking for c in text)
+        if width - tracking <= plate_w * 1.25:
+            break
+        size -= 1
+    return size
+
+
 def _heard_text(born_at: float) -> str:
     # Fixed clock time, 24-hour — matches the wall (the e-ink panel refreshes
     # only every few minutes, so a relative "x min ago" would be stale).
@@ -337,7 +354,7 @@ def render_wall_png(
     # in a window (see frame_layout). `grid=False` renders the spiral, which is
     # what the README's hero image and anything else expecting the wall wants.
     placements = (
-        compute_frame_grid(files, width, layout_h, band_top)
+        compute_frame_scatter(files, width, layout_h, band_top)
         if panel
         else compute_collage(files, width, layout_h, band_top)
     )
@@ -372,6 +389,22 @@ def render_wall_png(
         if not lettering:
             continue
         meta = by_file[pl.file]
+        if panel:
+            # Caption scales with its plate — the smallest bird gets the
+            # smallest label, which also reads as hierarchy — and a long name
+            # shrinks further until it fits its plate (with a little overhang
+            # allowed; the neighbours' footprints leave room for it).
+            factor = max(0.6, min(1.0, w / (REF_PLATE_VMIN * vmin)))
+            plate_species = max(8, round(species_size * factor))
+            plate_species = _fit_species(
+                draw, meta["species_common"].upper(), fonts, plate_species, w
+            )
+            plate_species_font = fonts.get(plate_species)
+            plate_heard = max(8, min(heard_size, plate_species + 1))
+            plate_heard_font = fonts.get(plate_heard, italic=True)
+        else:
+            plate_species, plate_species_font = species_size, species_font
+            plate_heard_font = heard_font
         # On the panel the bird's ink is fitted to the cell, so its feet ARE
         # the cell's bottom edge; the wall's slight overlap put the name right
         # against the bird. Give it air there, keep the overlap on the wall
@@ -381,14 +414,14 @@ def render_wall_png(
         for dx in (0, DOUBLE_X):
             _tracked(
                 draw, cx + dx, caption_y, meta["species_common"].upper(),
-                species_font, ink, tracking=species_size * 0.05 + 0.5,
+                plate_species_font, ink, tracking=plate_species * 0.05 + 0.5,
             )
-        heard_y = caption_y + species_size * 1.3
+        heard_y = caption_y + plate_species * 1.3
         heard = _heard_text(meta["born_at"])
         for dx in (0, DOUBLE_X):
             draw.text(
-                (cx + dx, heard_y), heard, font=heard_font, fill=heard_ink,
-                anchor="ma",
+                (cx + dx, heard_y), heard, font=plate_heard_font,
+                fill=heard_ink, anchor="ma",
             )
     return _encode(img)
 

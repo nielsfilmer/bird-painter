@@ -492,3 +492,15 @@ whole magic; ship it first.
   the recorder on #79, the frame on #67 — so none of the session's merged work
   was actually in the house, and the recorder's `/ws/detections` 404'd. Merging
   is not deploying. Both are now on `main`.
+- **2026-08-13** — **The panel layout is a focal scatter, not a grid** (owner,
+  dictated after seeing the grid on the panel: "too much like a grid"). An
+  anchor is picked inside a central box holding ~30% of the sheet's area; the
+  newest bird sits there largest; the five heard before it gather around it a
+  step smaller; older birds taper with age rank and are placed wherever the
+  sheet is emptiest — which is naturally whatever side the anchor left open,
+  so the composition balances and covers the sheet. Jitter is deterministic
+  per live set (seeded from the file list): the frame redraws only when the
+  bytes change, so a layout that wandered per render would wear the panel for
+  nothing; a new bird reseeds the whole composition, one redraw it was
+  spending anyway. Captions scale with their plate and long names shrink to
+  fit, so the smallest bird gets the smallest label — hierarchy for free.
