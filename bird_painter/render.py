@@ -46,15 +46,13 @@ WHITE_SOLID = 228
 # Glyphs in the text-layer mask: white where ink goes, so the frame can paste
 # a single colour through it.
 MASK_INK = 255
-# Faux weight for the species line: a stroke around each glyph. A hairline
-# serif at panel sizes reads as grey rather than as a letter, and we have no
-# bold cut of this face.
-CAPTION_WEIGHT = 1
-# The italic "heard at" line gets its weight differently — drawn twice, offset
-# one pixel horizontally. A full stroke closes its counters at this size: the
-# digits fill in and "heard at" merges into one word, which is less legible
-# than the hairline it replaced, not more.
-ITALIC_DOUBLE_X = 1
+# Faux weight, for a face we have no bold cut of: draw the glyph twice, offset
+# one pixel horizontally. A hairline serif at panel sizes reads as grey rather
+# than as a letter, but a full stroke around each glyph is too much — on the
+# italic it closes the counters (the digits fill in, "heard at" merges into one
+# word), and on the species caps it read as shouty on the real panel. One pixel
+# of doubling is the half-step that both lines wanted.
+DOUBLE_X = 1
 
 # Serif faces to try, in order, when no font is configured. Raspberry Pi OS /
 # Debian first (the deploy target), then macOS (dev). Falls back to Pillow's
@@ -108,15 +106,14 @@ def _clamp(lo: float, val: float, hi: float) -> int:
     return round(min(hi, max(lo, val)))
 
 
-def _tracked(draw, cx, y, text, font, fill, tracking, weight=0):
+def _tracked(draw, cx, y, text, font, fill, tracking):
     """Draw letter-spaced text horizontally centred at cx, top at y (small-caps
     look for the species: upper-cased + positive tracking)."""
     widths = [font.getlength(ch) for ch in text]
     total = sum(widths) + tracking * max(0, len(text) - 1)
     x = cx - total / 2
     for ch, w in zip(text, widths, strict=True):
-        draw.text((x, y), ch, font=font, fill=fill, stroke_width=weight,
-                  stroke_fill=fill)
+        draw.text((x, y), ch, font=font, fill=fill)
         x += w + tracking
 
 
@@ -288,14 +285,14 @@ def render_wall_png(
             continue
         meta = by_file[pl.file]
         caption_y = cy + image_h / 2 - 0.4 * vmin
-        _tracked(
-            draw, cx, caption_y, meta["species_common"].upper(),
-            species_font, ink, tracking=species_size * 0.05 + 0.5,
-            weight=CAPTION_WEIGHT,
-        )
+        for dx in (0, DOUBLE_X):
+            _tracked(
+                draw, cx + dx, caption_y, meta["species_common"].upper(),
+                species_font, ink, tracking=species_size * 0.05 + 0.5,
+            )
         heard_y = caption_y + species_size * 1.3
         heard = _heard_text(meta["born_at"])
-        for dx in (0, ITALIC_DOUBLE_X):
+        for dx in (0, DOUBLE_X):
             draw.text(
                 (cx + dx, heard_y), heard, font=heard_font, fill=heard_ink,
                 anchor="ma",
