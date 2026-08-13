@@ -34,9 +34,27 @@ HEARD_INK = (107, 94, 69)
 # The panel's own white IS in the palette and dithers to nothing, so the frame
 # asks for this ground and lets the e-paper be the paper.
 PANEL_GROUND = (255, 255, 255)
+# FLUX doesn't always paint on pure white: one archived plate's ground is
+# (245,245,245), 86% of its pixels. Against the panel's white that shows as a
+# grey halo around the bird — invisible on the cream wall, where the multiply
+# blend absorbs it, and obvious on e-paper where dithering turns it into a
+# patch of speckle. Pixels brighter than WHITE_KEY are dropped entirely;
+# between WHITE_KEY and WHITE_SOLID they fade in, so an antialiased feather
+# edge stays soft instead of turning into a cut-out.
+WHITE_KEY = 246
+WHITE_SOLID = 228
 # Glyphs in the text-layer mask: white where ink goes, so the frame can paste
 # a single colour through it.
 MASK_INK = 255
+# Faux weight for the species line: a stroke around each glyph. A hairline
+# serif at panel sizes reads as grey rather than as a letter, and we have no
+# bold cut of this face.
+CAPTION_WEIGHT = 1
+# The italic "heard at" line gets its weight differently — drawn twice, offset
+# one pixel horizontally. A full stroke closes its counters at this size: the
+# digits fill in and "heard at" merges into one word, which is less legible
+# than the hairline it replaced, not more.
+ITALIC_DOUBLE_X = 1
 
 # Serif faces to try, in order, when no font is configured. Raspberry Pi OS /
 # Debian first (the deploy target), then macOS (dev). Falls back to Pillow's
@@ -90,14 +108,15 @@ def _clamp(lo: float, val: float, hi: float) -> int:
     return round(min(hi, max(lo, val)))
 
 
-def _tracked(draw, cx, y, text, font, fill, tracking):
+def _tracked(draw, cx, y, text, font, fill, tracking, weight=0):
     """Draw letter-spaced text horizontally centred at cx, top at y (small-caps
     look for the species: upper-cased + positive tracking)."""
     widths = [font.getlength(ch) for ch in text]
     total = sum(widths) + tracking * max(0, len(text) - 1)
     x = cx - total / 2
     for ch, w in zip(text, widths, strict=True):
-        draw.text((x, y), ch, font=font, fill=fill)
+        draw.text((x, y), ch, font=font, fill=fill, stroke_width=weight,
+                  stroke_fill=fill)
         x += w + tracking
 
 
@@ -114,7 +133,20 @@ def _feather_mask(w: int, h: int) -> Image.Image:
     return Image.fromarray((a * 255).astype("uint8"), "L")
 
 
-def _paste_bird(img, path: Path, cx: float, cy: float, w: int, h: int) -> None:
+def _drop_ground(bird: Image.Image) -> Image.Image:
+    """Alpha that hides the plate's own near-white ground.
+
+    The wall gets this for free from CSS multiply-blending onto cream; a white
+    panel has nothing to blend with, so the ground has to be keyed out or it
+    haloes."""
+    luminance = np.asarray(bird.convert("L"), dtype=np.float32)
+    alpha = (WHITE_KEY - luminance) / float(WHITE_KEY - WHITE_SOLID)
+    return Image.fromarray((np.clip(alpha, 0.0, 1.0) * 255).astype("uint8"), "L")
+
+
+def _paste_bird(
+    img, path: Path, cx: float, cy: float, w: int, h: int, bare: bool = False
+) -> None:
     if w <= 0 or h <= 0:
         return
     try:
@@ -124,6 +156,10 @@ def _paste_bird(img, path: Path, cx: float, cy: float, w: int, h: int) -> None:
         # a soft grey stand-in keeps the collage populated for tests/QA.
         bird = Image.new("RGB", (w, h), (208, 198, 172))
     mask = _feather_mask(w, h)
+    if bare:
+        # Feather AND ground-key: the edge still melts away, and the plate's
+        # own off-white no longer sits on the panel as a grey rectangle.
+        mask = ImageChops.multiply(mask, _drop_ground(bird))
     x0, y0 = round(cx - w / 2), round(cy - h / 2)
     region = img.crop((x0, y0, x0 + w, y0 + h))
     region.paste(ImageChops.multiply(region, bird), (0, 0), mask)
@@ -232,8 +268,8 @@ def render_wall_png(
             )
         return _encode(img)
 
-    species_size = _clamp(8, 1.05 * vmin, 12)
-    heard_size = _clamp(7, 0.85 * vmin, 10)
+    species_size = _clamp(9, 1.15 * vmin, 14)
+    heard_size = _clamp(11, 1.3 * vmin, 16)
     species_font = fonts.get(species_size)
     heard_font = fonts.get(heard_size, italic=True)
     cx0, cy0 = width / 2, height / 2
@@ -245,7 +281,9 @@ def render_wall_png(
         image_h = w * PLATE_ASPECT
         cx, cy = cx0 + pl.x, cy0 + pl.y
         if not text_only:
-            _paste_bird(img, image_dir / pl.file, cx, cy, round(w), round(image_h))
+            _paste_bird(
+                img, image_dir / pl.file, cx, cy, round(w), round(image_h), bare=bare
+            )
         if not lettering:
             continue
         meta = by_file[pl.file]
@@ -253,11 +291,15 @@ def render_wall_png(
         _tracked(
             draw, cx, caption_y, meta["species_common"].upper(),
             species_font, ink, tracking=species_size * 0.05 + 0.5,
+            weight=CAPTION_WEIGHT,
         )
-        draw.text(
-            (cx, caption_y + species_size * 1.25), _heard_text(meta["born_at"]),
-            font=heard_font, fill=heard_ink, anchor="ma",
-        )
+        heard_y = caption_y + species_size * 1.3
+        heard = _heard_text(meta["born_at"])
+        for dx in (0, ITALIC_DOUBLE_X):
+            draw.text(
+                (cx + dx, heard_y), heard, font=heard_font, fill=heard_ink,
+                anchor="ma",
+            )
     return _encode(img)
 
 
