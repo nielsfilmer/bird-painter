@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
+from .frame_layout import compute_frame_grid
 from .wall_layout import PLATE_ASPECT, compute_collage
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,10 @@ PANEL_GROUND = (255, 255, 255)
 # edge stays soft instead of turning into a cut-out.
 WHITE_KEY = 246
 WHITE_SOLID = 228
+# How far below its own ground a pixel must sit to count as the bird. Small
+# enough to catch a pale wing edge, large enough that JPEG noise in the ground
+# isn't mistaken for a feather.
+GROUND_TOLERANCE = 6
 # Glyphs in the text-layer mask: white where ink goes, so the frame can paste
 # a single colour through it.
 MASK_INK = 255
@@ -117,12 +122,17 @@ def _tracked(draw, cx, y, text, font, fill, tracking):
         x += w + tracking
 
 
-def _feather_mask(w: int, h: int) -> Image.Image:
+def _feather_mask(w: int, h: int, soft: bool = True) -> Image.Image:
     """Radial ellipse alpha matching the wall's CSS mask: opaque within ~72% of
     the 58%-radius ellipse, fading to transparent by ~96% — so the bird melts
-    into the paper with no hard rectangle edge."""
+    into the paper with no hard rectangle edge.
+
+    `soft=False` widens it for the frame, where the bird's ink is fitted to the
+    cell rather than floating in a padded plate: the wall's ellipse would clip
+    a heron's beak and feet. The ground key-out is what hides the plate edge
+    there, so this only needs to catch stray corners."""
     yy, xx = np.ogrid[0:h, 0:w]
-    rx, ry = 0.58 * w, 0.58 * h
+    rx, ry = (0.58 if soft else 0.80) * w, (0.58 if soft else 0.80) * h
     dx = (xx - (w - 1) / 2) / rx
     dy = (yy - (h - 1) / 2) / ry
     d = np.sqrt(dx * dx + dy * dy)
@@ -137,8 +147,45 @@ def _drop_ground(bird: Image.Image) -> Image.Image:
     panel has nothing to blend with, so the ground has to be keyed out or it
     haloes."""
     luminance = np.asarray(bird.convert("L"), dtype=np.float32)
-    alpha = (WHITE_KEY - luminance) / float(WHITE_KEY - WHITE_SOLID)
+    border = np.concatenate([
+        luminance[0], luminance[-1], luminance[:, 0], luminance[:, -1],
+    ])
+    # Key against this plate's own ground for the same reason the crop does.
+    key = min(WHITE_KEY, float(np.median(border)) - GROUND_TOLERANCE + 1)
+    solid = key - (WHITE_KEY - WHITE_SOLID)
+    alpha = (key - luminance) / max(key - solid, 1.0)
     return Image.fromarray((np.clip(alpha, 0.0, 1.0) * 255).astype("uint8"), "L")
+
+
+def _fit_to_cell(bird: Image.Image, w: int, h: int) -> Image.Image:
+    """Scale the bird's OWN ink to fill the cell, on a white field.
+
+    Plates are padded to 4:5 at store time, so a heron carries wide empty
+    margins and a plump owl doesn't — meaning identical cells render birds at
+    visibly different sizes, and thin birds look far away. Cropping to the ink
+    first makes every bird as large as its cell allows, whatever its shape."""
+    pixels = np.asarray(bird.convert("L"))
+    # The threshold has to follow the plate's OWN ground, not a fixed number:
+    # FLUX paints some plates on 245-grey, and against a fixed 246 every pixel
+    # counts as ink, so the crop does nothing and that bird renders visibly
+    # smaller than its neighbours. The border's median is the ground by
+    # construction — the bird is in the middle.
+    border = np.concatenate([
+        pixels[0], pixels[-1], pixels[:, 0], pixels[:, -1],
+    ])
+    ground = float(np.median(border))
+    inked = np.argwhere(pixels < min(WHITE_KEY, ground - GROUND_TOLERANCE))
+    if len(inked) == 0:
+        return bird.resize((w, h))
+    (top, left), (bottom, right) = inked.min(0), inked.max(0) + 1
+    cropped = bird.crop((left, top, right, bottom))
+    scale = min(w / cropped.width, h / cropped.height)
+    sized = cropped.resize(
+        (max(1, round(cropped.width * scale)), max(1, round(cropped.height * scale)))
+    )
+    cell = Image.new("RGB", (w, h), PANEL_GROUND)
+    cell.paste(sized, ((w - sized.width) // 2, (h - sized.height) // 2))
+    return cell
 
 
 def _paste_bird(
@@ -147,12 +194,13 @@ def _paste_bird(
     if w <= 0 or h <= 0:
         return
     try:
-        bird = Image.open(path).convert("RGB").resize((w, h))
+        bird = Image.open(path).convert("RGB")
+        bird = _fit_to_cell(bird, w, h) if bare else bird.resize((w, h))
     except Exception:  # noqa: BLE001 — SVG placeholders / unreadable files
         # Placeholder mode (no FAL_KEY) writes SVG plates Pillow can't open;
         # a soft grey stand-in keeps the collage populated for tests/QA.
         bird = Image.new("RGB", (w, h), (208, 198, 172))
-    mask = _feather_mask(w, h)
+    mask = _feather_mask(w, h, soft=not bare)
     if bare:
         # Feather AND ground-key: the edge still melts away, and the plate's
         # own off-white no longer sits on the panel as a grey rectangle.
@@ -204,6 +252,7 @@ def render_wall_png(
     italic_font: str | None = None,
     layer: str = "all",
     bare: bool = False,
+    grid: bool = True,
 ) -> bytes:
     """Render the collage to PNG bytes. `paintings` is newest-first, each a
     dict with `file`, `species_common`, `born_at` (as `/api/live` serves).
@@ -254,7 +303,15 @@ def render_wall_png(
 
     files = [p["file"] for p in paintings]
     by_file = {p["file"]: p for p in paintings}
-    placements = compute_collage(files, width, layout_h, band_top)
+    # The panel is a fixed sheet seen from across a room, so it gets rows that
+    # fill it rather than the browser wall's spiral, which is built to reflow
+    # in a window (see frame_layout). `grid=False` renders the spiral, which is
+    # what the README's hero image and anything else expecting the wall wants.
+    placements = (
+        compute_frame_grid(files, width, layout_h, band_top)
+        if grid
+        else compute_collage(files, width, layout_h, band_top)
+    )
 
     if not placements:
         empty_font = fonts.get(_clamp(16, 2.6 * vmin, 24), italic=True)
@@ -275,7 +332,9 @@ def render_wall_png(
     # wall (z-index).
     for pl in sorted(placements, key=lambda p: p.z):
         w = pl.size_vmin * vmin
-        image_h = w * PLATE_ASPECT
+        # The frame's cells carry their own height (see frame_layout); the
+        # wall's spiral plates are always 4:5.
+        image_h = (getattr(pl, "height_vmin", 0.0) or 0.0) * vmin or w * PLATE_ASPECT
         cx, cy = cx0 + pl.x, cy0 + pl.y
         if not text_only:
             _paste_bird(
