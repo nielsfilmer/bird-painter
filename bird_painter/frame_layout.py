@@ -58,6 +58,10 @@ CANDIDATES = 60
 # regardless, so the function cannot fail outright.
 SHRINK = 0.94
 MAX_PASSES = 30
+# How strongly the small old birds prefer the outskirts, scaled by how much
+# smaller than the newest they are (0 = ignore the edges, 1 = the edge matters
+# as much as emptiness). The recent five aren't affected — they hug the anchor.
+EDGE_PULL = 0.9
 # Sanity caps so one lone bird doesn't become a poster.
 MAX_NEWEST_WIDTH = 0.46  # of usable width
 MAX_NEWEST_HEIGHT = 0.92  # of usable height, footprint incl. caption
@@ -148,13 +152,20 @@ def _try_layout(
                 # the ring.
                 score = -((cx - anchor[0]) ** 2 + (cy - anchor[1]) ** 2)
             else:
-                # Older birds fill the emptiest region: the candidate whose
-                # nearest neighbour is farthest away wins. That is what sends
-                # them to whatever side the anchor left open, and what keeps
-                # the whole sheet covered.
-                score = min(
+                # Older (smaller) birds fill the emptiest region — the
+                # candidate whose nearest neighbour is farthest wins — with a
+                # pull toward the sheet's edges on top (owner: small birds on
+                # the outskirts, large ones inside). The pull grows as the
+                # bird shrinks, so the oldest drift furthest out while the
+                # composition's centre stays with the big recent birds.
+                nearest = math.sqrt(min(
                     (cx - px) ** 2 + (cy - py) ** 2 for px, py, _ in placed
+                ))
+                from_centre = math.hypot(
+                    cx - (left + uw / 2), cy - (top + uh / 2)
                 )
+                outward = EDGE_PULL * (1 - dims[i][0] * scale / (dims[0][0] * scale))
+                score = nearest + outward * from_centre
             if collides:
                 score -= 1e12  # forced pass: overlap only as a last resort
             if best is None or score > best[0]:

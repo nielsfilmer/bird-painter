@@ -161,6 +161,16 @@ def _drop_ground(bird: Image.Image) -> Image.Image:
     return Image.fromarray((np.clip(alpha, 0.0, 1.0) * 255).astype("uint8"), "L")
 
 
+def _ink_bounds(inked: np.ndarray) -> tuple[int, int, int, int]:
+    """The ink's bounding box between the 0.5th and 99.5th percentiles of its
+    pixels — a handful of stray specks must not stretch the box and hand back
+    the whitespace the crop exists to remove (seen on a real plate: 163 stray
+    pixels cost 12% per side)."""
+    top, left = np.percentile(inked, 0.5, axis=0)
+    bottom, right = np.percentile(inked, 99.5, axis=0)
+    return int(top), int(left), int(bottom) + 1, int(right) + 1
+
+
 def _fit_to_cell(bird: Image.Image, w: int, h: int) -> Image.Image:
     """Scale the bird's OWN ink to fill the cell, on a white field.
 
@@ -181,7 +191,7 @@ def _fit_to_cell(bird: Image.Image, w: int, h: int) -> Image.Image:
     inked = np.argwhere(pixels < min(WHITE_KEY, ground - GROUND_TOLERANCE))
     if len(inked) == 0:
         return bird.resize((w, h))
-    (top, left), (bottom, right) = inked.min(0), inked.max(0) + 1
+    top, left, bottom, right = _ink_bounds(inked)
     cropped = bird.crop((left, top, right, bottom))
     scale = min(w / cropped.width, h / cropped.height)
     sized = cropped.resize(
@@ -242,7 +252,7 @@ def _ink_aspect(path: Path) -> float:
         inked = np.argwhere(pixels < key)
         if len(inked) == 0:
             return PLATE_ASPECT
-        (top, left), (bottom, right) = inked.min(0), inked.max(0) + 1
+        top, left, bottom, right = _ink_bounds(inked)
         if right - left < 4 or bottom - top < 4:
             return PLATE_ASPECT
         return (bottom - top) / (right - left)

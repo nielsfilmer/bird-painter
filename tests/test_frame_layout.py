@@ -124,3 +124,20 @@ def test_a_lone_bird_is_big_but_not_a_poster():
 def test_an_empty_wall_places_nothing():
     assert compute_frame_scatter([], *PANEL, BAND_TOP) == []
     assert compute_frame_scatter(["a.jpg"], 0, 0, 0) == []
+
+
+def test_smaller_birds_sit_further_out_than_larger_ones():
+    """Owner: keep the smaller birds on the outskirts, the larger inside. The
+    newest (largest) anchors the centre region; the oldest (smallest) should
+    average a decisively greater distance from the sheet's centre than the
+    recent five."""
+    centre_y = BAND_TOP / 2  # usable area sits below the top margin
+
+    def from_centre(p):
+        return math.hypot(p.x, p.y - centre_y)
+
+    for salt in ("", "a", "b"):
+        placements = place(12, salt)
+        ring = [from_centre(p) for p in placements[1 : RECENT_COUNT + 1]]
+        oldest = [from_centre(p) for p in placements[-3:]]  # the smallest three
+        assert sum(oldest) / len(oldest) > 1.15 * (sum(ring) / len(ring)), salt
