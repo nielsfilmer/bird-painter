@@ -75,3 +75,29 @@ def test_rows_are_balanced_with_the_short_row_last():
 def test_an_empty_wall_places_nothing():
     assert compute_frame_grid([], *PANEL, BAND_TOP) == []
     assert compute_frame_grid(["a.jpg"], 0, 0, 0) == []
+
+
+def test_columns_touch_but_captions_still_fit():
+    """The owner removed the column gutter entirely: birds are cropped to
+    their own ink and fitted inside their cells, so each carries whitespace of
+    its own. The thing that could still collide is the LETTERING — measured
+    here against the longest species name the archive has produced."""
+    from PIL import Image, ImageDraw
+
+    from bird_painter.render import _clamp, _Fonts
+
+    placements = place(12)
+    cell_w = placements[0].size_vmin * (min(PANEL) / 100)
+    size = _clamp(9, 1.15 * (min(PANEL) / 100), 14)
+    font = _Fonts(None, None).get(size)
+    tracking = size * 0.05 + 0.5
+    draw = ImageDraw.Draw(Image.new("L", (10, 10)))
+    longest = "BLACK-THROATED GREEN WARBLER"
+    width = sum(draw.textlength(c, font=font) + tracking for c in longest) - tracking
+    assert width < cell_w, f"{longest} needs {width:.0f}px of a {cell_w:.0f}px cell"
+
+
+def test_cells_are_flush_with_no_gutter():
+    placements = sorted(place(4)[:2], key=lambda p: p.x)
+    width = placements[0].size_vmin * (min(PANEL) / 100)
+    assert abs((placements[1].x - placements[0].x) - width) < 1.0

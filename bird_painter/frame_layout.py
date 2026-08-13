@@ -38,10 +38,12 @@ MAX_ROWS = 4
 # left the sheet looking underfilled.
 FILL_BY_ROWS = {1: 0.95, 2: 0.95, 3: 0.97, 4: 0.97}
 
-# Gutters as a fraction of a plate's width/height. Tight on purpose: birds
-# cropped to their own ink already carry visual separation, so the generous
-# gutter a padded plate needed just pushed them apart and shrank them.
-COLUMN_GUTTER = 0.04
+# Gutters as a fraction of a plate's width/height. The columns have NO gutter
+# at all (owner's call): birds are cropped to their own ink and then fitted
+# inside their cells preserving aspect, so each one already carries whitespace
+# of its own — an extra gutter only pushed them apart and shrank them. Cells
+# touch; birds don't.
+COLUMN_GUTTER = 0.0
 ROW_GUTTER = 0.16
 # Room under each plate for its two caption lines PLUS the air between the
 # bird's feet and its name (render.CAPTION_GAP_VMIN), as a fraction of plate
