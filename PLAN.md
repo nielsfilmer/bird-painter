@@ -456,3 +456,39 @@ whole magic; ship it first.
   grey that light reads as ground. Tightening that threshold rejects good
   plates painted on warm off-white. A bad plate on the wall is visible and
   fades in three hours; a bird deleted for looking wrong is invisible.
+- **2026-08-13** — **The frame wakes when a bird is painted** (owner request:
+  "can we retrigger an immediate paint on the frame when a bird is detected?").
+  The frame subscribes to the recorder's `/ws/detections` on a daemon thread
+  and redraws on a `painted` event, instead of waiting out its 5-minute poll.
+  The poll stays as the fallback cadence, and the stream is strictly a
+  latency improvement: an unreachable, older, or restarting recorder costs
+  freshness, never the picture.
+
+  **A floor between redraws (`BP_FRAME_MIN_SECONDS`, default 90) coalesces
+  bursts**, so several birds landing within a minute become ONE redraw showing
+  all of them rather than a queue showing them one at a time. Birds that arrive
+  while settling are already in the image being fetched (`announce_painted`
+  fires after `store.add`), so their wake-ups aren't owed another redraw.
+
+  It is NOT, however, what bounds panel wear — review measured that. The real
+  ceiling is the recorder's own `BP_MAX_PAINTS_PER_HOUR` (20): twenty paints
+  spaced 90 s apart span 28.5 minutes, which a dawn chorus can reach, so the
+  floor rarely fires. Worst case is ~20–32 redraws an hour against ≤12 before
+  this change — a 2–3× rise in peak wear, accepted for the immediacy, and the
+  knob to turn if the panel starts to show it is the recorder's cap, not this
+  floor. Deriving the floor from the measured push duration is the better
+  design and is filed rather than guessed at.
+
+  The floor is anchored to the last REDRAW, not the last fetch. Anchoring it to
+  the fetch — the first version — delayed roughly 30% of birds by up to 90 s to
+  protect a panel that had drawn nothing for an hour, since almost every poll
+  in a quiet garden finds an unchanged image.
+
+  Deliberately a thread with a synchronous WebSocket client rather than
+  asyncio: the panel push blocks for half a minute and has no business inside
+  an event loop.
+
+  Discovered while building this: **both Pis were running months-old code** —
+  the recorder on #79, the frame on #67 — so none of the session's merged work
+  was actually in the house, and the recorder's `/ws/detections` 404'd. Merging
+  is not deploying. Both are now on `main`.

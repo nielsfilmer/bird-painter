@@ -353,6 +353,13 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     a slow timer, dithers to the Spectra 6 six-colour palette, pushes to the
     panel via the Waveshare `epd13in3E` driver (imported lazily — hardware-only,
     so the module imports/tests without it); redraws only when the wall changed.
+    Also WATCHES the recorder's `/ws/detections` on a daemon thread and redraws
+    as soon as a bird is painted (`BP_FRAME_WAKE_ON_PAINT`), with a floor
+    between redraws (`BP_FRAME_MIN_SECONDS`) so a burst coalesces into one —
+    the panel takes ~30 s per redraw and wears with each. The stream is a
+    nicety: without it the frame still polls, so an unreachable or older
+    recorder costs latency, not the picture. NB the frame installs `--no-deps`,
+    so `websockets` must be installed explicitly there.
   - `static/api-docs.html` — the documentation page: renders `/api` and
     carries a live console wired to `/ws/detections`.
   - `static/index.html` — the wall (polling, fade in/out); imports the layout

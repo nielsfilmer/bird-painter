@@ -17,7 +17,18 @@ Config via environment:
   BP_FRAME_INTERVAL_SECONDS  seconds between refreshes (default 300). The panel
                              takes ~25–35 s per full redraw and colour e-paper
                              shouldn't be hammered — keep this minutes, not
-                             seconds.
+                             seconds. This is the FALLBACK cadence; a painted
+                             bird wakes the frame immediately (below).
+  BP_FRAME_WAKE_ON_PAINT     watch the recorder's /ws/detections stream and
+                             redraw as soon as a bird is painted, instead of
+                             waiting out the interval (default true). Falls
+                             back to polling alone if the stream can't be
+                             reached, so an older recorder still works.
+  BP_FRAME_MIN_SECONDS       never redraw more often than this, however many
+                             birds arrive (default 90). Bursts are coalesced
+                             into one redraw — the dawn chorus can paint
+                             several birds a minute, and the panel needs ~30 s
+                             per redraw.
   BP_FRAME_WIDTH/HEIGHT      panel size (default 1600x1200, the Spectra 6).
   BP_FRAME_ROTATE            0|90|180|270 to match the frame's orientation. NB:
                              0/180 preserve the wall's aspect; 90/270 rotate a
@@ -37,10 +48,13 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import logging
 import os
 import sys
+import threading
 import time
+import urllib.parse
 
 import httpx
 from PIL import Image
@@ -49,6 +63,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCE = "http://birdrecorder.local:8537/wall.png"
 DEFAULT_INTERVAL_SECONDS = 300
+# The floor between redraws when birds wake the frame. A full Spectra 6 redraw
+# takes ~25–35 s and colour e-paper wears with every one, so a burst of birds
+# becomes ONE redraw showing all of them rather than a queue of them.
+DEFAULT_MIN_SECONDS = 90
+# How long to wait before trying the stream again after it drops. The frame
+# still polls on its own timer meanwhile, so a missing stream degrades the
+# latency, never the display.
+STREAM_RETRY_SECONDS = 30
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_SIZE = (1600, 1200)
 
@@ -181,6 +203,91 @@ def refresh_once(
     return digest
 
 
+def stream_url(source: str) -> str:
+    """The detection stream that belongs to the wall image we're fetching.
+
+    Derived from BP_FRAME_SOURCE rather than configured separately: they are
+    always the same recorder, and two URLs to keep in step is one more thing to
+    get wrong when the wall moves."""
+    if "//" not in source:  # "host:8537/wall.png" — urlsplit reads that as a path
+        source = f"http://{source}"
+    parsed = urllib.parse.urlsplit(source)
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    # Keep any prefix the wall is served under: a recorder behind a proxy at
+    # /birds/wall.png streams at /birds/ws/detections, not at the root.
+    prefix = parsed.path.rsplit("/", 1)[0]
+    return urllib.parse.urlunsplit(
+        (scheme, parsed.netloc, f"{prefix}/ws/detections", "", "")
+    )
+
+
+def watch_for_paintings(
+    url: str,
+    wake: threading.Event,
+    *,
+    connect=None,
+    retry_seconds: float = STREAM_RETRY_SECONDS,
+    reconnect: bool = True,
+) -> None:
+    """Set `wake` whenever the recorder says it painted a bird.
+
+    Runs on its own thread with a synchronous WebSocket client, so the draw
+    loop stays a plain blocking loop — the panel push takes half a minute and
+    has no business inside an event loop.
+
+    Every failure here is survivable by design: the frame keeps its own timer,
+    so a recorder that's down, older, or unreachable costs latency, not the
+    picture."""
+    if connect is None:  # imported lazily: the frame runs without it if need be
+        try:
+            from websockets.sync.client import connect
+        except ImportError:
+            # The frame installs --no-deps (no BirdNET/TF stack), so this is a
+            # real deployment state, not a bug. Say so once, plainly, and leave
+            # the frame polling — a stack trace in the journal is not a
+            # diagnosis.
+            logger.warning(
+                "frame: websockets not installed — polling only. "
+                "Install it on the frame to redraw the moment a bird is painted."
+            )
+            return
+    complained = False
+    while True:
+        try:
+            with connect(url, open_timeout=10) as socket:
+                logger.info("frame: watching %s for painted birds", url)
+                for message in socket:
+                    # A stream that accepts the upgrade and drops immediately
+                    # is still broken; only a stream that SAYS something has
+                    # earned the right to complain again if it fails later.
+                    complained = False
+                    try:
+                        event = json.loads(message)
+                    except ValueError:
+                        continue  # not our business what else the wall says
+                    if event.get("type") == "painted":
+                        logger.info(
+                            "frame: %s painted — refreshing now",
+                            event.get("species_common", "a bird"),
+                        )
+                        wake.set()
+        except Exception as exc:  # noqa: BLE001 — a nicety, not a need
+            if not complained:
+                # Once at INFO, then quiet: an older recorder 404s here forever
+                # and would otherwise retry ~2,880 times a day in total silence
+                # — which is the exact failure class this feature came from.
+                logger.info(
+                    "frame: no detection stream at %s (%s); polling every %ds "
+                    "instead. Retrying quietly.",
+                    url, type(exc).__name__, retry_seconds,
+                )
+                complained = True
+            logger.debug("frame: detection stream unavailable", exc_info=True)
+        if not reconnect:
+            return
+        time.sleep(max(1.0, retry_seconds))  # never busy-spin on a dead stream
+
+
 def _int_env(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if not raw or not raw.strip():
@@ -190,6 +297,62 @@ def _int_env(name: str, default: int) -> int:
     except ValueError:
         logger.warning("%s=%r is not an integer; using %d", name, raw, default)
         return default
+
+
+def wait_for_next_draw(
+    wake: threading.Event,
+    last_redraw_at: float | None,
+    *,
+    interval: float,
+    min_seconds: float,
+    now=time.monotonic,
+    sleep=time.sleep,
+) -> bool:
+    """Wait until it's time to redraw. Returns True if a bird caused it.
+
+    A painted bird cuts the wait short — that's the point of the stream — but
+    never to less than `min_seconds` after the panel was last REDRAWN. The
+    panel takes ~30 s per redraw and wears with each one, so a burst of birds
+    settles into ONE redraw showing all of them rather than a queue of redraws
+    showing them one at a time.
+
+    `last_redraw_at` is None until the panel has actually been drawn, and only
+    advances when it is — not on every fetch. Most polls in a quiet garden find
+    an unchanged image and draw nothing; anchoring the floor to those would
+    have made a bird wait up to 90 s to protect a panel that had been idle for
+    an hour, which is the opposite of what this feature is for."""
+    if not wake.wait(timeout=interval):
+        # The timer path gets the floor too: BP_FRAME_INTERVAL_SECONDS is a
+        # knob, and a short one would otherwise sidestep the only guard the
+        # panel has.
+        if last_redraw_at is not None:
+            settle = min_seconds - (now() - last_redraw_at)
+            if settle > 0:
+                sleep(settle)
+                # Symmetric with the wake path: a bird painted during this
+                # settle is already in the image about to be fetched, so its
+                # wake-up isn't owed a redraw. Without this it would buy a
+                # spurious settle later (harmless — the hash guard absorbs it —
+                # but it reads as a bug the next time someone looks).
+                wake.clear()
+        return False  # the ordinary timer expired
+    wake.clear()
+    if last_redraw_at is None:
+        return True  # nothing drawn yet: nothing to protect
+    settle = min_seconds - (now() - last_redraw_at)
+    if settle > 0:
+        sleep(settle)
+        # Birds that arrived while settling are already in the image we're
+        # about to fetch, so their wake-ups aren't owed another redraw.
+        wake.clear()
+    return True
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = (os.environ.get(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw not in {"0", "false", "no", "off"}
 
 
 def main() -> None:
@@ -204,14 +367,38 @@ def main() -> None:
     )
     rotate = _int_env("BP_FRAME_ROTATE", 0) % 360
     timeout = _int_env("BP_FRAME_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)
-    logger.info(
-        "frame client: %s every %ds -> %dx%d panel (rotate %d)",
-        url, interval, size[0], size[1], rotate,
-    )
+    min_seconds = _int_env("BP_FRAME_MIN_SECONDS", DEFAULT_MIN_SECONDS)
+
+    wake = threading.Event()
+    if _bool_env("BP_FRAME_WAKE_ON_PAINT", True):
+        threading.Thread(
+            target=watch_for_paintings,
+            args=(stream_url(url), wake),
+            daemon=True,
+        ).start()
+        logger.info(
+            "frame client: %s, on paint (min %ds apart) and every %ds "
+            "-> %dx%d panel (rotate %d)",
+            url, min_seconds, interval, size[0], size[1], rotate,
+        )
+    else:
+        logger.info(
+            "frame client: %s every %ds -> %dx%d panel (rotate %d)",
+            url, interval, size[0], size[1], rotate,
+        )
+
     last_hash: str | None = None
+    last_redraw_at: float | None = None
     while True:
+        before = last_hash
         last_hash = refresh_once(url, size, rotate, last_hash, timeout=timeout)
-        time.sleep(interval)
+        if last_hash != before:
+            # refresh_once only returns a new hash when it actually pushed to
+            # the panel, so this — not the fetch — is when the panel was worn.
+            last_redraw_at = time.monotonic()
+        wait_for_next_draw(
+            wake, last_redraw_at, interval=interval, min_seconds=min_seconds
+        )
 
 
 if __name__ == "__main__":

@@ -193,6 +193,10 @@ Notes on the bigger panel:
    python3 -m venv --system-site-packages .venv
    .venv/bin/pip install --no-deps -e . && .venv/bin/pip install httpx pillow numpy
    .venv/bin/pip install spidev gpiozero lgpio          # GPIO stack (Bookworm)
+   .venv/bin/pip install websockets                    # so the frame can
+                                                       # redraw the moment a
+                                                       # bird is painted; without
+                                                       # it the frame just polls
    git clone https://github.com/waveshareteam/e-Paper ~/e-Paper
    ```
    > ⚠️ **The Spectra 6 (E) driver is NOT in the main `waveshare_epd` package.**
