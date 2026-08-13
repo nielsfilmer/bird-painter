@@ -212,13 +212,19 @@ def test_a_painted_bird_wakes_the_frame():
         json.dumps({"type": "detected", "species_common": "Robin"}),  # not painted
     ]
     watch_for_paintings(
-        "ws://x/ws", wake, connect=lambda *a, **k: _FakeSocket(messages), forever=False
+        "ws://x/ws",
+        wake,
+        connect=lambda *a, **k: _FakeSocket(messages),
+        reconnect=False,
     )
     assert not wake.is_set(), "a mere detection must not spend a panel redraw"
 
     messages.append(json.dumps({"type": "painted", "species_common": "Song Thrush"}))
     watch_for_paintings(
-        "ws://x/ws", wake, connect=lambda *a, **k: _FakeSocket(messages), forever=False
+        "ws://x/ws",
+        wake,
+        connect=lambda *a, **k: _FakeSocket(messages),
+        reconnect=False,
     )
     assert wake.is_set()
 
@@ -234,7 +240,7 @@ def test_a_dead_stream_never_takes_the_frame_down_with_it():
         raise OSError("connection refused")
 
     wake = threading.Event()
-    watch_for_paintings("ws://x/ws", wake, connect=refuse, forever=False)  # no raise
+    watch_for_paintings("ws://x/ws", wake, connect=refuse, reconnect=False)  # no raise
     assert not wake.is_set()
 
 
@@ -246,7 +252,7 @@ def test_junk_on_the_stream_is_ignored():
     wake = threading.Event()
     socket = _FakeSocket(["not json at all", "[]", '{"type": "ping"}'])
     watch_for_paintings(
-        "ws://x/ws", wake, connect=lambda *a, **k: socket, forever=False
+        "ws://x/ws", wake, connect=lambda *a, **k: socket, reconnect=False
     )
     assert not wake.is_set()
 
@@ -266,7 +272,7 @@ def test_a_burst_of_birds_becomes_one_redraw():
 
     woken = wait_for_next_draw(
         wake,
-        drawn_at=0.0,
+        last_redraw_at=0.0,
         interval=300,
         min_seconds=90,
         now=lambda: next(clock),
@@ -285,9 +291,13 @@ def test_the_ordinary_timer_still_fires_without_any_birds():
     wake = threading.Event()  # never set: no birds
     slept = []
     assert wait_for_next_draw(
-        wake, drawn_at=0.0, interval=0.01, min_seconds=90, sleep=slept.append
+        wake,
+        last_redraw_at=None,  # nothing drawn yet, so nothing to protect
+        interval=0.01,
+        min_seconds=90,
+        sleep=slept.append,
     ) is False
-    assert slept == [], "no settling when nothing woke us"
+    assert slept == [], "no settling when nothing woke us and nothing is drawn"
 
 
 def test_a_bird_arriving_late_in_the_interval_redraws_immediately():
@@ -302,7 +312,7 @@ def test_a_bird_arriving_late_in_the_interval_redraws_immediately():
     slept = []
     woken = wait_for_next_draw(
         wake,
-        drawn_at=0.0,
+        last_redraw_at=0.0,
         interval=300,
         min_seconds=90,
         now=lambda: 200.0,  # 200 s since the last redraw, well past the floor
@@ -310,3 +320,98 @@ def test_a_bird_arriving_late_in_the_interval_redraws_immediately():
     )
     assert woken is True
     assert slept == [], "no artificial delay once the floor has passed"
+
+
+def test_a_bird_is_not_delayed_to_protect_a_panel_that_never_drew():
+    """Round-1 review of #103: the floor was anchored to the last FETCH, not
+    the last redraw. In a quiet garden nearly every poll finds an unchanged
+    image and draws nothing, so ~30% of birds waited out the floor protecting
+    a panel that had been idle for an hour."""
+    import threading
+
+    from bird_painter.frame_client import wait_for_next_draw
+
+    wake = threading.Event()
+    wake.set()
+    slept = []
+    woken = wait_for_next_draw(
+        wake,
+        last_redraw_at=None,  # fetches happened; no redraw did
+        interval=300,
+        min_seconds=90,
+        sleep=slept.append,
+    )
+    assert woken is True
+    assert slept == [], "nothing was drawn, so there is nothing to protect"
+
+
+def test_the_poll_path_respects_the_floor_too():
+    """A short BP_FRAME_INTERVAL_SECONDS must not sidestep the panel guard."""
+    import threading
+
+    from bird_painter.frame_client import wait_for_next_draw
+
+    wake = threading.Event()  # no birds; the timer expires
+    slept = []
+    woken = wait_for_next_draw(
+        wake,
+        last_redraw_at=0.0,
+        interval=0.01,
+        min_seconds=90,
+        now=lambda: 10.0,  # only 10 s since the panel was drawn
+        sleep=slept.append,
+    )
+    assert woken is False
+    assert slept == [80.0], "the timer path is floored as well"
+
+
+def test_a_replayed_backlog_does_not_trigger_a_redraw_storm():
+    """The recorder nests recent events under `hello.recent`, so a reconnect
+    replays them. The watcher only looks at the TOP-LEVEL type — load-bearing,
+    since otherwise every reconnect would redraw once per remembered bird."""
+    import json
+    import threading
+
+    from bird_painter.frame_client import watch_for_paintings
+
+    wake = threading.Event()
+    hello = json.dumps(
+        {
+            "type": "hello",
+            "recent": [
+                {"type": "painted", "species_common": "Robin"},
+                {"type": "painted", "species_common": "Wren"},
+            ],
+        }
+    )
+    watch_for_paintings(
+        "ws://x/ws",
+        wake,
+        connect=lambda *a, **k: _FakeSocket([hello]),
+        reconnect=False,
+    )
+    assert not wake.is_set()
+
+
+def test_a_missing_websockets_library_says_so_once_and_keeps_polling():
+    """The frame installs --no-deps, so this is a deployment state, not a bug.
+    It must not be a stack trace in the journal and nothing else."""
+    import builtins
+    import threading
+
+    from bird_painter.frame_client import watch_for_paintings
+
+    real_import = builtins.__import__
+
+    def no_websockets(name, *args, **kwargs):
+        if name.startswith("websockets"):
+            raise ImportError("no module named websockets")
+        return real_import(name, *args, **kwargs)
+
+    wake = threading.Event()
+    builtins.__import__ = no_websockets
+    try:
+        watch_for_paintings("ws://x/ws", wake)  # returns, does not raise or spin
+    finally:
+        builtins.__import__ = real_import
+    assert not wake.is_set()

@@ -211,7 +211,12 @@ def stream_url(source: str) -> str:
     get wrong when the wall moves."""
     parsed = urllib.parse.urlsplit(source)
     scheme = "wss" if parsed.scheme == "https" else "ws"
-    return urllib.parse.urlunsplit((scheme, parsed.netloc, "/ws/detections", "", ""))
+    # Keep any prefix the wall is served under: a recorder behind a proxy at
+    # /birds/wall.png streams at /birds/ws/detections, not at the root.
+    prefix = parsed.path.rsplit("/", 1)[0]
+    return urllib.parse.urlunsplit(
+        (scheme, parsed.netloc, f"{prefix}/ws/detections", "", "")
+    )
 
 
 def watch_for_paintings(
@@ -220,7 +225,7 @@ def watch_for_paintings(
     *,
     connect=None,
     retry_seconds: float = STREAM_RETRY_SECONDS,
-    forever: bool = True,
+    reconnect: bool = True,
 ) -> None:
     """Set `wake` whenever the recorder says it painted a bird.
 
@@ -232,11 +237,24 @@ def watch_for_paintings(
     so a recorder that's down, older, or unreachable costs latency, not the
     picture."""
     if connect is None:  # imported lazily: the frame runs without it if need be
-        from websockets.sync.client import connect
+        try:
+            from websockets.sync.client import connect
+        except ImportError:
+            # The frame installs --no-deps (no BirdNET/TF stack), so this is a
+            # real deployment state, not a bug. Say so once, plainly, and leave
+            # the frame polling — a stack trace in the journal is not a
+            # diagnosis.
+            logger.warning(
+                "frame: websockets not installed — polling only. "
+                "Install it on the frame to redraw the moment a bird is painted."
+            )
+            return
+    complained = False
     while True:
         try:
             with connect(url, open_timeout=10) as socket:
                 logger.info("frame: watching %s for painted birds", url)
+                complained = False
                 for message in socket:
                     try:
                         event = json.loads(message)
@@ -248,11 +266,21 @@ def watch_for_paintings(
                             event.get("species_common", "a bird"),
                         )
                         wake.set()
-        except Exception:  # noqa: BLE001 — the stream is a nicety, not a need
+        except Exception as exc:  # noqa: BLE001 — a nicety, not a need
+            if not complained:
+                # Once at INFO, then quiet: an older recorder 404s here forever
+                # and would otherwise retry ~2,880 times a day in total silence
+                # — which is the exact failure class this feature came from.
+                logger.info(
+                    "frame: no detection stream at %s (%s); polling every %ds "
+                    "instead. Retrying quietly.",
+                    url, type(exc).__name__, retry_seconds,
+                )
+                complained = True
             logger.debug("frame: detection stream unavailable", exc_info=True)
-        if not forever:
+        if not reconnect:
             return
-        time.sleep(retry_seconds)
+        time.sleep(max(1.0, retry_seconds))  # never busy-spin on a dead stream
 
 
 def _int_env(name: str, default: int) -> int:
@@ -268,7 +296,7 @@ def _int_env(name: str, default: int) -> int:
 
 def wait_for_next_draw(
     wake: threading.Event,
-    drawn_at: float,
+    last_redraw_at: float | None,
     *,
     interval: float,
     min_seconds: float,
@@ -278,14 +306,29 @@ def wait_for_next_draw(
     """Wait until it's time to redraw. Returns True if a bird caused it.
 
     A painted bird cuts the wait short — that's the point of the stream — but
-    never to less than `min_seconds` after the previous redraw. The panel takes
-    ~30 s per redraw and wears with each one, so a burst of birds settles into
-    ONE redraw showing all of them rather than a queue of redraws showing them
-    one at a time."""
+    never to less than `min_seconds` after the panel was last REDRAWN. The
+    panel takes ~30 s per redraw and wears with each one, so a burst of birds
+    settles into ONE redraw showing all of them rather than a queue of redraws
+    showing them one at a time.
+
+    `last_redraw_at` is None until the panel has actually been drawn, and only
+    advances when it is — not on every fetch. Most polls in a quiet garden find
+    an unchanged image and draw nothing; anchoring the floor to those would
+    have made a bird wait up to 90 s to protect a panel that had been idle for
+    an hour, which is the opposite of what this feature is for."""
     if not wake.wait(timeout=interval):
+        # The timer path gets the floor too: BP_FRAME_INTERVAL_SECONDS is a
+        # knob, and a short one would otherwise sidestep the only guard the
+        # panel has.
+        if last_redraw_at is not None:
+            settle = min_seconds - (now() - last_redraw_at)
+            if settle > 0:
+                sleep(settle)
         return False  # the ordinary timer expired
     wake.clear()
-    settle = min_seconds - (now() - drawn_at)
+    if last_redraw_at is None:
+        return True  # nothing drawn yet: nothing to protect
+    settle = min_seconds - (now() - last_redraw_at)
     if settle > 0:
         sleep(settle)
         # Birds that arrived while settling are already in the image we're
@@ -334,10 +377,17 @@ def main() -> None:
         )
 
     last_hash: str | None = None
+    last_redraw_at: float | None = None
     while True:
-        drawn_at = time.monotonic()
+        before = last_hash
         last_hash = refresh_once(url, size, rotate, last_hash, timeout=timeout)
-        wait_for_next_draw(wake, drawn_at, interval=interval, min_seconds=min_seconds)
+        if last_hash != before:
+            # refresh_once only returns a new hash when it actually pushed to
+            # the panel, so this — not the fetch — is when the panel was worn.
+            last_redraw_at = time.monotonic()
+        wait_for_next_draw(
+            wake, last_redraw_at, interval=interval, min_seconds=min_seconds
+        )
 
 
 if __name__ == "__main__":
