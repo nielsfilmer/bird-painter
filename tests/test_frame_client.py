@@ -415,3 +415,40 @@ def test_a_missing_websockets_library_says_so_once_and_keeps_polling():
     finally:
         builtins.__import__ = real_import
     assert not wake.is_set()
+
+
+def test_a_source_without_a_scheme_still_yields_a_usable_stream_url():
+    """Round-2 review: `birdrecorder.local:8537/wall.png` parsed as a path and
+    produced `ws:8537/ws/detections`. Pre-existing, but a plausible thing to
+    put in a unit file."""
+    from bird_painter.frame_client import stream_url
+
+    assert stream_url("birdrecorder.local:8537/wall.png") == (
+        "ws://birdrecorder.local:8537/ws/detections"
+    )
+
+
+def test_the_timer_path_clears_the_wake_after_settling():
+    """Symmetric with the wake path: a bird painted during a floored poll is
+    already in the image about to be fetched."""
+    import threading
+
+    from bird_painter.frame_client import wait_for_next_draw
+
+    wake = threading.Event()
+    slept = []
+
+    def sleep_and_a_bird_lands(seconds):
+        slept.append(seconds)
+        wake.set()  # a bird is painted while we settle
+
+    wait_for_next_draw(
+        wake,
+        last_redraw_at=0.0,
+        interval=0.01,
+        min_seconds=90,
+        now=lambda: 10.0,
+        sleep=sleep_and_a_bird_lands,
+    )
+    assert slept == [80.0]
+    assert not wake.is_set(), "that bird is in the image we're about to fetch"

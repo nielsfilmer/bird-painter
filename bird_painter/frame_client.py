@@ -209,6 +209,8 @@ def stream_url(source: str) -> str:
     Derived from BP_FRAME_SOURCE rather than configured separately: they are
     always the same recorder, and two URLs to keep in step is one more thing to
     get wrong when the wall moves."""
+    if "//" not in source:  # "host:8537/wall.png" — urlsplit reads that as a path
+        source = f"http://{source}"
     parsed = urllib.parse.urlsplit(source)
     scheme = "wss" if parsed.scheme == "https" else "ws"
     # Keep any prefix the wall is served under: a recorder behind a proxy at
@@ -254,8 +256,11 @@ def watch_for_paintings(
         try:
             with connect(url, open_timeout=10) as socket:
                 logger.info("frame: watching %s for painted birds", url)
-                complained = False
                 for message in socket:
+                    # A stream that accepts the upgrade and drops immediately
+                    # is still broken; only a stream that SAYS something has
+                    # earned the right to complain again if it fails later.
+                    complained = False
                     try:
                         event = json.loads(message)
                     except ValueError:
@@ -324,6 +329,12 @@ def wait_for_next_draw(
             settle = min_seconds - (now() - last_redraw_at)
             if settle > 0:
                 sleep(settle)
+                # Symmetric with the wake path: a bird painted during this
+                # settle is already in the image about to be fetched, so its
+                # wake-up isn't owed a redraw. Without this it would buy a
+                # spurious settle later (harmless — the hash guard absorbs it —
+                # but it reads as a bug the next time someone looks).
+                wake.clear()
         return False  # the ordinary timer expired
     wake.clear()
     if last_redraw_at is None:
