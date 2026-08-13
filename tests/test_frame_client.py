@@ -168,3 +168,145 @@ def test_importing_frame_client_needs_no_hardware_driver():
 
     importlib.reload(fc)
     assert hasattr(fc, "refresh_once")
+
+
+def test_the_stream_url_follows_the_wall_it_is_watching():
+    """One recorder, one address: the stream is derived from BP_FRAME_SOURCE
+    rather than configured separately, so moving the wall can't leave the two
+    pointing at different machines."""
+    from bird_painter.frame_client import stream_url
+
+    assert stream_url("http://birdrecorder.local:8537/wall.png") == (
+        "ws://birdrecorder.local:8537/ws/detections"
+    )
+    assert stream_url("https://wall.example:9000/wall.png") == (
+        "wss://wall.example:9000/ws/detections"
+    )
+
+
+class _FakeSocket:
+    """A stand-in for the recorder's stream: yields messages, then ends."""
+
+    def __init__(self, messages):
+        self._messages = messages
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def __iter__(self):
+        return iter(self._messages)
+
+
+def test_a_painted_bird_wakes_the_frame():
+    import json
+    import threading
+
+    from bird_painter.frame_client import watch_for_paintings
+
+    wake = threading.Event()
+    messages = [
+        json.dumps({"type": "hello", "recent": []}),
+        json.dumps({"type": "detected", "species_common": "Robin"}),  # not painted
+    ]
+    watch_for_paintings(
+        "ws://x/ws", wake, connect=lambda *a, **k: _FakeSocket(messages), forever=False
+    )
+    assert not wake.is_set(), "a mere detection must not spend a panel redraw"
+
+    messages.append(json.dumps({"type": "painted", "species_common": "Song Thrush"}))
+    watch_for_paintings(
+        "ws://x/ws", wake, connect=lambda *a, **k: _FakeSocket(messages), forever=False
+    )
+    assert wake.is_set()
+
+
+def test_a_dead_stream_never_takes_the_frame_down_with_it():
+    """The stream is a nicety: without it the frame still polls on its timer,
+    so an unreachable or older recorder costs latency, not the picture."""
+    import threading
+
+    from bird_painter.frame_client import watch_for_paintings
+
+    def refuse(*args, **kwargs):
+        raise OSError("connection refused")
+
+    wake = threading.Event()
+    watch_for_paintings("ws://x/ws", wake, connect=refuse, forever=False)  # no raise
+    assert not wake.is_set()
+
+
+def test_junk_on_the_stream_is_ignored():
+    import threading
+
+    from bird_painter.frame_client import watch_for_paintings
+
+    wake = threading.Event()
+    socket = _FakeSocket(["not json at all", "[]", '{"type": "ping"}'])
+    watch_for_paintings(
+        "ws://x/ws", wake, connect=lambda *a, **k: socket, forever=False
+    )
+    assert not wake.is_set()
+
+
+def test_a_burst_of_birds_becomes_one_redraw():
+    """The dawn chorus can paint several birds a minute; the panel needs ~30 s
+    per redraw and wears with each. Waking early is the feature — waking early
+    twenty times is a broken panel."""
+    import threading
+
+    from bird_painter.frame_client import wait_for_next_draw
+
+    wake = threading.Event()
+    wake.set()  # a bird landed the instant the last redraw finished
+    slept = []
+    clock = iter([0.0, 0.0])  # drawn_at = 0, and "now" is still 0
+
+    woken = wait_for_next_draw(
+        wake,
+        drawn_at=0.0,
+        interval=300,
+        min_seconds=90,
+        now=lambda: next(clock),
+        sleep=slept.append,
+    )
+    assert woken is True
+    assert slept == [90.0], "should hold off the full floor before redrawing"
+    assert not wake.is_set(), "birds seen while settling are already in the image"
+
+
+def test_the_ordinary_timer_still_fires_without_any_birds():
+    import threading
+
+    from bird_painter.frame_client import wait_for_next_draw
+
+    wake = threading.Event()  # never set: no birds
+    slept = []
+    assert wait_for_next_draw(
+        wake, drawn_at=0.0, interval=0.01, min_seconds=90, sleep=slept.append
+    ) is False
+    assert slept == [], "no settling when nothing woke us"
+
+
+def test_a_bird_arriving_late_in_the_interval_redraws_immediately():
+    """If the floor has already elapsed since the last redraw, a bird should
+    not wait at all — that's the whole point of watching the stream."""
+    import threading
+
+    from bird_painter.frame_client import wait_for_next_draw
+
+    wake = threading.Event()
+    wake.set()
+    slept = []
+    woken = wait_for_next_draw(
+        wake,
+        drawn_at=0.0,
+        interval=300,
+        min_seconds=90,
+        now=lambda: 200.0,  # 200 s since the last redraw, well past the floor
+        sleep=slept.append,
+    )
+    assert woken is True
+    assert slept == [], "no artificial delay once the floor has passed"

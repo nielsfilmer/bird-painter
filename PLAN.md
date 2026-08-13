@@ -456,3 +456,28 @@ whole magic; ship it first.
   grey that light reads as ground. Tightening that threshold rejects good
   plates painted on warm off-white. A bad plate on the wall is visible and
   fades in three hours; a bird deleted for looking wrong is invisible.
+- **2026-08-13** — **The frame wakes when a bird is painted** (owner request:
+  "can we retrigger an immediate paint on the frame when a bird is detected?").
+  The frame subscribes to the recorder's `/ws/detections` on a daemon thread
+  and redraws on a `painted` event, instead of waiting out its 5-minute poll.
+  The poll stays as the fallback cadence, and the stream is strictly a
+  latency improvement: an unreachable, older, or restarting recorder costs
+  freshness, never the picture.
+
+  **A floor between redraws (`BP_FRAME_MIN_SECONDS`, default 90) is the
+  load-bearing part**, not the waking. A Spectra 6 full redraw takes ~25–35 s
+  and colour e-paper wears with every one; the hourly cap allows 20 paints, and
+  a dawn chorus can land several within a minute. So a burst is coalesced into
+  ONE redraw showing all of them, rather than a queue of redraws showing them
+  one at a time. Birds that arrive while settling are already in the image
+  being fetched, so their wake-ups aren't owed another redraw.
+
+  Deliberately a thread with a synchronous WebSocket client rather than
+  asyncio: the panel push blocks for half a minute and has no business inside
+  an event loop.
+
+  Discovered while building this: **both Pis were running months-old code** —
+  the recorder on #79, the frame on #67 — so none of the session's merged work
+  was actually in the house, and the recorder's `/ws/detections` 404'd. Merging
+  is not deploying; the check script (`scratchpad/check-installation.sh`) now
+  exists partly so that gap is visible rather than assumed.
