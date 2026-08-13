@@ -39,15 +39,19 @@ OLD_WEIGHT_MIN = 0.42
 # How much of the usable sheet the plates' footprints aim to occupy. The
 # global scale is solved from this, so two birds come out big and twelve
 # come out small without separate rules per count.
-FILL = 0.52
+FILL = 0.62
 PLATE_ASPECT = 1.25  # cell height / width, as the wall's plates
-# Room under each plate for its caption lines, as a fraction of plate height.
-CAPTION_SPACE = 0.20
+# Captions are FIXED-SIZE text (owner: don't resize the text), so the room
+# they need is absolute pixels, not a fraction of the plate — a small bird's
+# caption is exactly as tall as a large bird's. The renderer measures and
+# passes both the height and each caption's true width; the width becomes a
+# floor on the footprint so two small neighbours can't overlap lettering.
+CAPTION_SPACE = 0.20  # fallback fraction when the caller passes no caption_px
 SIDE_MARGIN = 0.03
 BOTTOM_MARGIN = 0.05
 # Minimum clear space between footprints, in vmin. Small: birds carry their
 # own whitespace once cropped to their ink.
-GAP_VMIN = 1.0
+GAP_VMIN = 0.8
 # Candidate positions sampled per bird; the scorer picks among the valid ones.
 CANDIDATES = 60
 # When a pass can't place everything, shrink and retry; the last pass places
@@ -96,15 +100,18 @@ def _overlaps(a: tuple, b: tuple, gap: float) -> bool:
     )
 
 
-def _try_layout(files, weights, scale, rng, left, top, uw, uh, gap, force):
+def _try_layout(
+    files, dims, scale, rng, left, top, uw, uh, gap, caption_px, caption_ws, force
+):
     """One placement attempt at one scale. None = didn't fit, go smaller."""
     placed = []  # (cx, cy, rect)
     anchor = None
     for i, _file in enumerate(files):
-        w = weights[i] * scale
-        plate_h = w * PLATE_ASPECT
-        foot_h = plate_h * (1 + CAPTION_SPACE)
-        min_cx, max_cx = left + w / 2, left + uw - w / 2
+        w = dims[i][0] * scale
+        plate_h = dims[i][1] * scale
+        foot_w = max(w, caption_ws[i])
+        foot_h = plate_h + (caption_px or plate_h * CAPTION_SPACE)
+        min_cx, max_cx = left + foot_w / 2, left + uw - foot_w / 2
         min_cy = top + plate_h / 2
         max_cy = top + uh - foot_h + plate_h / 2
         if min_cx > max_cx or min_cy > max_cy:
@@ -121,8 +128,8 @@ def _try_layout(files, weights, scale, rng, left, top, uw, uh, gap, force):
             anchor = (cx, cy)
             placed.append(
                 (cx, cy,
-                 (cx - w / 2, cy - plate_h / 2,
-                  cx + w / 2, cy - plate_h / 2 + foot_h))
+                 (cx - foot_w / 2, cy - plate_h / 2,
+                  cx + foot_w / 2, cy - plate_h / 2 + foot_h))
             )
             continue
 
@@ -130,8 +137,8 @@ def _try_layout(files, weights, scale, rng, left, top, uw, uh, gap, force):
         for _ in range(CANDIDATES):
             cx = rng.uniform(min_cx, max_cx)
             cy = rng.uniform(min_cy, max_cy)
-            rect = (cx - w / 2, cy - plate_h / 2,
-                    cx + w / 2, cy - plate_h / 2 + foot_h)
+            rect = (cx - foot_w / 2, cy - plate_h / 2,
+                    cx + foot_w / 2, cy - plate_h / 2 + foot_h)
             collides = any(_overlaps(rect, r, gap) for _, _, r in placed)
             if collides and not force:
                 continue
@@ -159,9 +166,23 @@ def _try_layout(files, weights, scale, rng, left, top, uw, uh, gap, force):
 
 
 def compute_frame_scatter(
-    files: list[str], width: float, height: float, band_top: float
+    files: list[str],
+    width: float,
+    height: float,
+    band_top: float,
+    *,
+    aspects: list[float] | None = None,
+    caption_px: float = 0.0,
+    caption_widths: list[float] | None = None,
 ) -> list[Placement]:
-    """Lay the birds out as a focal scatter. `files` is newest-first."""
+    """Lay the birds out as a focal scatter. `files` is newest-first.
+
+    `aspects` is each bird's OWN ink aspect (height/width), so its cell is
+    shaped like the bird rather than a 4:5 plate — a heron gets a tall thin
+    cell, a plump owl a squarish one, and the whitespace a mismatched cell
+    carried inside itself is gone (owner: "crop the birds so there is less
+    whitespace in the paints itself"). The recency weights set each bird's
+    AREA, so a tall bird doesn't out-bulk a wide one of the same rank."""
     if width <= 0 or height <= 0 or not files:
         return []
     vmin = min(width, height) / 100
@@ -172,12 +193,25 @@ def compute_frame_scatter(
         return []
 
     weights = _weights(len(files))
-    footprint = PLATE_ASPECT * (1 + CAPTION_SPACE)
-    scale = math.sqrt(FILL * uw * uh / (footprint * sum(w * w for w in weights)))
+    if aspects is None:
+        aspects = [PLATE_ASPECT] * len(files)
+    aspects = [min(2.4, max(0.45, a)) for a in aspects]
+    caption_ws = caption_widths or [0.0] * len(files)
+    # The weight is an AREA: unit dims per bird follow its own ink shape.
+    dims = [
+        (w / math.sqrt(a), w * math.sqrt(a))
+        for w, a in zip(weights, aspects, strict=True)
+    ]
+    # Solve the global scale so the footprints (bird + its fixed-height
+    # caption) hit the fill target: sum(uw*uh)*s^2 + sum(uw)*caption*s = F*U.
+    quad = sum(dw * dh for dw, dh in dims)
+    lin = sum(dw for dw, _ in dims) * caption_px
+    target = FILL * uw * uh
+    scale = (-lin + math.sqrt(lin * lin + 4 * quad * target)) / (2 * quad)
     scale = min(
         scale,
-        MAX_NEWEST_WIDTH * uw / weights[0],
-        MAX_NEWEST_HEIGHT * uh / (weights[0] * footprint),
+        MAX_NEWEST_WIDTH * uw / dims[0][0],
+        (MAX_NEWEST_HEIGHT * uh - caption_px) / dims[0][1],
     )
     gap = GAP_VMIN * vmin
     seed = hash_str("|".join(files))
@@ -186,8 +220,8 @@ def compute_frame_scatter(
     for attempt in range(MAX_PASSES):
         rng = random.Random(seed * 1000003 + attempt)  # noqa: S311 — layout jitter, not cryptography
         placed = _try_layout(
-            files, weights, scale * SHRINK**attempt, rng,
-            left, top, uw, uh, gap,
+            files, dims, scale * SHRINK**attempt, rng,
+            left, top, uw, uh, gap, caption_px, caption_ws,
             force=attempt == MAX_PASSES - 1,
         )
         if placed is not None:
@@ -196,14 +230,13 @@ def compute_frame_scatter(
 
     placements = []
     for i, (file, (cx, cy, _rect)) in enumerate(zip(files, placed, strict=True)):
-        w = weights[i] * scale
         placements.append(
             Placement(
                 file=file,
                 x=cx - width / 2,
                 y=cy - height / 2,
-                size_vmin=w / vmin,
-                height_vmin=w * PLATE_ASPECT / vmin,
+                size_vmin=dims[i][0] * scale / vmin,
+                height_vmin=dims[i][1] * scale / vmin,
                 z=len(files) - i,  # newest on top, as on the wall
             )
         )
