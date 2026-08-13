@@ -347,18 +347,19 @@ def create_app(config: Config | None = None) -> FastAPI:
                     getter.cancel()
 
     @app.get("/wall.png")
-    def wall_png(layer: str = "all", bare: bool = False) -> Response:
+    def wall_png(layer: str = "all", style: str = "wall") -> Response:
         """The collage rendered server-side to a PNG — what the e-paper frame
         fetches, since it can't run the browser wall. Same live set, same
         layout maths, so it mirrors the on-screen wall.
 
-        `layer=picture|text` splits the render for the frame, which has to
-        dither: dithering an 8px italic turns it to speckle, so the frame
-        dithers the picture and stamps the text through the mask afterwards in
-        pure panel black. `bare=1` drops the cream paper for white — cream
-        isn't one of the panel's six colours and dithers into a speckle across
-        every pixel; white is, and costs nothing. Defaults are the wall as it
-        always was."""
+        `style=panel` renders it for the e-paper frame instead of the browser:
+        the panel's own white as the ground (cream isn't one of its six
+        colours and dithers into a speckle everywhere), rows that fill the
+        sheet instead of the spiral, birds fitted to their cells, and no title.
+        `layer=picture|text` then splits that render in two, because dithering
+        an 8px italic turns it into speckle — the frame dithers the picture and
+        stamps the text through the mask afterwards in pure panel black.
+        Defaults give the wall exactly as it always was."""
         from .render import render_wall_png
 
         paintings = [
@@ -373,6 +374,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=422, detail="layer must be all, picture or text"
             )
+        if style not in {"wall", "panel"}:
+            raise HTTPException(status_code=422, detail="style must be wall or panel")
         png = render_wall_png(
             paintings,
             config.archive_dir,
@@ -381,7 +384,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             font=config.wall_font,
             italic_font=config.wall_font_italic,
             layer=layer,
-            bare=bare,
+            style=style,
         )
         return Response(content=png, media_type="image/png")
 

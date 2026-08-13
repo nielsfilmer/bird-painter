@@ -38,16 +38,17 @@ MAX_ROWS = 4
 # left the sheet looking underfilled.
 FILL_BY_ROWS = {1: 0.95, 2: 0.95, 3: 0.97, 4: 0.97}
 
-# Gutters as a fraction of a plate's width/height. Wide enough that two birds
-# read as two, tight enough that no gap looks like a missing bird.
-COLUMN_GUTTER = 0.10
+# Gutters as a fraction of a plate's width/height. Tight on purpose: birds
+# cropped to their own ink already carry visual separation, so the generous
+# gutter a padded plate needed just pushed them apart and shrank them.
+COLUMN_GUTTER = 0.04
 ROW_GUTTER = 0.16
-# Room under each plate for its two caption lines, as a fraction of plate
-# height. The renderer draws the species name just under the image and the
-# time under that.
-CAPTION_SPACE = 0.16
+# Room under each plate for its two caption lines PLUS the air between the
+# bird's feet and its name (render.CAPTION_GAP_VMIN), as a fraction of plate
+# height.
+CAPTION_SPACE = 0.20
 # The panel's own margins, as a fraction of its width/height.
-SIDE_MARGIN = 0.04
+SIDE_MARGIN = 0.03
 BOTTOM_MARGIN = 0.05
 
 PLATE_ASPECT = 1.25  # height / width, as the wall's plates

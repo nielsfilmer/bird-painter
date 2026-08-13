@@ -189,11 +189,15 @@ def fetch_layers(
     serve layers, in which case the picture is the ordinary wall image and the
     caller just dithers it as before."""
     picture = fetch_image(
-        _with_query(url, layer="picture", bare="1"), client=client, timeout=timeout
+        _with_query(url, layer="picture", style="panel"),
+        client=client,
+        timeout=timeout,
     )
     try:
         text = fetch_image(
-            _with_query(url, layer="text"), client=client, timeout=timeout
+            _with_query(url, layer="text", style="panel"),
+            client=client,
+            timeout=timeout,
         )
     except Exception:  # noqa: BLE001 — an older recorder has no text layer
         logger.info("frame: no text layer from the wall; dithering the whole image")

@@ -48,6 +48,10 @@ WHITE_SOLID = 228
 # enough to catch a pale wing edge, large enough that JPEG noise in the ground
 # isn't mistaken for a feather.
 GROUND_TOLERANCE = 6
+# Air between a bird's feet and its name, on the panel (in vmin).
+CAPTION_GAP_VMIN = 1.4
+# The panel's top margin, once the title is gone.
+PANEL_TOP_MARGIN = 0.045
 # Glyphs in the text-layer mask: white where ink goes, so the frame can paste
 # a single colour through it.
 MASK_INK = 255
@@ -199,7 +203,19 @@ def _paste_bird(
     except Exception:  # noqa: BLE001 — SVG placeholders / unreadable files
         # Placeholder mode (no FAL_KEY) writes SVG plates Pillow can't open;
         # a soft grey stand-in keeps the collage populated for tests/QA.
-        bird = Image.new("RGB", (w, h), (208, 198, 172))
+        #
+        # It has to be an INSET shape on white, not a flat fill: on the panel
+        # the ground key-out reads a plate's border as its ground, so a flat
+        # grey rectangle keys itself away entirely and leaves a caption
+        # floating under nothing.
+        bird = Image.new("RGB", (w, h), PANEL_GROUND if bare else (208, 198, 172))
+        if bare:
+            inset = ImageDraw.Draw(bird)
+            inset.rounded_rectangle(
+                (w * 0.18, h * 0.18, w * 0.82, h * 0.82),
+                radius=max(2, round(w * 0.06)),
+                fill=(208, 198, 172),
+            )
     mask = _feather_mask(w, h, soft=not bare)
     if bare:
         # Feather AND ground-key: the edge still melts away, and the plate's
@@ -251,8 +267,7 @@ def render_wall_png(
     font: str | None = None,
     italic_font: str | None = None,
     layer: str = "all",
-    bare: bool = False,
-    grid: bool = True,
+    style: str = "wall",
 ) -> bytes:
     """Render the collage to PNG bytes. `paintings` is newest-first, each a
     dict with `file`, `species_common`, `born_at` (as `/api/live` serves).
@@ -276,6 +291,13 @@ def render_wall_png(
     of alignment the way a second layout implementation would."""
     if layer not in {"all", "picture", "text"}:
         raise ValueError(f"layer must be all/picture/text, got {layer!r}")
+    if style not in {"wall", "panel"}:
+        raise ValueError(f"style must be wall/panel, got {style!r}")
+    # "panel" is everything the e-paper frame needs and the browser doesn't:
+    # its own white as the ground, rows instead of the spiral, birds fitted to
+    # their cells, and no title — the frame hangs on a wall, where a heading
+    # saying what it is costs a row of birds to state the obvious.
+    panel = style == "panel"
     text_only = layer == "text"
     lettering = layer != "picture"
 
@@ -285,13 +307,20 @@ def render_wall_png(
     if text_only:
         img = Image.new("L", (width, height), 0)
     else:
-        img = Image.new("RGB", (width, height), PANEL_GROUND if bare else PAPER)
+        img = Image.new("RGB", (width, height), PANEL_GROUND if panel else PAPER)
     draw = ImageDraw.Draw(img)
     ink = MASK_INK if text_only else INK
     dim_ink = MASK_INK if text_only else INK_DIM
     heard_ink = MASK_INK if text_only else HEARD_INK
     header_vmin = min(width, height) / 100
-    band_top = _draw_header(draw, width, header_vmin, fonts, lettering, ink, dim_ink)
+    if panel:
+        # No header: the sheet is the header. This is the single biggest gain
+        # in room for the birds.
+        band_top = height * PANEL_TOP_MARGIN
+    else:
+        band_top = _draw_header(
+            draw, width, header_vmin, fonts, lettering, ink, dim_ink
+        )
 
     # Lay the cluster out into a slightly shorter box than the full canvas, so
     # the bottom row's caption clears the panel edge (the cluster's downward
@@ -309,7 +338,7 @@ def render_wall_png(
     # what the README's hero image and anything else expecting the wall wants.
     placements = (
         compute_frame_grid(files, width, layout_h, band_top)
-        if grid
+        if panel
         else compute_collage(files, width, layout_h, band_top)
     )
 
@@ -338,12 +367,17 @@ def render_wall_png(
         cx, cy = cx0 + pl.x, cy0 + pl.y
         if not text_only:
             _paste_bird(
-                img, image_dir / pl.file, cx, cy, round(w), round(image_h), bare=bare
+                img, image_dir / pl.file, cx, cy, round(w), round(image_h), bare=panel
             )
         if not lettering:
             continue
         meta = by_file[pl.file]
-        caption_y = cy + image_h / 2 - 0.4 * vmin
+        # On the panel the bird's ink is fitted to the cell, so its feet ARE
+        # the cell's bottom edge; the wall's slight overlap put the name right
+        # against the bird. Give it air there, keep the overlap on the wall
+        # where the plate has its own white margin.
+        gap = CAPTION_GAP_VMIN * vmin if panel else -0.4 * vmin
+        caption_y = cy + image_h / 2 + gap
         for dx in (0, DOUBLE_X):
             _tracked(
                 draw, cx + dx, caption_y, meta["species_common"].upper(),
