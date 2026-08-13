@@ -28,6 +28,15 @@ PAPER = (236, 225, 198)
 INK = (74, 63, 46)
 INK_DIM = (141, 128, 101)
 HEARD_INK = (107, 94, 69)
+# The e-paper frame's ground. The wall's cream paper is not one of the panel's
+# six colours, so dithering scatters it into a permanent red/green speckle
+# across the whole panel — noise that also robs the small type of contrast.
+# The panel's own white IS in the palette and dithers to nothing, so the frame
+# asks for this ground and lets the e-paper be the paper.
+PANEL_GROUND = (255, 255, 255)
+# Glyphs in the text-layer mask: white where ink goes, so the frame can paste
+# a single colour through it.
+MASK_INK = 255
 
 # Serif faces to try, in order, when no font is configured. Raspberry Pi OS /
 # Debian first (the deploy target), then macOS (dev). Falls back to Pillow's
@@ -127,22 +136,28 @@ def _heard_text(born_at: float) -> str:
     return f"heard at {datetime.fromtimestamp(born_at):%H:%M}"
 
 
-def _draw_header(draw, width, vmin, fonts) -> float:
+def _draw_header(
+    draw, width, vmin, fonts, lettering=True, ink=INK, dim_ink=INK_DIM
+) -> float:
     """Draw the title chrome; return the y where the title band ends (band_top),
-    the same value the live wall feeds computeCollage."""
+    the same value the live wall feeds computeCollage.
+
+    The band's geometry is returned whether or not the lettering is drawn, so
+    the picture and text layers place their plates identically."""
     top = 4.5 * vmin
     eyebrow_size = _clamp(12, 1.7 * vmin, 19)
     title_size = _clamp(22, 4.2 * vmin, 52)
     eyebrow = fonts.get(eyebrow_size, italic=True)
     title = fonts.get(title_size)
-    draw.text(
-        (width / 2, top), "birds outside", font=eyebrow, fill=INK_DIM, anchor="ma"
-    )
     title_y = top + eyebrow_size * 1.4
-    _tracked(
-        draw, width / 2, title_y, "HEARD RECENTLY", title, INK,
-        tracking=title_size * 0.22,
-    )
+    if lettering:
+        draw.text(
+            (width / 2, top), "birds outside", font=eyebrow, fill=dim_ink, anchor="ma"
+        )
+        _tracked(
+            draw, width / 2, title_y, "HEARD RECENTLY", title, ink,
+            tracking=title_size * 0.22,
+        )
     return title_y + title_size * 1.2 + 8
 
 
@@ -154,14 +169,47 @@ def render_wall_png(
     *,
     font: str | None = None,
     italic_font: str | None = None,
+    layer: str = "all",
+    bare: bool = False,
 ) -> bytes:
     """Render the collage to PNG bytes. `paintings` is newest-first, each a
-    dict with `file`, `species_common`, `born_at` (as `/api/live` serves)."""
+    dict with `file`, `species_common`, `born_at` (as `/api/live` serves).
+
+    `layer` splits the render for the e-paper frame, which has to dither:
+
+    - `"all"` (default) — the wall as it has always been, for browsers and
+      anything else that wants one image.
+    - `"picture"` — the same collage with NO lettering.
+    - `"text"` — only the lettering, as a mask: white where ink goes.
+
+    `bare` drops the cream paper for plain white — the e-paper's own ground.
+    Cream isn't one of the panel's six colours, so it dithers into a red/green
+    speckle over every pixel; white is, and costs nothing.
+
+    The frame dithers the picture and then stamps the text through the mask in
+    pure panel black. Dithering scatters a 6-colour approximation across every
+    pixel, which is fine for a watercolour and ruinous for an 8px italic — the
+    caption came out as speckle. Splitting the layers is what lets the type
+    stay type. Both layers come from THIS function, so the two can't drift out
+    of alignment the way a second layout implementation would."""
+    if layer not in {"all", "picture", "text"}:
+        raise ValueError(f"layer must be all/picture/text, got {layer!r}")
+    text_only = layer == "text"
+    lettering = layer != "picture"
+
     fonts = _Fonts(font, italic_font)
-    img = Image.new("RGB", (width, height), PAPER)
+    # The text layer is a mask: black ground, white glyphs, so the frame can
+    # paste one colour through it.
+    if text_only:
+        img = Image.new("L", (width, height), 0)
+    else:
+        img = Image.new("RGB", (width, height), PANEL_GROUND if bare else PAPER)
     draw = ImageDraw.Draw(img)
+    ink = MASK_INK if text_only else INK
+    dim_ink = MASK_INK if text_only else INK_DIM
+    heard_ink = MASK_INK if text_only else HEARD_INK
     header_vmin = min(width, height) / 100
-    band_top = _draw_header(draw, width, header_vmin, fonts)
+    band_top = _draw_header(draw, width, header_vmin, fonts, lettering, ink, dim_ink)
 
     # Lay the cluster out into a slightly shorter box than the full canvas, so
     # the bottom row's caption clears the panel edge (the cluster's downward
@@ -177,10 +225,11 @@ def render_wall_png(
 
     if not placements:
         empty_font = fonts.get(_clamp(16, 2.6 * vmin, 24), italic=True)
-        draw.text(
-            (width / 2, height / 2), "listening…", font=empty_font,
-            fill=INK_DIM, anchor="mm",
-        )
+        if lettering:
+            draw.text(
+                (width / 2, height / 2), "listening…", font=empty_font,
+                fill=dim_ink, anchor="mm",
+            )
         return _encode(img)
 
     species_size = _clamp(8, 1.05 * vmin, 12)
@@ -195,16 +244,19 @@ def render_wall_png(
         w = pl.size_vmin * vmin
         image_h = w * PLATE_ASPECT
         cx, cy = cx0 + pl.x, cy0 + pl.y
-        _paste_bird(img, image_dir / pl.file, cx, cy, round(w), round(image_h))
+        if not text_only:
+            _paste_bird(img, image_dir / pl.file, cx, cy, round(w), round(image_h))
+        if not lettering:
+            continue
         meta = by_file[pl.file]
         caption_y = cy + image_h / 2 - 0.4 * vmin
         _tracked(
             draw, cx, caption_y, meta["species_common"].upper(),
-            species_font, INK, tracking=species_size * 0.05 + 0.5,
+            species_font, ink, tracking=species_size * 0.05 + 0.5,
         )
         draw.text(
             (cx, caption_y + species_size * 1.25), _heard_text(meta["born_at"]),
-            font=heard_font, fill=HEARD_INK, anchor="ma",
+            font=heard_font, fill=heard_ink, anchor="ma",
         )
     return _encode(img)
 

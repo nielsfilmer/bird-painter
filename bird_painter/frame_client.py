@@ -37,6 +37,16 @@ Config via environment:
                              portrait instead (set BP_WALL_PNG_WIDTH/HEIGHT on
                              the recorder + BP_FRAME_WIDTH/HEIGHT to match).
   BP_FRAME_TIMEOUT_SECONDS   HTTP fetch timeout (default 30).
+  BP_FRAME_CRISP_TEXT        fetch the wall as two layers — picture and
+                             lettering — dither only the picture, then stamp
+                             the text through its mask in pure panel black
+                             (default true). Dithering an 8px italic turns it
+                             into speckle; this keeps type as type. Also asks
+                             for a white ground instead of the wall's cream,
+                             which isn't one of the panel's six colours and
+                             would otherwise dither into a speckle everywhere.
+                             Falls back to the single-image fetch if the
+                             recorder is too old to serve layers.
   BP_FRAME_DRIVER_PATH       dir to add to sys.path to find the Waveshare
                              driver. The Spectra 6 (E) driver ships as a flat
                              `epd13in3E` module under the panel's own
@@ -167,6 +177,68 @@ def _push(panel, image: Image.Image) -> None:  # pragma: no cover - hardware-onl
     panel.sleep()
 
 
+def fetch_layers(
+    url: str,
+    *,
+    timeout: float,
+    client: httpx.Client | None = None,
+) -> tuple[bytes, bytes | None]:
+    """Fetch the picture layer and the lettering mask.
+
+    Returns (picture, text mask) — the mask is None when the recorder doesn't
+    serve layers, in which case the picture is the ordinary wall image and the
+    caller just dithers it as before."""
+    picture = fetch_image(
+        _with_query(url, layer="picture", bare="1"), client=client, timeout=timeout
+    )
+    try:
+        text = fetch_image(
+            _with_query(url, layer="text"), client=client, timeout=timeout
+        )
+    except Exception:  # noqa: BLE001 — an older recorder has no text layer
+        logger.info("frame: no text layer from the wall; dithering the whole image")
+        return picture, None
+    return picture, text
+
+
+def _with_query(url: str, **params: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    query = urllib.parse.parse_qsl(parsed.query) + list(params.items())
+    return urllib.parse.urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urllib.parse.urlencode(query),
+            parsed.fragment,
+        )
+    )
+
+
+def dither_free_mask(data: bytes, size: tuple[int, int], rotate: int) -> Image.Image:
+    """The lettering mask, resized and rotated to match the picture — with
+    NEAREST, so a glyph edge stays a glyph edge rather than being smoothed into
+    grey and then thresholded into crumbs."""
+    mask = Image.open(io.BytesIO(data)).convert("L")
+    if mask.size != size:
+        mask = mask.resize(size, Image.NEAREST)
+    if rotate:
+        mask = mask.rotate(-rotate, expand=True, resample=Image.NEAREST)
+    return mask
+
+
+def stamp_text(picture: Image.Image, mask: Image.Image) -> Image.Image:
+    """Stamp the lettering onto an already-dithered picture, in flat black.
+
+    After this, no glyph is dithered: every inked pixel is the panel's own
+    black, which is what makes an 8px italic legible at arm's length instead
+    of a grey suggestion."""
+    stamped = picture.convert("RGB")
+    ink = Image.new("RGB", stamped.size, (0, 0, 0))
+    stamped.paste(ink, (0, 0), mask.convert("L").resize(stamped.size))
+    return stamped
+
+
 def refresh_once(
     url: str,
     size: tuple[int, int],
@@ -177,6 +249,7 @@ def refresh_once(
     client: httpx.Client | None = None,
     panel_factory=load_panel,
     push=_push,
+    crisp_text: bool = True,
 ) -> str | None:
     """One fetch→(maybe)draw cycle. Skips the panel redraw when the image is
     byte-identical to the last one drawn — no point wearing the panel (and
@@ -184,16 +257,25 @@ def refresh_once(
     on any error it logs and returns `last_hash` unchanged (keep the current
     frame, retry next tick)."""
     try:
-        data = fetch_image(url, client=client, timeout=timeout)
+        if crisp_text:
+            data, text = fetch_layers(url, timeout=timeout, client=client)
+        else:
+            data, text = fetch_image(url, client=client, timeout=timeout), None
     except Exception:  # noqa: BLE001 — a bad fetch must not kill the loop
         logger.exception("frame: fetch failed; keeping the current image")
         return last_hash
-    digest = hashlib.sha256(data).hexdigest()
+    # Hash both layers: the picture can be unchanged while a caption's clock
+    # has moved on, and vice versa.
+    digest = hashlib.sha256(data + (text or b"")).hexdigest()
     if digest == last_hash:
         logger.debug("frame: image unchanged; skipping redraw")
         return last_hash
     try:
         image = dither_to_panel(Image.open(io.BytesIO(data)), size, rotate)
+        if text is not None:
+            # After the dither, never before: the whole point is that these
+            # pixels don't get scattered into the 6-colour approximation.
+            image = stamp_text(image, dither_free_mask(text, size, rotate))
         panel = panel_factory()
         push(panel, image)
     except Exception:  # noqa: BLE001 — a bad draw must not kill the loop
@@ -368,6 +450,7 @@ def main() -> None:
     rotate = _int_env("BP_FRAME_ROTATE", 0) % 360
     timeout = _int_env("BP_FRAME_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS)
     min_seconds = _int_env("BP_FRAME_MIN_SECONDS", DEFAULT_MIN_SECONDS)
+    crisp_text = _bool_env("BP_FRAME_CRISP_TEXT", True)
 
     wake = threading.Event()
     if _bool_env("BP_FRAME_WAKE_ON_PAINT", True):
@@ -391,7 +474,9 @@ def main() -> None:
     last_redraw_at: float | None = None
     while True:
         before = last_hash
-        last_hash = refresh_once(url, size, rotate, last_hash, timeout=timeout)
+        last_hash = refresh_once(
+            url, size, rotate, last_hash, timeout=timeout, crisp_text=crisp_text
+        )
         if last_hash != before:
             # refresh_once only returns a new hash when it actually pushed to
             # the panel, so this — not the fetch — is when the panel was worn.
