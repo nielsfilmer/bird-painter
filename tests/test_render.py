@@ -70,3 +70,23 @@ def test_render_falls_back_when_no_serif_font_exists(tmp_path, monkeypatch):
     paintings = [{"file": "b.png", "species_common": "Wren", "born_at": 1784570000}]
     png = render_wall_png(paintings, tmp_path, 500, 400)
     assert _open(png).size == (500, 400)
+
+
+def test_ink_bounds_keep_a_thin_tail_but_drop_a_far_speck():
+    """Regression for a cut-off jackdaw: a pixel-percentile box sliced off the
+    thin head and tail (real ink, few pixels per row). Bounds now come from
+    connected components — extremities are attached to the bird, specks
+    aren't."""
+    import numpy as np
+
+    from bird_painter.render import _ink_bounds
+
+    mask = np.zeros((200, 200), dtype=bool)
+    mask[80:120, 60:120] = True  # the body
+    mask[100:101, 120:170] = True  # a one-pixel-thick tail, attached
+    mask[82:84, 55:60] = True  # the head's crown, attached
+    mask[10:12, 190:192] = True  # an isolated speck, far away
+    top, left, bottom, right = _ink_bounds(mask)
+    assert right >= 170, "the tail tip must survive"
+    assert left <= 55, "the crown must survive"
+    assert top >= 80 and bottom <= 121, "the far speck must not stretch the box"

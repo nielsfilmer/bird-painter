@@ -48,6 +48,9 @@ WHITE_SOLID = 228
 # enough to catch a pale wing edge, large enough that JPEG noise in the ground
 # isn't mistaken for a feather.
 GROUND_TOLERANCE = 6
+# A connected ink component smaller than this share of the total ink is a
+# speck (JPEG noise, a stray droplet), not part of the bird.
+SPECK_SHARE = 0.004
 # Air between a bird's feet and its name, on the panel (in vmin).
 CAPTION_GAP_VMIN = 1.4
 # The panel's top margin, once the title is gone.
@@ -161,14 +164,28 @@ def _drop_ground(bird: Image.Image) -> Image.Image:
     return Image.fromarray((np.clip(alpha, 0.0, 1.0) * 255).astype("uint8"), "L")
 
 
-def _ink_bounds(inked: np.ndarray) -> tuple[int, int, int, int]:
-    """The ink's bounding box between the 0.5th and 99.5th percentiles of its
-    pixels — a handful of stray specks must not stretch the box and hand back
-    the whitespace the crop exists to remove (seen on a real plate: 163 stray
-    pixels cost 12% per side)."""
-    top, left = np.percentile(inked, 0.5, axis=0)
-    bottom, right = np.percentile(inked, 99.5, axis=0)
-    return int(top), int(left), int(bottom) + 1, int(right) + 1
+def _ink_bounds(mask: np.ndarray) -> tuple[int, int, int, int]:
+    """The ink's bounding box, ignoring isolated specks but keeping every
+    attached extremity.
+
+    A pixel-percentile box was tried first and cut off a jackdaw's head and
+    tail: thin extremities are real ink but only a few pixels per row, so a
+    percentile can't tell them from noise. Connectedness can — a speck is a
+    tiny component of its own, a tail tip belongs to the bird's component.
+    Tiny components are dropped, and the box is the full extent of what
+    remains."""
+    from scipy import ndimage
+
+    labels, count = ndimage.label(mask)
+    if count > 1:
+        sizes = np.bincount(labels.ravel())
+        sizes[0] = 0
+        keep = sizes >= max(16, int(mask.sum() * SPECK_SHARE))
+        if keep.any():
+            mask = keep[labels]
+    inked = np.argwhere(mask)
+    (top, left), (bottom, right) = inked.min(0), inked.max(0) + 1
+    return int(top), int(left), int(bottom), int(right)
 
 
 def _fit_to_cell(bird: Image.Image, w: int, h: int) -> Image.Image:
@@ -188,10 +205,10 @@ def _fit_to_cell(bird: Image.Image, w: int, h: int) -> Image.Image:
         pixels[0], pixels[-1], pixels[:, 0], pixels[:, -1],
     ])
     ground = float(np.median(border))
-    inked = np.argwhere(pixels < min(WHITE_KEY, ground - GROUND_TOLERANCE))
-    if len(inked) == 0:
+    mask = pixels < min(WHITE_KEY, ground - GROUND_TOLERANCE)
+    if not mask.any():
         return bird.resize((w, h))
-    top, left, bottom, right = _ink_bounds(inked)
+    top, left, bottom, right = _ink_bounds(mask)
     cropped = bird.crop((left, top, right, bottom))
     scale = min(w / cropped.width, h / cropped.height)
     sized = cropped.resize(
@@ -249,10 +266,10 @@ def _ink_aspect(path: Path) -> float:
             [pixels[0], pixels[-1], pixels[:, 0], pixels[:, -1]]
         )
         key = min(WHITE_KEY, float(np.median(border)) - GROUND_TOLERANCE)
-        inked = np.argwhere(pixels < key)
-        if len(inked) == 0:
+        mask = pixels < key
+        if not mask.any():
             return PLATE_ASPECT
-        top, left, bottom, right = _ink_bounds(inked)
+        top, left, bottom, right = _ink_bounds(mask)
         if right - left < 4 or bottom - top < 4:
             return PLATE_ASPECT
         return (bottom - top) / (right - left)
