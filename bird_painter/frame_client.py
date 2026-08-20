@@ -69,6 +69,7 @@ Config via environment:
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import io
 import json
@@ -103,12 +104,10 @@ DEFAULT_SIZE = (1600, 1200)
 DEFAULT_SEARCH_SECONDS = 60
 SEARCH_POLL_SECONDS = 5
 SEARCHING_TEXT = "Looking for recorder"
-# The notice's type, as a share of the panel's shorter side.
+# The notice's type, as a share of the panel's shorter side, and the share of
+# the panel's width it may occupy before it's shrunk to fit.
 NOTICE_TEXT_VMIN = 0.06
-# Stands in for an image hash so the main loop's dedupe treats the notice like
-# any other drawn frame: it won't be redrawn while it's up, and the first real
-# wall that arrives replaces it (no wall can hash to this).
-NOTICE_HASH = "notice:looking-for-recorder"
+NOTICE_MAX_WIDTH = 0.86
 # A mask pixel this bright or brighter gets the ink. Glyph edges are
 # anti-aliased, and a partial paste would blend black with the picture into a
 # colour the six-colour panel doesn't have — after the only quantisation step,
@@ -328,7 +327,7 @@ def refresh_once(
     panel_factory=load_panel,
     push=_push,
     crisp_text: bool = True,
-    quiet: bool = False,
+    contact: Contact | None = None,
 ) -> str | None:
     """One fetch→(maybe)draw cycle. Skips the panel redraw when the image is
     byte-identical to the last one drawn — no point wearing the panel (and
@@ -336,21 +335,28 @@ def refresh_once(
     on any error it logs and returns `last_hash` unchanged (keep the current
     frame, retry next tick).
 
-    `quiet` is for the boot search, where the recorder being absent is the
-    expected case rather than a fault: it logs one line instead of a traceback,
-    so a minute of looking doesn't fill the journal with stack traces that say
-    nothing but "connection refused"."""
+    Pass `contact` to get sane logging for a recorder that is simply away: one
+    traceback when contact is lost, then a single line per attempt for as long
+    as it stays lost. Losing the recorder is worth a stack trace once; it is
+    not worth one every five seconds until somebody notices, and an outage that
+    fills the journal buries whatever else went wrong that night."""
     try:
         if crisp_text:
             data, text = fetch_layers(url, timeout=timeout, client=client)
         else:
             data, text = fetch_image(url, client=client, timeout=timeout), None
     except Exception as error:  # noqa: BLE001 — a bad fetch must not kill the loop
-        if quiet:
-            logger.info("frame: no answer from %s (%s)", url, type(error).__name__)
+        if contact is not None and not contact.reachable:
+            logger.info(
+                "frame: still no answer from %s (%s)", url, type(error).__name__
+            )
         else:
             logger.exception("frame: fetch failed; keeping the current image")
+        if contact is not None:
+            contact.reachable = False
         return last_hash
+    if contact is not None:
+        contact.reachable = True
     # Hash both layers: the picture can be unchanged while a caption's clock
     # has moved on, and vice versa.
     digest = hashlib.sha256(data + (text or b"")).hexdigest()
@@ -372,6 +378,35 @@ def refresh_once(
     return digest
 
 
+@dataclasses.dataclass
+class Contact:
+    """Whether the recorder is currently answering.
+
+    One flag, two jobs, because they're the same question. It decides how loud
+    a failed fetch is (a traceback when contact is LOST, a line while it stays
+    lost), and how often to try again — there's nothing to wait for but the
+    recorder, so while it's away the frame looks every few seconds instead of
+    on the wall's leisurely timer. A failed fetch against a machine that isn't
+    there costs a refused connection.
+
+    It starts unreachable: at boot the frame hasn't found the recorder yet, so
+    the search's first miss isn't news."""
+
+    reachable: bool = False
+
+
+def _notice_font(points: int):
+    """The house serif at `points`, or Pillow's bundled face if none is
+    installed (needs pillow >= 10.1 for a sized default — pyproject pins it)."""
+    face = first_existing(SERIF)
+    try:
+        if face:
+            return ImageFont.truetype(face, points)
+        return ImageFont.load_default(points)
+    except OSError:  # a listed face that exists but won't load
+        return ImageFont.load_default(points)
+
+
 def render_notice(text: str, size: tuple[int, int], rotate: int) -> Image.Image:
     """A centred line of text on the panel's own white, ready to push.
 
@@ -385,16 +420,16 @@ def render_notice(text: str, size: tuple[int, int], rotate: int) -> Image.Image:
     logical = (size[1], size[0]) if rotate in (90, 270) else size
     mask = Image.new("L", logical, 0)
     canvas = ImageDraw.Draw(mask)
-    face = first_existing(SERIF)
     points = max(12, round(min(logical) * NOTICE_TEXT_VMIN))
-    try:
-        font = (
-            ImageFont.truetype(face, points)
-            if face
-            else ImageFont.load_default(points)
-        )
-    except OSError:  # a listed face that exists but won't load
-        font = ImageFont.load_default(points)
+    font = _notice_font(points)
+    # Shrink to fit rather than run off the sheet. Today's one string fits at
+    # any panel size, but the caller passes the text, so a longer one is a
+    # matter of someone writing it — and half a sentence centred on a wall
+    # reads as a fault in the frame.
+    room = logical[0] * NOTICE_MAX_WIDTH  # the frame the text is drawn into
+    while points > 12 and canvas.textlength(text, font=font) > room:
+        points -= 2
+        font = _notice_font(points)
     canvas.text(
         (logical[0] / 2, logical[1] / 2), text, font=font, fill=255, anchor="mm"
     )
@@ -413,17 +448,17 @@ def show_notice(
     *,
     panel_factory=load_panel,
     push=_push,
-) -> str | None:
-    """Put a notice on the panel. Returns the sentinel hash to carry forward,
-    or None if it couldn't be drawn — in which case the caller keeps whatever
-    the panel already holds, exactly as a failed wall draw does."""
+) -> bool:
+    """Put a notice on the panel. False if it couldn't be drawn, in which case
+    the caller keeps whatever the panel already holds, exactly as a failed wall
+    draw does."""
     try:
         push(panel_factory(), render_notice(text, size, rotate))
     except Exception:  # noqa: BLE001 — a notice must never kill the loop
         logger.exception("frame: couldn't draw the notice")
-        return None
+        return False
     logger.info("frame: showing %r", text)
-    return NOTICE_HASH
+    return True
 
 
 def search_for_recorder(
@@ -442,7 +477,13 @@ def search_for_recorder(
     doing it this way means a found recorder costs no extra request. There is
     no cheaper probe worth having — a HEAD on /wall.png is refused (405), and
     /api doesn't exist on older recorders, so probing it would report a
-    perfectly good recorder as missing."""
+    perfectly good recorder as missing.
+
+    `search_seconds` is a floor, not a ceiling: the clock is read after each
+    attempt, so a host that accepts the connection and then blackholes it can
+    push the window out by one fetch timeout. That's the right trade — cutting
+    an attempt off mid-flight to honour the deadline would throw away the
+    answer we were waiting for."""
     deadline = now() + search_seconds
     while True:
         digest = draw()
@@ -643,45 +684,42 @@ def main() -> None:
     # don't come up together — the frame is often first — so a few seconds of
     # "nothing yet" is normal and not worth a ~30 s redraw to announce.
     search_seconds = _int_env("BP_FRAME_SEARCH_SECONDS", DEFAULT_SEARCH_SECONDS)
+    contact = Contact()  # not found yet, so the search's misses aren't news
     last_hash = search_for_recorder(
         lambda: refresh_once(
             url, size, rotate, None,
-            timeout=timeout, crisp_text=crisp_text, quiet=True,
+            timeout=timeout, crisp_text=crisp_text, contact=contact,
         ),
         search_seconds=search_seconds,
     )
+    drew_something = last_hash is not None
     if last_hash is None and search_seconds > 0:
         logger.info(
             "frame: no recorder at %s after %ds; saying so on the panel",
             url, search_seconds,
         )
-        last_hash = show_notice(SEARCHING_TEXT, size, rotate)
-    last_redraw_at = time.monotonic() if last_hash else None
+        drew_something = show_notice(SEARCHING_TEXT, size, rotate)
+    # The notice wears the panel like any other draw, so it starts the floor.
+    last_redraw_at = time.monotonic() if drew_something else None
 
     while True:
         before = last_hash
         last_hash = refresh_once(
             url, size, rotate, last_hash,
-            timeout=timeout,
-            crisp_text=crisp_text,
-            # While the notice is up, the recorder being absent is still the
-            # expected case — one line per try, not a traceback every five
-            # seconds for as long as it stays away.
-            quiet=last_hash == NOTICE_HASH,
+            timeout=timeout, crisp_text=crisp_text, contact=contact,
         )
         if last_hash != before:
             # refresh_once only returns a new hash when it actually pushed to
             # the panel, so this — not the fetch — is when the panel was worn.
             last_redraw_at = time.monotonic()
-        # While the notice is up there's nothing to wait for but the recorder,
-        # so look often rather than on the wall's leisurely timer — a failed
-        # fetch against a machine that isn't there costs a refused connection.
-        # The redraw floor still applies, so finding it early can't wear the
-        # panel twice in quick succession.
+        # An absent recorder is the only thing worth hurrying for, whether it
+        # never arrived or wandered off after a good wall. The redraw floor
+        # still applies, so finding it again can't wear the panel twice in
+        # quick succession.
         wait_for_next_draw(
             wake,
             last_redraw_at,
-            interval=SEARCH_POLL_SECONDS if last_hash == NOTICE_HASH else interval,
+            interval=interval if contact.reachable else SEARCH_POLL_SECONDS,
             min_seconds=min_seconds,
         )
 

@@ -229,9 +229,18 @@ Notes on the bigger panel:
    before putting **"Looking for recorder"** on the panel. The two machines
    don't boot in step and the frame is often first, so a short wait is normal
    and not worth a 30 s redraw to announce; the notice only appears if the
-   search finds nothing. While it's up the frame retries every few seconds
-   instead of on the slow timer, and the first wall it gets replaces it. Set
-   `BP_FRAME_SEARCH_SECONDS=0` to keep whatever the panel is holding instead. Autostart it with its own `systemd`
+   search finds nothing. While the recorder is away the frame retries every few
+   seconds instead of on the slow timer, and the first wall it gets replaces
+   the notice. `BP_FRAME_SEARCH_SECONDS=0` skips the notice — the frame still
+   looks for the recorder, it just never says so, leaving whatever the panel
+   already holds.
+
+   A recorder that disappears *after* a successful boot doesn't bring the
+   notice back: the frame keeps the last wall it drew. Real birds are better
+   company than an apology, and the frame is an ornament rather than a status
+   board.
+
+   Autostart it with its own `systemd`
    unit (`bird-painter-frame.service`, same shape as the recorder's but
    `ExecStart=…/.venv/bin/python -m bird_painter.frame_client` and the
    `BP_FRAME_*` values — including `BP_FRAME_DRIVER_PATH` — as `Environment=`

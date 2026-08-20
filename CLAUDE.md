@@ -363,9 +363,10 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     frame client (runs on the frame Pi). At boot it looks for the recorder for
     `BP_FRAME_SEARCH_SECONDS` (60) and, only if it finds nothing, draws a
     centred "Looking for recorder" notice — the two machines don't boot in step
-    and a redraw costs ~30 s of panel wear. Then fetches the recorder's
-    `/wall.png` on
-    a slow timer, dithers to the Spectra 6 six-colour palette, pushes to the
+    and a redraw costs ~30 s of panel wear. A recorder that vanishes later
+    doesn't bring the notice back — the last wall stays up. Then fetches the
+    recorder's `/wall.png` on a slow timer, dithers to the Spectra 6
+    six-colour palette, pushes to the
     panel via the Waveshare `epd13in3E` driver (imported lazily — hardware-only,
     so the module imports/tests without it); redraws only when the wall changed.
     Also WATCHES the recorder's `/ws/detections` on a daemon thread and redraws

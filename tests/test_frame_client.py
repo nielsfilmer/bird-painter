@@ -2,7 +2,9 @@
 is hardware-only, so these test the pure image processing + the fetch→draw
 cycle logic with a fake panel (no Waveshare lib, no real SPI)."""
 
+import contextlib
 import io
+import logging
 
 import httpx
 import pytest
@@ -631,39 +633,28 @@ def test_the_notice_reads_the_right_way_up_on_a_rotated_panel():
         assert panel.size == size, f"rotate={rotate}"
 
 
-def test_the_notice_hash_keeps_it_from_being_redrawn_but_yields_to_a_wall():
-    """An e-paper redraw wears the panel, so the notice must be drawn once —
-    and must give way the moment a real wall arrives."""
+def test_the_notice_is_drawn_once_and_yields_to_the_first_wall():
+    """An e-paper redraw wears the panel, so the notice is drawn once and any
+    real wall replaces it. While it's up `last_hash` stays None, so a failed
+    fetch changes nothing and the first successful one differs from it."""
     drawn = []
-    digest = fc.show_notice(
+    assert fc.show_notice(
         "Looking for recorder", (200, 150), 0,
         panel_factory=lambda: object(),
         push=lambda _panel, image: drawn.append(image),
-    )
-    assert digest == fc.NOTICE_HASH
+    ) is True
     assert len(drawn) == 1
-    # No wall image can collide with the sentinel, so the next real wall
-    # differs from it and triggers exactly one redraw.
-    assert not fc.NOTICE_HASH.startswith(tuple("0123456789abcdef"))
 
 
 def test_a_panel_that_cannot_be_drawn_leaves_the_frame_alone():
     def explode():
         raise RuntimeError("no panel wired up")
 
-    assert fc.show_notice("x", (200, 150), 0, panel_factory=explode) is None
+    assert fc.show_notice("x", (200, 150), 0, panel_factory=explode) is False
 
 
-def test_a_missing_recorder_is_reported_quietly_not_as_a_crash():
-    """The recorder being away is the expected case during the boot search and
-    for as long as the notice is up. A traceback every five seconds says
-    nothing but "connection refused" and buries anything that matters."""
-    import logging
-
-    def handler(request):
-        raise httpx.ConnectError("refused")
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+@contextlib.contextmanager
+def _captured_logs():
     records = []
 
     class Collector(logging.Handler):
@@ -671,23 +662,88 @@ def test_a_missing_recorder_is_reported_quietly_not_as_a_crash():
             records.append(record)
 
     collector = Collector()
-    fc.logger.addHandler(collector)
     previous = fc.logger.level
-    fc.logger.setLevel(logging.INFO)  # the quiet path logs at INFO
+    fc.logger.addHandler(collector)
+    fc.logger.setLevel(logging.INFO)
     try:
-        assert fc.refresh_once(
-            "http://recorder/wall.png", (40, 30), 0, None,
-            client=client, quiet=True, crisp_text=False,
-        ) is None
-        assert [r.exc_info for r in records] == [None], "no traceback"
-        assert "no answer" in records[0].getMessage()
-
-        records.clear()
-        fc.refresh_once(
-            "http://recorder/wall.png", (40, 30), 0, None,
-            client=client, crisp_text=False,
-        )
-        assert records[0].exc_info is not None, "a real fault still gets one"
+        yield records
     finally:
         fc.logger.removeHandler(collector)
         fc.logger.setLevel(previous)
+
+
+def _refusing_client():
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_the_boot_searchs_misses_are_not_news():
+    """At boot the frame hasn't found the recorder yet, so `Contact` starts
+    unreachable and a minute of looking logs a line per try, not a minute of
+    stack traces that say nothing but "connection refused"."""
+    contact = fc.Contact()
+    assert contact.reachable is False
+    with _captured_logs() as records:
+        assert fc.refresh_once(
+            "http://recorder/wall.png", (40, 30), 0, None,
+            client=_refusing_client(), crisp_text=False, contact=contact,
+        ) is None
+    assert [r.exc_info for r in records] == [None], "no traceback"
+    assert "still no answer" in records[0].getMessage()
+
+
+def test_losing_a_recorder_is_loud_once_then_quiet():
+    """The case the first attempt at this missed (review, 2026-08-20): a
+    recorder that goes away AFTER a good wall. Worth one stack trace — that's
+    real news — and then one line per retry, not a traceback every 300 s all
+    night."""
+    contact = fc.Contact(reachable=True)  # a wall was drawn a moment ago
+    client = _refusing_client()
+    with _captured_logs() as records:
+        for _ in range(3):
+            fc.refresh_once(
+                "http://recorder/wall.png", (40, 30), 0, "old-hash",
+                client=client, crisp_text=False, contact=contact,
+            )
+    assert records[0].exc_info is not None, "losing it is worth a traceback"
+    assert [r.exc_info for r in records[1:]] == [None, None], "then quiet"
+    assert contact.reachable is False
+
+
+def test_a_recorder_that_comes_back_resets_the_volume():
+    """So the NEXT outage is reported as news again rather than swallowed."""
+    contact = fc.Contact(reachable=False)
+
+    def handler(request):
+        return httpx.Response(200, content=_png_bytes())
+
+    fc.refresh_once(
+        "http://recorder/wall.png", (40, 30), 0, None,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        crisp_text=False, contact=contact,
+        panel_factory=lambda: object(), push=lambda _p, _i: None,
+    )
+    assert contact.reachable is True
+
+    with _captured_logs() as records:
+        fc.refresh_once(
+            "http://recorder/wall.png", (40, 30), 0, "hash",
+            client=_refusing_client(), crisp_text=False, contact=contact,
+        )
+    assert records[0].exc_info is not None, "a fresh outage is news again"
+
+
+def test_a_long_notice_is_shrunk_to_fit_rather_than_clipped():
+    """The caller passes the text, so a longer string is a matter of somebody
+    writing one — and half a sentence centred on a wall reads as a broken
+    frame, not a message."""
+    import numpy as np
+
+    long_text = "Looking for the bird recorder somewhere on this network"
+    for text in ("Looking for recorder", long_text):
+        panel = fc.render_notice(text, (400, 300), 0)
+        ink = np.asarray(panel.convert("L")) < 128
+        cols = np.nonzero(ink)[1]
+        assert cols.min() > 2 and cols.max() < 397, f"{text!r} runs off the sheet"

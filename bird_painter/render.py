@@ -78,6 +78,10 @@ DOUBLE_X = 1
 # The house serif lives in `fonts` — the frame client needs the same faces for
 # its own notices and must not import this module to get them (it runs on a Pi
 # installed with --no-deps, without scipy).
+#
+# These are bound once at import, so patching `fonts.SERIF` will NOT change
+# what this module resolves; patch `render._SERIF` (which is what the font
+# fallback test does).
 _SERIF = fonts_module.SERIF
 _SERIF_ITALIC = fonts_module.SERIF_ITALIC
 _first_existing = fonts_module.first_existing
