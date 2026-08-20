@@ -652,3 +652,42 @@ def test_a_panel_that_cannot_be_drawn_leaves_the_frame_alone():
         raise RuntimeError("no panel wired up")
 
     assert fc.show_notice("x", (200, 150), 0, panel_factory=explode) is None
+
+
+def test_a_missing_recorder_is_reported_quietly_not_as_a_crash():
+    """The recorder being away is the expected case during the boot search and
+    for as long as the notice is up. A traceback every five seconds says
+    nothing but "connection refused" and buries anything that matters."""
+    import logging
+
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    records = []
+
+    class Collector(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    collector = Collector()
+    fc.logger.addHandler(collector)
+    previous = fc.logger.level
+    fc.logger.setLevel(logging.INFO)  # the quiet path logs at INFO
+    try:
+        assert fc.refresh_once(
+            "http://recorder/wall.png", (40, 30), 0, None,
+            client=client, quiet=True, crisp_text=False,
+        ) is None
+        assert [r.exc_info for r in records] == [None], "no traceback"
+        assert "no answer" in records[0].getMessage()
+
+        records.clear()
+        fc.refresh_once(
+            "http://recorder/wall.png", (40, 30), 0, None,
+            client=client, crisp_text=False,
+        )
+        assert records[0].exc_info is not None, "a real fault still gets one"
+    finally:
+        fc.logger.removeHandler(collector)
+        fc.logger.setLevel(previous)

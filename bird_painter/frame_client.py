@@ -661,7 +661,13 @@ def main() -> None:
     while True:
         before = last_hash
         last_hash = refresh_once(
-            url, size, rotate, last_hash, timeout=timeout, crisp_text=crisp_text
+            url, size, rotate, last_hash,
+            timeout=timeout,
+            crisp_text=crisp_text,
+            # While the notice is up, the recorder being absent is still the
+            # expected case — one line per try, not a traceback every five
+            # seconds for as long as it stays away.
+            quiet=last_hash == NOTICE_HASH,
         )
         if last_hash != before:
             # refresh_once only returns a new hash when it actually pushed to
