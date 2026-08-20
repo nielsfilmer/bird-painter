@@ -32,10 +32,18 @@ ANCHOR_BOX_AREA = 0.30
 RECENT_COUNT = 5
 # Relative plate widths by recency rank. The newest dominates, the recent
 # five sit a step below it, and everything older tapers off with age.
+#
+# The ring tapers WITHIN itself as well. A flat ring band read as "nothing
+# gets smaller with age" on the panel (owner, 2026-08-20) — and it always
+# would have, because a wall of six birds is the newest plus exactly
+# RECENT_COUNT others, so the old-bird taper below never ran at all. Six
+# birds is a completely ordinary wall, so the size story has to be legible
+# without a seventh.
 NEWEST_WEIGHT = 1.0
-RECENT_WEIGHT = 0.72
-OLD_WEIGHT_MAX = 0.58
-OLD_WEIGHT_MIN = 0.42
+RECENT_WEIGHT_MAX = 0.78
+RECENT_WEIGHT_MIN = 0.62
+OLD_WEIGHT_MAX = 0.56
+OLD_WEIGHT_MIN = 0.40
 # How much of the usable sheet the plates' footprints aim to occupy. The
 # global scale is solved from this, so two birds come out big and twelve
 # come out small without separate rules per count.
@@ -54,6 +62,15 @@ BOTTOM_MARGIN = 0.05
 GAP_VMIN = 0.8
 # Candidate positions sampled per bird; the scorer picks among the valid ones.
 CANDIDATES = 60
+# The recent five are placed in POLAR coordinates around the anchor: each
+# takes a sector of the circle and creeps outward from the anchor until it
+# stops overlapping, so it ends up as close as it can get. Sampling them
+# uniformly over the whole sheet (as this did until 2026-08-20) barely ever
+# offered a spot near the anchor, so "nearest valid of sixty distant ones"
+# won and the ring never actually surrounded anything.
+RING_STEPS = 48  # radii tried, innermost first
+RING_STEP = 0.35  # each step outward, as a share of the bird's own size
+RING_WOBBLE = 0.30  # radians of jitter within a sector, so it isn't a clock face
 # When a pass can't place everything, shrink and retry; the last pass places
 # regardless, so the function cannot fail outright.
 SHRINK = 0.94
@@ -61,7 +78,10 @@ MAX_PASSES = 30
 # How strongly the small old birds prefer the outskirts, scaled by how much
 # smaller than the newest they are (0 = ignore the edges, 1 = the edge matters
 # as much as emptiness). The recent five aren't affected — they hug the anchor.
-EDGE_PULL = 0.9
+# Both terms it weighs are normalised to 0..1 first; when they were raw pixel
+# distances the edge term simply outweighed emptiness and pinned every old
+# bird to a border (owner, 2026-08-20).
+EDGE_PULL = 0.55
 # Sanity caps so one lone bird doesn't become a poster.
 MAX_NEWEST_WIDTH = 0.46  # of usable width
 MAX_NEWEST_HEIGHT = 0.92  # of usable height, footprint incl. caption
@@ -80,17 +100,23 @@ class Placement:
     height_vmin: float = 0.0
 
 
+def _ramp(lo: float, hi: float, i: int, n: int) -> float:
+    """`hi` at i=0 down to `lo` at i=n-1 (or `hi` when there's only one)."""
+    return hi if n <= 1 else hi + (lo - hi) * (i / (n - 1))
+
+
 def _weights(count: int) -> list[float]:
     weights = []
+    ring = min(RECENT_COUNT, count - 1)
     olds = count - RECENT_COUNT - 1
     for rank in range(count):
         if rank == 0:
             weight = NEWEST_WEIGHT
         elif rank <= RECENT_COUNT:
-            weight = RECENT_WEIGHT
+            weight = _ramp(RECENT_WEIGHT_MIN, RECENT_WEIGHT_MAX, rank - 1, ring)
         else:
-            t = 0.0 if olds <= 1 else (rank - RECENT_COUNT - 1) / (olds - 1)
-            weight = OLD_WEIGHT_MAX + (OLD_WEIGHT_MIN - OLD_WEIGHT_MAX) * t
+            age = rank - RECENT_COUNT - 1
+            weight = _ramp(OLD_WEIGHT_MIN, OLD_WEIGHT_MAX, age, olds)
         weights.append(weight)
     return weights
 
@@ -109,7 +135,9 @@ def _try_layout(
 ):
     """One placement attempt at one scale. None = didn't fit, go smaller."""
     placed = []  # (cx, cy, rect)
-    anchor = None
+    anchor = anchor_foot = None
+    ring_phase = rng.random() * math.tau  # where the rosette's first bird sits
+    diag = math.hypot(uw, uh)
     for i, _file in enumerate(files):
         w = dims[i][0] * scale
         plate_h = dims[i][1] * scale
@@ -130,6 +158,7 @@ def _try_layout(
             cx = min(max(cx, min_cx), max_cx)
             cy = min(max(cy, min_cy), max_cy)
             anchor = (cx, cy)
+            anchor_foot = (foot_w, plate_h)
             placed.append(
                 (cx, cy,
                  (cx - foot_w / 2, cy - plate_h / 2,
@@ -137,35 +166,73 @@ def _try_layout(
             )
             continue
 
+        def _rect(cx, cy, foot_w=foot_w, plate_h=plate_h, foot_h=foot_h):
+            return (cx - foot_w / 2, cy - plate_h / 2,
+                    cx + foot_w / 2, cy - plate_h / 2 + foot_h)
+
+        if i <= RECENT_COUNT:
+            # The recent five surround the newest. Each owns a sector of the
+            # circle and creeps outward from the anchor until it clears its
+            # neighbours, so it lands as close to the anchor as it can — which
+            # is what "gathered around it" means, and what sampling the whole
+            # sheet could never produce.
+            sector = math.tau / min(RECENT_COUNT, len(files) - 1)
+            angle = (
+                ring_phase
+                + (i - 1) * sector
+                + (rng.random() - 0.5) * RING_WOBBLE
+            )
+            step = RING_STEP * max(foot_w, foot_h)
+            start = 0.5 * (
+                min(anchor_foot[0], anchor_foot[1]) + min(foot_w, foot_h)
+            )
+            spot = None
+            for k in range(RING_STEPS):
+                radius = start + k * step
+                cx = anchor[0] + radius * math.cos(angle)
+                cy = anchor[1] + radius * math.sin(angle)
+                cx, cy = min(max(cx, min_cx), max_cx), min(max(cy, min_cy), max_cy)
+                rect = _rect(cx, cy)
+                if not any(_overlaps(rect, r, gap) for _, _, r in placed):
+                    spot = (cx, cy, rect)
+                    break
+            if spot is None:
+                if not force:
+                    return None  # shrink and try again: the rosette didn't fit
+                cx = min(max(anchor[0] + start * math.cos(angle), min_cx), max_cx)
+                cy = min(max(anchor[1] + start * math.sin(angle), min_cy), max_cy)
+                spot = (cx, cy, _rect(cx, cy))
+            placed.append(spot)
+            continue
+
         best = None
         for _ in range(CANDIDATES):
             cx = rng.uniform(min_cx, max_cx)
             cy = rng.uniform(min_cy, max_cy)
-            rect = (cx - foot_w / 2, cy - plate_h / 2,
-                    cx + foot_w / 2, cy - plate_h / 2 + foot_h)
+            rect = _rect(cx, cy)
             collides = any(_overlaps(rect, r, gap) for _, _, r in placed)
             if collides and not force:
                 continue
-            if i <= RECENT_COUNT:
-                # The recent five hug the newest: nearest valid spot wins,
-                # and non-overlap pushes each successive one further around
-                # the ring.
-                score = -((cx - anchor[0]) ** 2 + (cy - anchor[1]) ** 2)
-            else:
-                # Older (smaller) birds fill the emptiest region — the
-                # candidate whose nearest neighbour is farthest wins — with a
-                # pull toward the sheet's edges on top (owner: small birds on
-                # the outskirts, large ones inside). The pull grows as the
-                # bird shrinks, so the oldest drift furthest out while the
-                # composition's centre stays with the big recent birds.
-                nearest = math.sqrt(min(
-                    (cx - px) ** 2 + (cy - py) ** 2 for px, py, _ in placed
-                ))
-                from_centre = math.hypot(
-                    cx - (left + uw / 2), cy - (top + uh / 2)
-                )
-                outward = EDGE_PULL * (1 - dims[i][0] * scale / (dims[0][0] * scale))
-                score = nearest + outward * from_centre
+            # Older (smaller) birds fill the emptiest region — the candidate
+            # whose nearest neighbour is farthest wins — with a pull outward
+            # on top (owner: small birds on the outskirts, large ones inside).
+            # The pull grows as the bird shrinks, so the oldest drift furthest
+            # out. Both terms are normalised to 0..1 so the two actually trade
+            # off; as raw pixel distances the pull simply won and pinned every
+            # old bird to a border.
+            #
+            # Outward means away from the ANCHOR, not from the middle of the
+            # sheet. The anchor is where the composition's weight sits, and it
+            # can be well off-centre — measured from the sheet's middle, the
+            # small birds happily filled the space between the anchor and the
+            # far edge, i.e. straight through the ring they're supposed to be
+            # outside of.
+            nearest = math.sqrt(min(
+                (cx - px) ** 2 + (cy - py) ** 2 for px, py, _ in placed
+            ))
+            from_focus = math.hypot(cx - anchor[0], cy - anchor[1])
+            outward = EDGE_PULL * (1 - dims[i][0] / dims[0][0])
+            score = nearest / diag + outward * from_focus / (diag / 2)
             if collides:
                 score -= 1e12  # forced pass: overlap only as a last resort
             if best is None or score > best[0]:

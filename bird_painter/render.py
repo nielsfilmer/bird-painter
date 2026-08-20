@@ -51,6 +51,10 @@ GROUND_TOLERANCE = 6
 # A connected ink component smaller than this share of the total ink is a
 # speck (JPEG noise, a stray droplet), not part of the bird.
 SPECK_SHARE = 0.004
+# Finding a plate's ground (see _ground_level): a ground is light, and smears
+# over a few adjacent levels once JPEG has been at it.
+GROUND_MIN_LUM = 200
+GROUND_SMOOTH = 5
 # Air between a bird's feet and its name, on the panel (in vmin).
 CAPTION_GAP_VMIN = 1.4
 # The panel's top margin, once the title is gone.
@@ -147,6 +151,46 @@ def _feather_mask(w: int, h: int, soft: bool = True) -> Image.Image:
     return Image.fromarray((a * 255).astype("uint8"), "L")
 
 
+def _ground_level(luminance: np.ndarray) -> float:
+    """This plate's own ground brightness, as a luminance.
+
+    The border's median was the first rule and it has one bad case, which the
+    owner spotted on the panel (2026-08-20): FLUX sometimes paints a light-grey
+    field inside a white outer border. The border then reads 255, nothing is
+    keyed out, and the plate lands on the white panel as a grey rectangle with
+    a small bird in it — the newest bird, at that, looking like the smallest.
+
+    So instead of asking the border, ask the whole plate: the ground is its
+    most common LIGHT level. That is what a ground is — the one tone covering
+    more of the sheet than anything else. It picks the grey field on the four
+    archived plates that have one, and keying everything brighter than it
+    removes the white border along with it.
+
+    Two rules were tried before this one. A fixed 246 misses any plate whose
+    ground is darker. "The darkest level covering >2% of the plate" catches
+    those, but also catches a hawfinch's breast, an owl's chest and a collared
+    dove's entire body — pale birds came out as hollow shells, because a big
+    pale bird IS a large light region; only "most common" separates the two,
+    and it does so on all 200 archived plates."""
+    counts = np.bincount(
+        np.clip(luminance, 0, 255).astype(np.uint8).ravel(), minlength=256
+    ).astype(np.float64)
+    # A flat field lands on a few adjacent levels once JPEG has been at it.
+    spread = np.convolve(counts, np.ones(GROUND_SMOOTH), mode="same")
+    spread[:GROUND_MIN_LUM] = 0.0  # a ground is light, by house style
+    if not spread.any():
+        border = np.concatenate([
+            luminance[0], luminance[-1], luminance[:, 0], luminance[:, -1],
+        ])
+        return float(np.median(border))
+    return float(spread.argmax())
+
+
+def _ink_key(luminance: np.ndarray) -> float:
+    """Below this luminance a pixel is the bird, not the plate's ground."""
+    return min(WHITE_KEY, _ground_level(luminance) - GROUND_TOLERANCE)
+
+
 def _drop_ground(bird: Image.Image) -> Image.Image:
     """Alpha that hides the plate's own near-white ground.
 
@@ -154,11 +198,7 @@ def _drop_ground(bird: Image.Image) -> Image.Image:
     panel has nothing to blend with, so the ground has to be keyed out or it
     haloes."""
     luminance = np.asarray(bird.convert("L"), dtype=np.float32)
-    border = np.concatenate([
-        luminance[0], luminance[-1], luminance[:, 0], luminance[:, -1],
-    ])
-    # Key against this plate's own ground for the same reason the crop does.
-    key = min(WHITE_KEY, float(np.median(border)) - GROUND_TOLERANCE + 1)
+    key = _ink_key(luminance) + 1
     solid = key - (WHITE_KEY - WHITE_SOLID)
     alpha = (key - luminance) / max(key - solid, 1.0)
     return Image.fromarray((np.clip(alpha, 0.0, 1.0) * 255).astype("uint8"), "L")
@@ -199,13 +239,8 @@ def _fit_to_cell(bird: Image.Image, w: int, h: int) -> Image.Image:
     # The threshold has to follow the plate's OWN ground, not a fixed number:
     # FLUX paints some plates on 245-grey, and against a fixed 246 every pixel
     # counts as ink, so the crop does nothing and that bird renders visibly
-    # smaller than its neighbours. The border's median is the ground by
-    # construction — the bird is in the middle.
-    border = np.concatenate([
-        pixels[0], pixels[-1], pixels[:, 0], pixels[:, -1],
-    ])
-    ground = float(np.median(border))
-    mask = pixels < min(WHITE_KEY, ground - GROUND_TOLERANCE)
+    # smaller than its neighbours.
+    mask = pixels < _ink_key(pixels)
     if not mask.any():
         return bird.resize((w, h))
     top, left, bottom, right = _ink_bounds(mask)
@@ -262,11 +297,7 @@ def _ink_aspect(path: Path) -> float:
         image = Image.open(path).convert("L")
         image.thumbnail((256, 256))
         pixels = np.asarray(image)
-        border = np.concatenate(
-            [pixels[0], pixels[-1], pixels[:, 0], pixels[:, -1]]
-        )
-        key = min(WHITE_KEY, float(np.median(border)) - GROUND_TOLERANCE)
-        mask = pixels < key
+        mask = pixels < _ink_key(pixels)
         if not mask.any():
             return PLATE_ASPECT
         top, left, bottom, right = _ink_bounds(mask)

@@ -90,3 +90,36 @@ def test_ink_bounds_keep_a_thin_tail_but_drop_a_far_speck():
     assert right >= 170, "the tail tip must survive"
     assert left <= 55, "the crown must survive"
     assert top >= 80 and bottom <= 121, "the far speck must not stretch the box"
+
+
+PLATES = Path(__file__).parent / "fixtures" / "plates"
+
+
+def test_a_grey_field_inside_a_white_border_is_read_as_ground():
+    """A real archived plate FLUX painted on light grey inside a white border.
+    The border's median says 255, so nothing was keyed out and the plate landed
+    on the white panel as a grey rectangle with a small bird in it — the newest
+    bird at that, looking like the smallest (owner, 2026-08-20)."""
+    import numpy as np
+    from PIL import Image
+
+    from bird_painter.render import _ground_level, _ink_key
+
+    pixels = np.asarray(Image.open(PLATES / "grey-field-gull.jpg").convert("L"))
+    assert _ground_level(pixels) < 246, "the grey field is the ground, not the border"
+    assert (pixels < _ink_key(pixels)).mean() < 0.25, "the field is not the bird"
+
+
+def test_a_pale_bird_on_white_keeps_its_body():
+    """The counterweight, and a real regression: a rule that took the darkest
+    well-covered light level instead of the most common one read this
+    hawfinch's breast as ground and rendered it as a hollow shell."""
+    import numpy as np
+    from PIL import Image
+
+    from bird_painter.render import _ground_level, _ink_key
+
+    pixels = np.asarray(Image.open(PLATES / "pale-bird-hawfinch.jpg").convert("L"))
+    assert _ground_level(pixels) >= 246, "a white plate's ground is white"
+    ink = pixels < _ink_key(pixels)
+    assert ink.mean() > 0.15, "the pale breast is part of the bird"

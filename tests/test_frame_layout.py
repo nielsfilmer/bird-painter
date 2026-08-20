@@ -41,11 +41,20 @@ def footprint(p):
 def test_newest_is_largest_then_recent_then_tapering_old():
     sizes = [p.size_vmin for p in place(12)]
     assert sizes[0] > sizes[1], "the newest bird dominates"
+    assert sizes == sorted(sizes, reverse=True), "size only ever falls with age"
     recent = sizes[1 : RECENT_COUNT + 1]
-    assert max(recent) - min(recent) < 1e-9, "the recent five share one size"
+    assert recent[0] > recent[-1], "the ring itself tapers"
     old = sizes[RECENT_COUNT + 1 :]
-    assert all(o < recent[0] for o in old), "older birds are smaller still"
-    assert old == sorted(old, reverse=True), "and shrink with age"
+    assert all(o < recent[-1] for o in old), "older birds are smaller still"
+
+
+def test_a_six_bird_wall_still_shows_its_recency():
+    """Six birds is the newest plus exactly RECENT_COUNT others, so the
+    old-bird taper never runs — and with a flat ring band nothing on the panel
+    got smaller with age at all (owner, 2026-08-20)."""
+    sizes = [p.size_vmin for p in place(6)]
+    assert sizes == sorted(sizes, reverse=True)
+    assert sizes[-1] < 0.85 * sizes[1], "the oldest is visibly below the newest"
 
 
 def test_the_anchor_sits_inside_the_central_box():
@@ -127,17 +136,19 @@ def test_an_empty_wall_places_nothing():
 
 
 def test_smaller_birds_sit_further_out_than_larger_ones():
-    """Owner: keep the smaller birds on the outskirts, the larger inside. The
-    newest (largest) anchors the centre region; the oldest (smallest) should
-    average a decisively greater distance from the sheet's centre than the
-    recent five."""
-    centre_y = BAND_TOP / 2  # usable area sits below the top margin
+    """Owner: keep the smaller birds on the outskirts, the larger inside.
 
-    def from_centre(p):
-        return math.hypot(p.x, p.y - centre_y)
-
+    Measured from the NEWEST bird, which is where the composition's weight
+    sits — the anchor can be well off-centre, and against the sheet's middle
+    the smallest birds scored well by sitting between the anchor and the far
+    edge, which is inside the ring they belong outside of."""
     for salt in ("", "a", "b"):
         placements = place(12, salt)
-        ring = [from_centre(p) for p in placements[1 : RECENT_COUNT + 1]]
-        oldest = [from_centre(p) for p in placements[-3:]]  # the smallest three
+        newest = placements[0]
+
+        def from_focus(p, newest=newest):
+            return math.hypot(p.x - newest.x, p.y - newest.y)
+
+        ring = [from_focus(p) for p in placements[1 : RECENT_COUNT + 1]]
+        oldest = [from_focus(p) for p in placements[-3:]]  # the smallest three
         assert sum(oldest) / len(oldest) > 1.15 * (sum(ring) / len(ring)), salt
