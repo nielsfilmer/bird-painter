@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
+from . import fonts as fonts_module
 from .frame_layout import compute_frame_scatter
 from .wall_layout import PLATE_ASPECT, compute_collage
 
@@ -74,24 +75,16 @@ STYLES = ("wall", "panel")
 # of doubling is the half-step that both lines wanted.
 DOUBLE_X = 1
 
-# Serif faces to try, in order, when no font is configured. Raspberry Pi OS /
-# Debian first (the deploy target), then macOS (dev). Falls back to Pillow's
-# bundled bitmap font if none exist — captions still render, just plainer.
-_SERIF = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-    "/System/Library/Fonts/Supplemental/Georgia.ttf",
-    "/Library/Fonts/Georgia.ttf",
-]
-_SERIF_ITALIC = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf",
-    "/System/Library/Fonts/Supplemental/Georgia Italic.ttf",
-]
-
-
-def _first_existing(paths: list[str]) -> str | None:
-    return next((p for p in paths if Path(p).exists()), None)
+# The house serif lives in `fonts` — the frame client needs the same faces for
+# its own notices and must not import this module to get them (it runs on a Pi
+# installed with --no-deps, without scipy).
+#
+# These are bound once at import, so patching `fonts.SERIF` will NOT change
+# what this module resolves; patch `render._SERIF` (which is what the font
+# fallback test does).
+_SERIF = fonts_module.SERIF
+_SERIF_ITALIC = fonts_module.SERIF_ITALIC
+_first_existing = fonts_module.first_existing
 
 
 class _Fonts:

@@ -2,7 +2,9 @@
 is hardware-only, so these test the pure image processing + the fetch→draw
 cycle logic with a fake panel (no Waveshare lib, no real SPI)."""
 
+import contextlib
 import io
+import logging
 
 import httpx
 import pytest
@@ -552,3 +554,196 @@ def test_stamping_leaves_only_panel_colours():
     stamped = fc.stamp_text(picture, soft)
     used = {color for _count, color in stamped.getcolors(maxcolors=4096)}
     assert used <= set(fc.PANEL_PALETTE)
+
+
+def test_the_search_draws_the_wall_as_soon_as_the_recorder_answers():
+    """The search IS a draw attempt, not a liveness ping: a recorder that's up
+    costs no extra request, and its wall goes on the panel immediately."""
+    attempts = []
+
+    def draw():
+        attempts.append(1)
+        return "wall-hash" if len(attempts) == 3 else None
+
+    slept = []
+    clock = [0.0]
+
+    def sleep(seconds):
+        slept.append(seconds)
+        clock[0] += seconds
+
+    result = fc.search_for_recorder(
+        draw, search_seconds=60, poll_seconds=5,
+        now=lambda: clock[0], sleep=sleep,
+    )
+    assert result == "wall-hash"
+    assert len(attempts) == 3, "stopped as soon as it found one"
+    assert slept == [5, 5]
+
+
+def test_the_search_gives_up_after_its_window_and_never_overruns_it():
+    clock = [0.0]
+
+    def sleep(seconds):
+        clock[0] += seconds
+
+    attempts = []
+    result = fc.search_for_recorder(
+        lambda: attempts.append(1),  # always None: nothing ever answers
+        search_seconds=12, poll_seconds=5,
+        now=lambda: clock[0], sleep=sleep,
+    )
+    assert result is None
+    assert clock[0] == 12, "the last wait is trimmed to the deadline, not past it"
+    assert len(attempts) == 4  # t=0, 5, 10, 12
+
+
+def test_a_recorder_that_answers_immediately_is_never_interrupted_by_a_notice():
+    """The notice costs a ~30 s redraw and wears the panel, so it must only
+    appear when the search actually found nothing."""
+    assert fc.search_for_recorder(
+        lambda: "wall-hash", search_seconds=60,
+        now=lambda: 0.0, sleep=lambda _s: None,
+    ) == "wall-hash"
+
+
+def test_the_notice_is_centred_crisp_and_only_panel_colours():
+    panel = fc.render_notice("Looking for recorder", (400, 300), 0)
+    assert panel.size == (400, 300)
+    used = {color for _count, color in panel.getcolors(maxcolors=4096)}
+    assert used <= set(fc.PANEL_PALETTE), "no dithered grey on a six-colour panel"
+    assert (0, 0, 0) in used and (255, 255, 255) in used
+
+    import numpy as np
+
+    ink = np.asarray(panel.convert("L")) < 128
+    assert ink.any(), "there is text"
+    rows, cols = np.nonzero(ink)
+    # Centred: the ink's own middle sits at the panel's middle.
+    assert abs((cols.min() + cols.max()) / 2 - 200) < 6
+    assert abs((rows.min() + rows.max()) / 2 - 150) < 6
+    # And it doesn't run off the sheet.
+    assert cols.min() > 4 and cols.max() < 396
+
+
+def test_the_notice_reads_the_right_way_up_on_a_rotated_panel():
+    for rotate in (0, 90, 180, 270):
+        size = (300, 400) if rotate in (90, 270) else (400, 300)
+        panel = fc.render_notice("Looking for recorder", size, rotate)
+        assert panel.size == size, f"rotate={rotate}"
+
+
+def test_the_notice_is_drawn_once_and_yields_to_the_first_wall():
+    """An e-paper redraw wears the panel, so the notice is drawn once and any
+    real wall replaces it. While it's up `last_hash` stays None, so a failed
+    fetch changes nothing and the first successful one differs from it."""
+    drawn = []
+    assert fc.show_notice(
+        "Looking for recorder", (200, 150), 0,
+        panel_factory=lambda: object(),
+        push=lambda _panel, image: drawn.append(image),
+    ) is True
+    assert len(drawn) == 1
+
+
+def test_a_panel_that_cannot_be_drawn_leaves_the_frame_alone():
+    def explode():
+        raise RuntimeError("no panel wired up")
+
+    assert fc.show_notice("x", (200, 150), 0, panel_factory=explode) is False
+
+
+@contextlib.contextmanager
+def _captured_logs():
+    records = []
+
+    class Collector(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    collector = Collector()
+    previous = fc.logger.level
+    fc.logger.addHandler(collector)
+    fc.logger.setLevel(logging.INFO)
+    try:
+        yield records
+    finally:
+        fc.logger.removeHandler(collector)
+        fc.logger.setLevel(previous)
+
+
+def _refusing_client():
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_the_boot_searchs_misses_are_not_news():
+    """At boot the frame hasn't found the recorder yet, so `Contact` starts
+    unreachable and a minute of looking logs a line per try, not a minute of
+    stack traces that say nothing but "connection refused"."""
+    contact = fc.Contact()
+    assert contact.reachable is False
+    with _captured_logs() as records:
+        assert fc.refresh_once(
+            "http://recorder/wall.png", (40, 30), 0, None,
+            client=_refusing_client(), crisp_text=False, contact=contact,
+        ) is None
+    assert [r.exc_info for r in records] == [None], "no traceback"
+    assert "still no answer" in records[0].getMessage()
+
+
+def test_losing_a_recorder_is_loud_once_then_quiet():
+    """The case the first attempt at this missed (review, 2026-08-20): a
+    recorder that goes away AFTER a good wall. Worth one stack trace — that's
+    real news — and then one line per retry, not a traceback every 300 s all
+    night."""
+    contact = fc.Contact(reachable=True)  # a wall was drawn a moment ago
+    client = _refusing_client()
+    with _captured_logs() as records:
+        for _ in range(3):
+            fc.refresh_once(
+                "http://recorder/wall.png", (40, 30), 0, "old-hash",
+                client=client, crisp_text=False, contact=contact,
+            )
+    assert records[0].exc_info is not None, "losing it is worth a traceback"
+    assert [r.exc_info for r in records[1:]] == [None, None], "then quiet"
+    assert contact.reachable is False
+
+
+def test_a_recorder_that_comes_back_resets_the_volume():
+    """So the NEXT outage is reported as news again rather than swallowed."""
+    contact = fc.Contact(reachable=False)
+
+    def handler(request):
+        return httpx.Response(200, content=_png_bytes())
+
+    fc.refresh_once(
+        "http://recorder/wall.png", (40, 30), 0, None,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        crisp_text=False, contact=contact,
+        panel_factory=lambda: object(), push=lambda _p, _i: None,
+    )
+    assert contact.reachable is True
+
+    with _captured_logs() as records:
+        fc.refresh_once(
+            "http://recorder/wall.png", (40, 30), 0, "hash",
+            client=_refusing_client(), crisp_text=False, contact=contact,
+        )
+    assert records[0].exc_info is not None, "a fresh outage is news again"
+
+
+def test_a_long_notice_is_shrunk_to_fit_rather_than_clipped():
+    """The caller passes the text, so a longer string is a matter of somebody
+    writing one — and half a sentence centred on a wall reads as a broken
+    frame, not a message."""
+    import numpy as np
+
+    long_text = "Looking for the bird recorder somewhere on this network"
+    for text in ("Looking for recorder", long_text):
+        panel = fc.render_notice(text, (400, 300), 0)
+        ink = np.asarray(panel.convert("L")) < 128
+        cols = np.nonzero(ink)[1]
+        assert cols.min() > 2 and cols.max() < 397, f"{text!r} runs off the sheet"

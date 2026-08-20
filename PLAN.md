@@ -535,3 +535,26 @@ whole magic; ship it first.
   one by the text layer's image MODE, not by an error: FastAPI ignores query
   params a route doesn't declare, so an old recorder answers 200 with the
   ordinary wall, and treating that as a mask stamps the panel black.
+- **2026-08-20** — **The frame says when it can't find the recorder.** At boot
+  it looks for `BP_FRAME_SEARCH_SECONDS` (60) and only then, having found
+  nothing, draws a centred "Looking for recorder". The two machines are on one
+  network and don't boot in step — the frame is usually first — so until now it
+  sat on whatever the panel happened to be holding, with nothing to separate
+  "waiting" from "broken".
+  - The notice appears ONLY if the search found nothing. A redraw takes ~30 s
+    and wears the panel, so announcing a wait that turned out to be four
+    seconds costs more than it's worth.
+  - The search is a real fetch-and-draw attempt, not a liveness ping, so a
+    recorder that IS up costs no extra request — the first success puts its
+    wall straight on the panel. There is no cheaper probe worth having: `HEAD
+    /wall.png` is refused (405) and `/api` doesn't exist on older recorders, so
+    probing it would report a good recorder as missing.
+  - A recorder that vanishes AFTER a successful boot does NOT bring the notice
+    back: a wall of real birds is better company than an apology, and the frame
+    is an ornament, not a status board. It keeps the last wall and retries
+    quickly until the recorder returns.
+  - The notice is drawn through the same mask-and-stamp path as the wall's
+    captions, so its type is crisp rather than dithered into speckle, and it
+    reads the right way up on a panel hung portrait.
+  - `BP_FRAME_SEARCH_SECONDS=0` disables the notice; the frame still looks, it
+    just never says so.
