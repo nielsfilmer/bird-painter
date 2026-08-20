@@ -149,9 +149,42 @@ ENDPOINTS: list[dict] = [
         "summary": "The wall as an image",
         "description": (
             "The same collage rendered server-side, for the e-paper frame — "
-            "which can't run a browser. Size follows BP_WALL_PNG_WIDTH/HEIGHT."
+            "which can't run a browser. Size follows BP_WALL_PNG_WIDTH/HEIGHT. "
+            "The defaults render the browser wall exactly as it has always "
+            "been; the e-paper frame asks for style=panel and fetches the two "
+            "layers separately, because dithering an 8px italic turns it into "
+            "speckle — it dithers the picture and stamps the text through the "
+            "mask afterwards in flat panel black."
         ),
+        "params": [
+            {
+                "name": "style",
+                "type": "enum",
+                "default": "wall",
+                "note": (
+                    "wall = the browser's cream paper and spiral collage; "
+                    "panel = the e-paper frame — the panel's own white as the "
+                    "ground (cream isn't one of its six colours and dithers "
+                    "into a speckle everywhere), the focal scatter, birds "
+                    "fitted to their own ink, and no title"
+                ),
+            },
+            {
+                "name": "layer",
+                "type": "enum",
+                "default": "all",
+                "note": (
+                    "all = one finished image; picture = the collage with no "
+                    "lettering; text = the lettering alone, as an 8-bit "
+                    "grayscale mask (white where ink goes)"
+                ),
+            },
+        ],
         "returns": "image/png",
+        "statuses": {
+            "200": "the render",
+            "422": "style or layer wasn't one of the values above",
+        },
     },
     {
         "method": "POST",

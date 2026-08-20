@@ -91,6 +91,35 @@ def test_wall_png_renders_when_empty(config):
         assert response.headers["content-type"] == "image/png"
 
 
+def test_wall_png_serves_every_style_and_layer(config):
+    """The e-paper frame asks for `style=panel` and fetches the picture and the
+    lettering separately. The text layer must come back as an 8-bit grayscale
+    MASK — the frame tells a real mask from an older recorder's ordinary wall
+    by exactly that, so if this ever returned RGB the panel would go black."""
+    import io
+
+    from PIL import Image
+
+    small = dataclasses.replace(config, wall_png_width=320, wall_png_height=240)
+    with TestClient(create_app(small), client=LOCAL) as client:
+        client.post("/dev/paint/robin")
+        for style in ("wall", "panel"):
+            for layer in ("all", "picture", "text"):
+                response = client.get(f"/wall.png?style={style}&layer={layer}")
+                assert response.status_code == 200, (style, layer)
+                image = Image.open(io.BytesIO(response.content))
+                assert image.size == (320, 240)
+                expected = "L" if layer == "text" else "RGB"
+                assert image.mode == expected, (style, layer, image.mode)
+
+
+def test_wall_png_refuses_an_unknown_style_or_layer(config):
+    with TestClient(create_app(config), client=LOCAL) as client:
+        for query in ("style=bogus", "layer=bogus", "layer=TEXT", "style="):
+            response = client.get(f"/wall.png?{query}")
+            assert response.status_code == 422, query
+
+
 def test_importing_web_has_no_side_effects(tmp_path: Path):
     """Regression for PR #28: `import bird_painter.web` must not create the
     default data/ archive (Config.archive_dir is a relative path)."""

@@ -300,3 +300,33 @@ def test_openapi_keeps_what_fastapi_generates(client):
     assert schema["openapi"].startswith("3.")
     assert "/api/live" in schema["paths"]  # the generated half survives
     assert "/ws/detections" in schema["paths"]  # and the added half is there
+
+
+def test_documented_wall_png_values_are_the_ones_the_endpoint_accepts():
+    """The `/wall.png` params went undocumented through a whole review round
+    while the PR body claimed otherwise (review, 2026-08-20). The existing
+    drift guards compare paths, so a route growing a param slipped past them.
+    Pin the values themselves against the sets the endpoint validates."""
+    from bird_painter.web import WALL_LAYERS, WALL_STYLES
+
+    entry = next(e for e in ENDPOINTS if e["path"] == "/wall.png")
+    documented = {p["name"]: p for p in entry.get("params", [])}
+    assert set(documented) == {"style", "layer"}
+    for name, allowed in (("style", WALL_STYLES), ("layer", WALL_LAYERS)):
+        note = documented[name]["note"]
+        for value in allowed:
+            assert value in note, f"{name}={value} undocumented"
+        assert documented[name]["default"] in allowed
+    assert "422" in entry["statuses"]
+
+
+def test_the_http_layer_and_the_renderer_accept_the_same_values():
+    """Three copies of these sets existed: the endpoint's validation, the
+    renderer's, and the documentation (review round 2). The drift guard above
+    covers docs-vs-endpoint; this one covers endpoint-vs-renderer, so a value
+    can't be added to one and missed by the other."""
+    from bird_painter.render import LAYERS, STYLES
+    from bird_painter.web import WALL_LAYERS, WALL_STYLES
+
+    assert set(WALL_LAYERS) == set(LAYERS)
+    assert set(WALL_STYLES) == set(STYLES)

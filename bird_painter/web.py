@@ -36,6 +36,10 @@ from .trim import trim_to_bird
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
+# The /wall.png knobs. Named here so the endpoint, its validation and the API
+# documentation all read the same sets — api_docs.py imports them.
+WALL_LAYERS = ("all", "picture", "text")
+WALL_STYLES = ("wall", "panel")
 
 
 def _is_loopback(client: tuple[str, int] | None) -> bool:
@@ -347,12 +351,34 @@ def create_app(config: Config | None = None) -> FastAPI:
                     getter.cancel()
 
     @app.get("/wall.png")
-    def wall_png() -> Response:
+    def wall_png(layer: str = "all", style: str = "wall") -> Response:
         """The collage rendered server-side to a PNG — what the e-paper frame
-        (Phase 4) fetches, since it can't run the browser wall. Same live set,
-        same layout maths, so it mirrors the on-screen wall."""
+        fetches, since it can't run the browser wall. The default `style=wall`
+        shares the wall's layout maths and mirrors what the browser shows;
+        `style=panel` deliberately does not — see below.
+
+        `style=panel` renders it for the e-paper frame instead of the browser:
+        the panel's own white as the ground (cream isn't one of its six
+        colours and dithers into a speckle everywhere), a focal scatter
+        instead of the spiral, birds fitted to their cells, and no title.
+        `layer=picture|text` then splits that render in two, because dithering
+        an 8px italic turns it into speckle — the frame dithers the picture and
+        stamps the text through the mask afterwards in pure panel black.
+        Defaults give the wall exactly as it always was."""
         from .render import render_wall_png
 
+        # Validate before doing the work, not after: a bad param shouldn't
+        # cost a walk of the live set first.
+        if layer not in WALL_LAYERS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"layer must be {', '.join(sorted(WALL_LAYERS))}",
+            )
+        if style not in WALL_STYLES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"style must be {', '.join(sorted(WALL_STYLES))}",
+            )
         paintings = [
             {
                 "file": p.file,
@@ -368,6 +394,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             config.wall_png_height,
             font=config.wall_font,
             italic_font=config.wall_font_italic,
+            layer=layer,
+            style=style,
         )
         return Response(content=png, media_type="image/png")
 
