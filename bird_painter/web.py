@@ -353,8 +353,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.get("/wall.png")
     def wall_png(layer: str = "all", style: str = "wall") -> Response:
         """The collage rendered server-side to a PNG — what the e-paper frame
-        fetches, since it can't run the browser wall. Same live set, same
-        layout maths, so it mirrors the on-screen wall.
+        fetches, since it can't run the browser wall. The default `style=wall`
+        shares the wall's layout maths and mirrors what the browser shows;
+        `style=panel` deliberately does not — see below.
 
         `style=panel` renders it for the e-paper frame instead of the browser:
         the panel's own white as the ground (cream isn't one of its six

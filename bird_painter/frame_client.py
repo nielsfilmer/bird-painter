@@ -211,16 +211,25 @@ def fetch_layers(
             client=client,
             timeout=timeout,
         )
-        if Image.open(io.BytesIO(text)).mode != "L":
-            raise ValueError("not a mask")  # noqa: TRY301 — one fallback path
-    except Exception:  # noqa: BLE001 — an older recorder has no text layer
-        logger.info("frame: no text layer from the wall; dithering the whole image")
-        # The picture fetch asked for `layer=picture`, which an older recorder
-        # also ignored — so what came back already has its captions. But a
-        # recorder new enough to honour `layer` and still fail on `text` would
-        # have sent a caption-less picture, and a panel of unnamed birds is
-        # worse than a dithered one. Ask again for the whole wall.
+    except Exception:  # noqa: BLE001 — the frame keeps drawing whatever happens
+        # A recorder new enough to honour `layer` answered the picture request
+        # with a caption-LESS render and then failed here, so what we hold is
+        # unusable on its own: a panel of unnamed birds is worse than a
+        # dithered one. Ask again for the whole wall. Log the cause — round 1's
+        # bug was a fallback that couldn't say why it fired.
+        logger.info(
+            "frame: text layer request failed; refetching the whole wall",
+            exc_info=True,
+        )
         return fetch_image(url, client=client, timeout=timeout), None
+    if Image.open(io.BytesIO(text)).mode != "L":
+        # Not a failure: a recorder older than this client, ignoring both
+        # unknown params. That means `picture` is ALREADY the ordinary wall,
+        # captions and all — so use it rather than fetching a third copy of a
+        # ~290 KB render every cycle, forever, on exactly the deployment this
+        # branch exists for.
+        logger.info("frame: no text layer from the wall; dithering the whole image")
+        return picture, None
     return picture, text
 
 

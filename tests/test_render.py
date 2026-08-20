@@ -132,18 +132,18 @@ def test_the_browser_wall_captions_still_fit_the_room_the_layout_reserves():
     OLD sizes (CAPTION_FLOOR_PX), so wall captions ran into the bird below
     (review, 2026-08-20). The panel keeps its larger type; the wall keeps its
     own."""
-    from bird_painter.render import _clamp
+    from bird_painter.render import _caption_sizes
     from bird_painter.wall_layout import CAPTION_FLOOR_PX
 
     for width, height in ((1600, 1200), (1280, 800), (900, 1600)):
         vmin = min(width, height) / 100
-        species = _clamp(8, 1.05 * vmin, 12)
-        heard = _clamp(7, 0.85 * vmin, 10)
+        species, heard = _caption_sizes(vmin, panel=False)
         # Where the second line is drawn, plus its own height.
         block = species * 1.25 + heard
         assert block <= CAPTION_FLOOR_PX, (
             f"{width}x{height}: a {block:.0f}px caption block doesn't fit the "
             f"{CAPTION_FLOOR_PX}px wall_layout reserves"
         )
-        panel_species = _clamp(9, 1.15 * vmin, 14)
+        assert species > heard, "on the wall the headline outranks the timestamp"
+        panel_species, _panel_heard = _caption_sizes(vmin, panel=True)
         assert panel_species > species, "the panel's type is its own, and bigger"

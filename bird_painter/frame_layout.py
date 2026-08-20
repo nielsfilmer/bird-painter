@@ -77,6 +77,12 @@ CANDIDATES = 60
 RING_STEPS = 48  # radii tried, innermost first
 RING_STEP = 0.35  # each step outward, as a share of the bird's own size
 RING_WOBBLE = 0.30  # radians of jitter within a sector, so it isn't a clock face
+# How far a petal may creep from its innermost possible radius before the whole
+# layout shrinks and tries again, as a multiple of the bird's own size. Without
+# a cap a blocked sector sends one petal halfway across the sheet — it ends up
+# farther out than most of the OLDER birds, which reads as no arrangement at
+# all (QA measured one at 846px against a rosette body of 453px).
+RING_MAX_CREEP = 1.7
 # When a pass can't place everything, shrink and retry; the last pass places
 # regardless, so the function cannot fail outright.
 SHRINK = 0.94
@@ -216,8 +222,11 @@ def _try_layout(
                 min(anchor_foot[0], anchor_foot[1]) + min(foot_w, foot_h)
             )
             spot = None
+            ceiling = start + RING_MAX_CREEP * max(foot_w, foot_h)
             for k in range(RING_STEPS):
                 radius = start + k * step
+                if radius > ceiling:
+                    break  # too far to still be "gathered around" — shrink instead
                 cx = anchor[0] + radius * math.cos(angle)
                 cy = anchor[1] + radius * math.sin(angle)
                 cx, cy = min(max(cx, min_cx), max_cx), min(max(cy, min_cy), max_cy)
@@ -250,11 +259,10 @@ def _try_layout(
         # corners still get filled. Drawing them all uniformly left the outside
         # pool empty whenever the ring was wide, and the bird fell back to a
         # gap between two petals.
-        reach = math.hypot(uw, uh)
         for candidate in range(CANDIDATES):
             if candidate % 2 == 0:
                 angle = rng.random() * math.tau
-                radius = ring_edge + (reach - ring_edge) * math.sqrt(rng.random())
+                radius = ring_edge + (diag - ring_edge) * math.sqrt(rng.random())
                 cx = anchor[0] + radius * math.cos(angle)
                 cy = anchor[1] + radius * math.sin(angle)
                 cx = min(max(cx, min_cx), max_cx)
@@ -297,7 +305,10 @@ def _try_layout(
             # of all nine. "Smaller birds on the outskirts" is a rule, not a
             # preference, so a candidate outside the ring's outer edge beats
             # every candidate inside it outright.
-            if from_focus >= ring_edge and (
+            # Not on the forced pass, though: an overlapping spot outside the
+            # rosette must not beat a clean one inside it, or the `-= 1e12`
+            # last-resort penalty above is defeated by the very next line.
+            if not collides and from_focus >= ring_edge and (
                 best_outside is None or score > best_outside[0]
             ):
                 best_outside = (score, cx, cy, rect)

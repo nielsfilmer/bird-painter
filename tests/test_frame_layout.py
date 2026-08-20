@@ -99,6 +99,7 @@ def test_the_anchor_sits_inside_the_central_box():
         assert abs(newest.x) <= half_w + 1
         assert abs(newest.y) <= half_h + BAND_TOP  # usable area sits low
 
+
 def test_the_recent_five_gather_around_the_newest():
     placements = place(12)
     newest = placements[0]
@@ -240,3 +241,37 @@ def test_a_real_wall_never_overlaps_or_runs_off_the_sheet():
                         a[2] <= b[0] or b[2] <= a[0]
                         or a[3] <= b[1] or b[3] <= a[1]
                     ), f"{count} birds, salt {salt!r}: {a} collides with {b}"
+
+
+def test_a_crowded_sheet_still_places_every_bird_on_it():
+    """The forced pass — the one where overlap is permitted as a last resort —
+    had no test reaching it (QA, 2026-08-20), which is how a regression in the
+    candidate chooser could have gone unnoticed. Squeeze sixteen birds with
+    wide captions onto a small sheet: every bird must still be placed, and
+    still be on the sheet, however tight it gets."""
+    files = [f"crowd{i:02d}.jpg" for i in range(16)]
+    placements = compute_frame_scatter(
+        files, 500, 380, 20,
+        aspects=IN_THE_WILD_ASPECTS,
+        caption_px=18.0,
+        caption_widths=[90] * 16,
+    )
+    assert len(placements) == len(files)
+    for p in placements:
+        w, h = p.size_vmin * 3.8, p.height_vmin * 3.8  # vmin of a 500x380 sheet
+        assert w > 0 and h > 0
+        assert -250 <= p.x <= 250 and -190 <= p.y <= 190
+
+
+def test_a_sheet_too_small_for_one_caption_renders_nothing():
+    """Rather than raising out of `zip(..., strict=True)` under a docstring
+    that promises the function cannot fail outright.
+
+    Shrinking always eventually fits the BIRDS — but a caption's width is
+    fixed pixels and doesn't shrink with them, so a caption wider than the
+    sheet can never be placed at any scale. That's the reachable failure."""
+    assert compute_frame_scatter(
+        ["a.jpg", "b.jpg"], 200, 150, 10,
+        caption_px=12.0,
+        caption_widths=[400.0, 400.0],  # each caption is twice the sheet's width
+    ) == []

@@ -62,6 +62,10 @@ PANEL_TOP_MARGIN = 0.045
 # Glyphs in the text-layer mask: white where ink goes, so the frame can paste
 # a single colour through it.
 MASK_INK = 255
+# What render_wall_png accepts. `web.WALL_LAYERS`/`WALL_STYLES` mirror these
+# for the HTTP layer and a test pins the two together.
+LAYERS = ("all", "picture", "text")
+STYLES = ("wall", "panel")
 # Faux weight, for a face we have no bold cut of: draw the glyph twice, offset
 # one pixel horizontally. A hairline serif at panel sizes reads as grey rather
 # than as a letter, but a full stroke around each glyph is too much — on the
@@ -149,6 +153,23 @@ def _feather_mask(w: int, h: int, soft: bool = True) -> Image.Image:
     d = np.sqrt(dx * dx + dy * dy)
     a = np.clip((0.96 - d) / (0.96 - 0.72), 0.0, 1.0)
     return Image.fromarray((a * 255).astype("uint8"), "L")
+
+
+def _caption_sizes(vmin: float, panel: bool) -> tuple[float, float]:
+    """Species and "heard at" type sizes, in pixels.
+
+    The panel's are its own: it is read from across a room, so its type is
+    larger and the "heard at" line is deliberately the bigger of the two
+    (owner, 2026-08-07). The browser wall is read at desk distance and keeps
+    exactly the type it always had — when the panel's sizes were briefly
+    applied to both, the wall's timestamp grew by half and its captions ran
+    into the bird below, because `wall_layout` reserves room for these sizes.
+
+    One function so a test can pin both sets, rather than re-deriving them and
+    passing whatever the code happens to do."""
+    if panel:
+        return _clamp(9, 1.15 * vmin, 14), _clamp(11, 1.3 * vmin, 16)
+    return _clamp(8, 1.05 * vmin, 12), _clamp(7, 0.85 * vmin, 10)
 
 
 def _ground_level(luminance: np.ndarray) -> float:
@@ -383,14 +404,15 @@ def render_wall_png(
     caption came out as speckle. Splitting the layers is what lets the type
     stay type. Both layers come from THIS function, so the two can't drift out
     of alignment the way a second layout implementation would."""
-    if layer not in {"all", "picture", "text"}:
-        raise ValueError(f"layer must be all/picture/text, got {layer!r}")
-    if style not in {"wall", "panel"}:
-        raise ValueError(f"style must be wall/panel, got {style!r}")
+    if layer not in LAYERS:
+        raise ValueError(f"layer must be one of {LAYERS}, got {layer!r}")
+    if style not in STYLES:
+        raise ValueError(f"style must be one of {STYLES}, got {style!r}")
     # "panel" is everything the e-paper frame needs and the browser doesn't:
-    # its own white as the ground, rows instead of the spiral, birds fitted to
-    # their cells, and no title — the frame hangs on a wall, where a heading
-    # saying what it is costs a row of birds to state the obvious.
+    # its own white as the ground, the focal scatter instead of the spiral,
+    # birds fitted to their cells, and no title — the frame hangs on a wall,
+    # where a heading saying what it is costs a row of birds to state the
+    # obvious.
     panel = style == "panel"
     text_only = layer == "text"
     lettering = layer != "picture"
@@ -428,20 +450,8 @@ def render_wall_png(
     by_file = {p["file"]: p for p in paintings}
     # Caption typography is fixed-size (owner: don't resize the text) and the
     # panel layout needs to MEASURE it before placing anything, so it's
-    # defined before the layout rather than after.
-    #
-    # The panel's sizes are its own. It is read from across a room, so its type
-    # is larger and its "heard at" line is deliberately the bigger of the two
-    # (owner, 2026-08-07). The browser wall is read at desk distance and keeps
-    # exactly the type it always had — hoisting the panel's sizes over both
-    # enlarged the wall's timestamp by half and ran its captions into each
-    # other, since wall_layout reserves room for the old sizes.
-    if panel:
-        species_size = _clamp(9, 1.15 * vmin, 14)
-        heard_size = _clamp(11, 1.3 * vmin, 16)
-    else:
-        species_size = _clamp(8, 1.05 * vmin, 12)
-        heard_size = _clamp(7, 0.85 * vmin, 10)
+    # defined before the layout rather than after. Sizes: see _caption_sizes.
+    species_size, heard_size = _caption_sizes(vmin, panel)
     species_font = fonts.get(species_size)
     heard_font = fonts.get(heard_size, italic=True)
     # The panel is a fixed sheet seen from across a room, so it gets the focal
