@@ -103,6 +103,9 @@ DEFAULT_SIZE = (1600, 1200)
 # panel, and how often it tries within that window.
 DEFAULT_SEARCH_SECONDS = 60
 SEARCH_POLL_SECONDS = 5
+# The shortest pause the search will take between attempts. Guards against a
+# caller passing 0 and getting a live-lock rather than a fast retry.
+MIN_POLL_SECONDS = 0.5
 SEARCHING_TEXT = "Looking for recorder"
 # The notice's type, as a share of the panel's shorter side, and the share of
 # the panel's width it may occupy before it's shrunk to fit.
@@ -492,7 +495,11 @@ def search_for_recorder(
         remaining = deadline - now()
         if remaining <= 0:
             return None
-        sleep(min(poll_seconds, remaining))
+        # Never a zero-length wait: with poll_seconds=0 and an injected clock
+        # that only advances when we sleep, this spins forever instead of
+        # searching (QA hung a real run on it). A caller asking for "no pause"
+        # wants the fastest sane retry, not a live-lock.
+        sleep(min(max(poll_seconds, MIN_POLL_SECONDS), remaining))
 
 
 def stream_url(source: str) -> str:

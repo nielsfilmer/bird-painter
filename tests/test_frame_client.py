@@ -581,7 +581,12 @@ def test_the_search_draws_the_wall_as_soon_as_the_recorder_answers():
     assert slept == [5, 5]
 
 
-def test_the_search_gives_up_after_its_window_and_never_overruns_it():
+def test_the_search_gives_up_after_its_window_and_trims_its_last_wait():
+    """Named for what it actually proves. The WAIT is trimmed to the deadline;
+    the window as a whole is a floor, not a ceiling, because the clock is read
+    after each attempt and an attempt is an HTTP fetch that can take its full
+    timeout. Cutting one off mid-flight to honour the deadline would throw away
+    the answer we were waiting for."""
     clock = [0.0]
 
     def sleep(seconds):
@@ -596,6 +601,41 @@ def test_the_search_gives_up_after_its_window_and_never_overruns_it():
     assert result is None
     assert clock[0] == 12, "the last wait is trimmed to the deadline, not past it"
     assert len(attempts) == 4  # t=0, 5, 10, 12
+
+
+def test_a_slow_attempt_pushes_the_window_out_rather_than_being_abandoned():
+    """The overrun the name above used to imply was impossible. A recorder that
+    accepts the connection and then says nothing burns a whole fetch timeout,
+    so a 60 s search can end past 60 s — deliberately."""
+    clock = [0.0]
+
+    def slow_draw():
+        clock[0] += 30.0  # a fetch that hangs until its timeout
+        return None
+
+    attempts = []
+    fc.search_for_recorder(
+        lambda: (attempts.append(1), slow_draw())[1],
+        search_seconds=60, poll_seconds=5,
+        now=lambda: clock[0], sleep=lambda s: clock.__setitem__(0, clock[0] + s),
+    )
+    # t=0 attempt (→30), sleep 5 (→35), attempt (→65), deadline already past.
+    assert clock[0] == 65, "the window is a floor, not a ceiling"
+    assert len(attempts) == 2
+
+
+def test_a_zero_poll_interval_does_not_live_lock_the_search():
+    """`poll_seconds` is a public kwarg, and 0 spun forever against an injected
+    clock that only advances on sleep — 200k iterations, no progress (QA)."""
+    clock = [0.0]
+    attempts = []
+    result = fc.search_for_recorder(
+        lambda: attempts.append(1),
+        search_seconds=3, poll_seconds=0,
+        now=lambda: clock[0], sleep=lambda s: clock.__setitem__(0, clock[0] + s),
+    )
+    assert result is None
+    assert len(attempts) <= 10, "it made progress instead of spinning"
 
 
 def test_a_recorder_that_answers_immediately_is_never_interrupted_by_a_notice():
