@@ -83,6 +83,11 @@ DEFAULT_MIN_SECONDS = 90
 STREAM_RETRY_SECONDS = 30
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_SIZE = (1600, 1200)
+# A mask pixel this bright or brighter gets the ink. Glyph edges are
+# anti-aliased, and a partial paste would blend black with the picture into a
+# colour the six-colour panel doesn't have — after the only quantisation step,
+# so nothing would map it back. Half-lit counts as lit.
+MASK_THRESHOLD = 128
 
 # The Spectra 6 fixed palette: black, white, red, green, blue, yellow. The
 # server renders full-colour on purpose; the frame is where the reduction to
@@ -187,21 +192,35 @@ def fetch_layers(
 
     Returns (picture, text mask) — the mask is None when the recorder doesn't
     serve layers, in which case the picture is the ordinary wall image and the
-    caller just dithers it as before."""
-    picture = fetch_image(
-        _with_query(url, layer="picture", style="panel"),
-        client=client,
-        timeout=timeout,
-    )
+    caller just dithers it as before.
+
+    "Doesn't serve layers" cannot be detected by catching an error. A recorder
+    older than this client doesn't reject `?layer=text` — FastAPI ignores query
+    params a route doesn't declare, so it answers 200 with the ordinary
+    full-colour wall. Nothing raises, and that RGB wall then becomes the alpha
+    mask: cream is nearly opaque, so the panel is stamped black almost edge to
+    edge, and the hash cache keeps it there. What actually distinguishes the
+    two is the image itself — a text layer is an L-mode mask and a wall is RGB,
+    so that is what we test. The Pis do go out of step; PLAN.md's 2026-08-05
+    entry exists because of it."""
+    picture_url = _with_query(url, layer="picture", style="panel")
+    picture = fetch_image(picture_url, client=client, timeout=timeout)
     try:
         text = fetch_image(
             _with_query(url, layer="text", style="panel"),
             client=client,
             timeout=timeout,
         )
+        if Image.open(io.BytesIO(text)).mode != "L":
+            raise ValueError("not a mask")  # noqa: TRY301 — one fallback path
     except Exception:  # noqa: BLE001 — an older recorder has no text layer
         logger.info("frame: no text layer from the wall; dithering the whole image")
-        return picture, None
+        # The picture fetch asked for `layer=picture`, which an older recorder
+        # also ignored — so what came back already has its captions. But a
+        # recorder new enough to honour `layer` and still fail on `text` would
+        # have sent a caption-less picture, and a panel of unnamed birds is
+        # worse than a dithered one. Ask again for the whole wall.
+        return fetch_image(url, client=client, timeout=timeout), None
     return picture, text
 
 
@@ -220,14 +239,20 @@ def _with_query(url: str, **params: str) -> str:
 
 
 def dither_free_mask(data: bytes, size: tuple[int, int], rotate: int) -> Image.Image:
-    """The lettering mask, resized and rotated to match the picture — with
+    """The lettering mask, rotated and resized to match the picture — with
     NEAREST, so a glyph edge stays a glyph edge rather than being smoothed into
-    grey and then thresholded into crumbs."""
+    grey and then thresholded into crumbs.
+
+    The order matters and must match `dither_to_panel` exactly: rotate first,
+    then resize to the panel. Resizing first and rotating after leaves a 90°
+    mask transposed against its picture (1200x1600 over 1600x1200), which
+    `stamp_text` then squashed back into place — every caption landing in the
+    wrong spot on a portrait-mounted panel."""
     mask = Image.open(io.BytesIO(data)).convert("L")
-    if mask.size != size:
-        mask = mask.resize(size, Image.NEAREST)
     if rotate:
         mask = mask.rotate(-rotate, expand=True, resample=Image.NEAREST)
+    if mask.size != size:
+        mask = mask.resize(size, Image.NEAREST)
     return mask
 
 
@@ -239,7 +264,21 @@ def stamp_text(picture: Image.Image, mask: Image.Image) -> Image.Image:
     of a grey suggestion."""
     stamped = picture.convert("RGB")
     ink = Image.new("RGB", stamped.size, (0, 0, 0))
-    stamped.paste(ink, (0, 0), mask.convert("L").resize(stamped.size))
+    mask = mask.convert("L")
+    if mask.size != stamped.size:
+        # Should not happen — dither_free_mask is handed the same size and
+        # rotation as the picture. If it ever does, match with NEAREST: the
+        # default resize is bicubic, which greys the glyph edges this whole
+        # two-layer dance exists to keep crisp.
+        logger.warning(
+            "frame: text mask %s doesn't match picture %s; resizing",
+            mask.size, stamped.size,
+        )
+        mask = mask.resize(stamped.size, Image.NEAREST)
+    # Threshold, so a soft glyph edge can't paste a part-black pixel: the
+    # picture is already quantised to the panel's six colours and a blend would
+    # put an off-palette colour on it after the only quantisation step.
+    stamped.paste(ink, (0, 0), mask.point(lambda v: 255 if v >= MASK_THRESHOLD else 0))
     return stamped
 
 

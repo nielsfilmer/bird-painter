@@ -345,9 +345,17 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
     (the collage placement maths), so `/wall.png` places birds identically to
     the live wall. A parity test keeps the two in sync.
+  - `frame_layout.py` — `compute_frame_scatter(...)`: the e-paper panel's own
+    placement (`style=panel`), a focal scatter rather than the wall's spiral —
+    newest bird largest on an anchor in a central box, the five before it
+    around it, older ones smaller and further out, deterministic per live set
+    so the panel doesn't redraw for a reshuffle.
   - `render.py` — `render_wall_png(...)`: composites the collage to a PNG
     server-side (Pillow) for the e-paper frame — cream paper + feather-masked
     multiply-blended birds + captions + header; full-colour (the panel dithers).
+    `style=panel` swaps in the panel's white ground, the focal scatter, and
+    birds cropped to their own ink; `layer=picture|text` splits the render so
+    the frame can dither the picture and stamp unditherable lettering on top.
   - `frame_client.py` — `python -m bird_painter.frame_client`: the thin e-paper
     frame client (runs on the frame Pi). Fetches the recorder's `/wall.png` on
     a slow timer, dithers to the Spectra 6 six-colour palette, pushes to the
@@ -389,14 +397,19 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   test-js via `node --test` for the wall layout); the deterministic-check
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
-- `tests/fixtures/plates/` — three real plates (downscaled) pinning the
-  plate-check thresholds: one good, one desk photo, one grey block. `data/` is
-  gitignored and purged monthly, so without these the calibration would have no
-  durable evidence.
+- `tests/fixtures/plates/` — five real plates (downscaled) pinning thresholds
+  calibrated over the whole archive: three for the plate check (one good, one
+  desk photo, one grey block) and two for the panel's ground detection (one
+  painted on a grey field inside a white border, one pale bird on true white —
+  the false positive an earlier rule produced). `data/` is gitignored and
+  purged monthly, so without these the calibration would have no durable
+  evidence.
 - `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API,
   event hub + detection WebSocket, API docs (incl. docs-vs-routes drift
-  guards), wall-layout port + JS-parity, /wall.png render, painting trim;
-  import-purity regression).
+  guards), wall-layout port + JS-parity, /wall.png render incl. its
+  style/layer params, the panel's focal scatter (`test_frame_layout.py`), the
+  frame client's fetch/dither/stamp cycle, painting trim; import-purity
+  regression).
   Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
   milestones/issues (backs the `/status` skill).

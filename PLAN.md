@@ -265,7 +265,10 @@ whole magic; ship it first.
   being a pixel-identical browser screenshot: it lays the cluster into a
   slightly shorter box (a bottom inset so captions clear the panel edge) and
   hand-matches the header/caption typography from the CSS. Size + caption fonts
-  are env-configurable.
+  are env-configurable. *(Partly superseded 2026-08-13: this still describes
+  the default `style=wall` render, but `style=panel` no longer mirrors the
+  browser wall at all — it has its own layout, ground, and typography. See the
+  focal-scatter entry below.)*
 - **2026-07-23** — The app binds **0.0.0.0 by default** (`BP_HOST`), so the
   e-paper frame and other devices on the LAN can reach the wall / `/wall.png`.
   Surfaced during the real two-box install: the previous hardcoded
@@ -502,5 +505,33 @@ whole magic; ship it first.
   per live set (seeded from the file list): the frame redraws only when the
   bytes change, so a layout that wandered per render would wear the panel for
   nothing; a new bird reseeds the whole composition, one redraw it was
-  spending anyway. Captions scale with their plate and long names shrink to
-  fit, so the smallest bird gets the smallest label — hierarchy for free.
+  spending anyway.
+- **2026-08-13** — **Panel captions are fixed-size** (owner, on seeing scaled
+  ones: "don't resize the text, keep the text the same size"). An earlier
+  draft scaled each caption with its plate; a small bird's label then became
+  unreadable across a room, which is the only distance the panel is read from.
+  Because the type no longer shrinks, a caption can be wider than the bird
+  above it, so the layout takes each caption's MEASURED width as a floor on
+  that bird's footprint — otherwise two small neighbours overlap each other's
+  lettering. The browser wall keeps its own smaller type: it is read at a
+  desk, and its layout reserves room for those sizes.
+- **2026-08-20** — **A plate's ground is its most common light level.** FLUX
+  sometimes paints on a light-grey field inside a white border; keying against
+  the border's median then removed nothing and the plate landed on the white
+  panel as a grey rectangle. Calibrated against all 200 plates in the archive:
+  an earlier rule — the darkest level covering >2% of the plate — fixes the
+  grey fields but reads a pale bird's whole body as ground, so hawfinches and
+  collared doves rendered as hollow shells. "Most common" separates the two,
+  moving the ink share on exactly the four plates that have a grey field.
+  Ink bounds come from connected components for the same family of reason: a
+  pixel percentile cut a jackdaw's head and tail off, because a thin extremity
+  is real ink at a few pixels per row.
+- **2026-08-20** — **`/wall.png` takes `style` and `layer`.** `style=panel`
+  renders for the e-paper frame (white ground, focal scatter, no title);
+  `layer=picture|text` splits that render so the frame can dither the picture
+  and stamp the lettering through an unditherable mask — an 8px italic put
+  through Floyd–Steinberg is speckle, not type. Defaults render the browser
+  wall exactly as before. The frame tells a layer-aware recorder from an older
+  one by the text layer's image MODE, not by an error: FastAPI ignores query
+  params a route doesn't declare, so an old recorder answers 200 with the
+  ordinary wall, and treating that as a mask stamps the panel black.

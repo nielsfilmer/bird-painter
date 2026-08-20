@@ -179,10 +179,12 @@ def _ground_level(luminance: np.ndarray) -> float:
     spread = np.convolve(counts, np.ones(GROUND_SMOOTH), mode="same")
     spread[:GROUND_MIN_LUM] = 0.0  # a ground is light, by house style
     if not spread.any():
-        border = np.concatenate([
-            luminance[0], luminance[-1], luminance[:, 0], luminance[:, -1],
-        ])
-        return float(np.median(border))
+        # No light pixels at all: a night scene, a dark drift, an unreadable
+        # plate. There is no ground to key out, so claim white and key nothing
+        # — the plate renders whole. Returning a dark level instead (the
+        # border's median, as this once did) sets the key below every pixel on
+        # the plate and dissolves the bird completely.
+        return 255.0
     return float(spread.argmax())
 
 
@@ -370,9 +372,10 @@ def render_wall_png(
     - `"picture"` — the same collage with NO lettering.
     - `"text"` — only the lettering, as a mask: white where ink goes.
 
-    `bare` drops the cream paper for plain white — the e-paper's own ground.
-    Cream isn't one of the panel's six colours, so it dithers into a red/green
-    speckle over every pixel; white is, and costs nothing.
+    `style="panel"` drops the cream paper for plain white — the e-paper's own
+    ground. Cream isn't one of the panel's six colours, so it dithers into a
+    red/green speckle over every pixel; white is, and costs nothing. It also
+    swaps the spiral for the focal scatter and fits each bird to its own ink.
 
     The frame dithers the picture and then stamps the text through the mask in
     pure panel black. Dithering scatters a 6-colour approximation across every
@@ -426,14 +429,25 @@ def render_wall_png(
     # Caption typography is fixed-size (owner: don't resize the text) and the
     # panel layout needs to MEASURE it before placing anything, so it's
     # defined before the layout rather than after.
-    species_size = _clamp(9, 1.15 * vmin, 14)
-    heard_size = _clamp(11, 1.3 * vmin, 16)
+    #
+    # The panel's sizes are its own. It is read from across a room, so its type
+    # is larger and its "heard at" line is deliberately the bigger of the two
+    # (owner, 2026-08-07). The browser wall is read at desk distance and keeps
+    # exactly the type it always had — hoisting the panel's sizes over both
+    # enlarged the wall's timestamp by half and ran its captions into each
+    # other, since wall_layout reserves room for the old sizes.
+    if panel:
+        species_size = _clamp(9, 1.15 * vmin, 14)
+        heard_size = _clamp(11, 1.3 * vmin, 16)
+    else:
+        species_size = _clamp(8, 1.05 * vmin, 12)
+        heard_size = _clamp(7, 0.85 * vmin, 10)
     species_font = fonts.get(species_size)
     heard_font = fonts.get(heard_size, italic=True)
-    # The panel is a fixed sheet seen from across a room, so it gets rows that
-    # fill it rather than the browser wall's spiral, which is built to reflow
-    # in a window (see frame_layout). `grid=False` renders the spiral, which is
-    # what the README's hero image and anything else expecting the wall wants.
+    # The panel is a fixed sheet seen from across a room, so it gets the focal
+    # scatter that fills it (see frame_layout) rather than the browser wall's
+    # spiral, which is built to reflow in a window. `style="wall"` renders the
+    # spiral — what the README's hero image and any browser expects.
     if panel:
         tracking = species_size * 0.05 + 0.5
         placements = compute_frame_scatter(
@@ -488,14 +502,18 @@ def render_wall_png(
         # where the plate has its own white margin.
         gap = CAPTION_GAP_VMIN * vmin if panel else -0.4 * vmin
         caption_y = cy + image_h / 2 + gap
-        for dx in (0, DOUBLE_X):
+        # The faux weight is the panel's too: e-paper renders a hairline serif
+        # thinly, so each line is drawn twice a pixel apart. On a backlit screen
+        # that just looks smudged, and the wall never asked for it.
+        offsets = (0, DOUBLE_X) if panel else (0,)
+        for dx in offsets:
             _tracked(
                 draw, cx + dx, caption_y, meta["species_common"].upper(),
                 species_font, ink, tracking=species_size * 0.05 + 0.5,
             )
-        heard_y = caption_y + species_size * 1.3
+        heard_y = caption_y + species_size * (1.3 if panel else 1.25)
         heard = _heard_text(meta["born_at"])
-        for dx in (0, DOUBLE_X):
+        for dx in offsets:
             draw.text(
                 (cx + dx, heard_y), heard, font=heard_font,
                 fill=heard_ink, anchor="ma",

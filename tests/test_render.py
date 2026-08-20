@@ -123,3 +123,27 @@ def test_a_pale_bird_on_white_keeps_its_body():
     assert _ground_level(pixels) >= 246, "a white plate's ground is white"
     ink = pixels < _ink_key(pixels)
     assert ink.mean() > 0.15, "the pale breast is part of the bird"
+
+
+def test_the_browser_wall_captions_still_fit_the_room_the_layout_reserves():
+    """The panel's caption sizes were hoisted above the `if panel:` branch and
+    silently applied to the browser wall too — species 12→14, "heard at"
+    10→15, plus a faux-bold double-draw. `wall_layout` reserves room for the
+    OLD sizes (CAPTION_FLOOR_PX), so wall captions ran into the bird below
+    (review, 2026-08-20). The panel keeps its larger type; the wall keeps its
+    own."""
+    from bird_painter.render import _clamp
+    from bird_painter.wall_layout import CAPTION_FLOOR_PX
+
+    for width, height in ((1600, 1200), (1280, 800), (900, 1600)):
+        vmin = min(width, height) / 100
+        species = _clamp(8, 1.05 * vmin, 12)
+        heard = _clamp(7, 0.85 * vmin, 10)
+        # Where the second line is drawn, plus its own height.
+        block = species * 1.25 + heard
+        assert block <= CAPTION_FLOOR_PX, (
+            f"{width}x{height}: a {block:.0f}px caption block doesn't fit the "
+            f"{CAPTION_FLOOR_PX}px wall_layout reserves"
+        )
+        panel_species = _clamp(9, 1.15 * vmin, 14)
+        assert panel_species > species, "the panel's type is its own, and bigger"

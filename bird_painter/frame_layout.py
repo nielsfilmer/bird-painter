@@ -20,11 +20,14 @@ Replaced with the arrangement the owner dictated:
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 from dataclasses import dataclass
 
 from .wall_layout import hash_str
+
+logger = logging.getLogger(__name__)
 
 # The anchor box: a centred region holding this share of the usable area.
 ANCHOR_BOX_AREA = 0.30
@@ -44,6 +47,9 @@ RECENT_WEIGHT_MAX = 0.78
 RECENT_WEIGHT_MIN = 0.62
 OLD_WEIGHT_MAX = 0.56
 OLD_WEIGHT_MIN = 0.40
+# How many older birds it takes to reach OLD_WEIGHT_MIN. Fixed, so a bird's
+# size follows its own age rather than the size of the wall it landed on.
+OLD_TAPER_SPAN = 8
 # How much of the usable sheet the plates' footprints aim to occupy. The
 # global scale is solved from this, so two birds come out big and twelve
 # come out small without separate rules per count.
@@ -106,19 +112,41 @@ def _ramp(lo: float, hi: float, i: int, n: int) -> float:
 
 
 def _weights(count: int) -> list[float]:
+    """Plate width by recency rank.
+
+    Both ramps run over a FIXED span rather than over however many birds
+    happen to be on the wall. Scaling the ramp to the count puts the whole
+    drop into whatever birds exist: with seven birds the single old one sat at
+    the top of its range, and with eight the second one fell straight to the
+    bottom — a cliff between two consecutive birds, the same shape as the
+    six-bird bug. A fixed span means a bird's size depends on its own age, not
+    on how many others were heard, so the wall grows smoothly."""
     weights = []
-    ring = min(RECENT_COUNT, count - 1)
-    olds = count - RECENT_COUNT - 1
     for rank in range(count):
         if rank == 0:
             weight = NEWEST_WEIGHT
         elif rank <= RECENT_COUNT:
-            weight = _ramp(RECENT_WEIGHT_MIN, RECENT_WEIGHT_MAX, rank - 1, ring)
+            weight = _ramp(
+                RECENT_WEIGHT_MIN, RECENT_WEIGHT_MAX, rank - 1, RECENT_COUNT
+            )
         else:
             age = rank - RECENT_COUNT - 1
-            weight = _ramp(OLD_WEIGHT_MIN, OLD_WEIGHT_MAX, age, olds)
+            weight = _ramp(
+                OLD_WEIGHT_MIN, OLD_WEIGHT_MAX, min(age, OLD_TAPER_SPAN - 1),
+                OLD_TAPER_SPAN,
+            )
         weights.append(weight)
     return weights
+
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
 
 
 def _overlaps(a: tuple, b: tuple, gap: float) -> bool:
@@ -137,6 +165,7 @@ def _try_layout(
     placed = []  # (cx, cy, rect)
     anchor = anchor_foot = None
     ring_phase = rng.random() * math.tau  # where the rosette's first bird sits
+    ring_radii = []  # how far each rosette petal sits from the anchor
     diag = math.hypot(uw, uh)
     for i, _file in enumerate(files):
         w = dims[i][0] * scale
@@ -203,12 +232,36 @@ def _try_layout(
                 cy = min(max(anchor[1] + start * math.sin(angle), min_cy), max_cy)
                 spot = (cx, cy, _rect(cx, cy))
             placed.append(spot)
+            ring_radii.append(
+                math.hypot(spot[0] - anchor[0], spot[1] - anchor[1])
+            )
             continue
 
-        best = None
-        for _ in range(CANDIDATES):
-            cx = rng.uniform(min_cx, max_cx)
-            cy = rng.uniform(min_cy, max_cy)
+        # The bar an old bird has to clear is the rosette's MEDIAN radius, not
+        # its farthest petal. One petal can creep a long way out looking for
+        # space, and holding every later bird beyond that outlier is a bar the
+        # sheet may have no room for — it would push the old birds off the
+        # edge or fail the pass outright.
+        ring_edge = _median(ring_radii)
+
+        best = best_outside = None
+        # Half the candidates are drawn from the annulus beyond the rosette,
+        # where an old bird BELONGS, and half uniformly over the sheet so the
+        # corners still get filled. Drawing them all uniformly left the outside
+        # pool empty whenever the ring was wide, and the bird fell back to a
+        # gap between two petals.
+        reach = math.hypot(uw, uh)
+        for candidate in range(CANDIDATES):
+            if candidate % 2 == 0:
+                angle = rng.random() * math.tau
+                radius = ring_edge + (reach - ring_edge) * math.sqrt(rng.random())
+                cx = anchor[0] + radius * math.cos(angle)
+                cy = anchor[1] + radius * math.sin(angle)
+                cx = min(max(cx, min_cx), max_cx)
+                cy = min(max(cy, min_cy), max_cy)
+            else:
+                cx = rng.uniform(min_cx, max_cx)
+                cy = rng.uniform(min_cy, max_cy)
             rect = _rect(cx, cy)
             collides = any(_overlaps(rect, r, gap) for _, _, r in placed)
             if collides and not force:
@@ -237,9 +290,21 @@ def _try_layout(
                 score -= 1e12  # forced pass: overlap only as a last resort
             if best is None or score > best[0]:
                 best = (score, cx, cy, rect)
-        if best is None:
+            # The pull outward is a score term, and a score term can be
+            # outvoted: a gap BETWEEN two ring petals scores well on emptiness
+            # while sitting closer in than the ring itself, which is how the
+            # oldest bird on a real nine-bird wall ended up nearest the anchor
+            # of all nine. "Smaller birds on the outskirts" is a rule, not a
+            # preference, so a candidate outside the ring's outer edge beats
+            # every candidate inside it outright.
+            if from_focus >= ring_edge and (
+                best_outside is None or score > best_outside[0]
+            ):
+                best_outside = (score, cx, cy, rect)
+        chosen = best_outside or best
+        if chosen is None:
             return None
-        placed.append((best[1], best[2], best[3]))
+        placed.append((chosen[1], chosen[2], chosen[3]))
     return placed
 
 
@@ -305,6 +370,18 @@ def compute_frame_scatter(
         if placed is not None:
             scale = scale * SHRINK**attempt
             break
+
+    if placed is None:
+        # Even the forced pass bails when a single plate is wider or taller
+        # than the usable sheet — a viewport far smaller than any real panel.
+        # An empty wall is the honest answer there; the alternative was a
+        # TypeError from zipping against None, under a docstring promising
+        # this function cannot fail outright.
+        logger.warning(
+            "frame layout: %d birds don't fit %gx%g; rendering nothing",
+            len(files), width, height,
+        )
+        return []
 
     placements = []
     for i, (file, (cx, cy, _rect)) in enumerate(zip(files, placed, strict=True)):

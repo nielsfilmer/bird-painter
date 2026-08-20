@@ -452,3 +452,103 @@ def test_the_timer_path_clears_the_wake_after_settling():
     )
     assert slept == [80.0]
     assert not wake.is_set(), "that bird is in the image we're about to fetch"
+
+
+def _mask_bytes(size=(40, 30), ink=None) -> bytes:
+    """An L-mode lettering mask: black field, white where glyphs go."""
+    mask = Image.new("L", size, 0)
+    if ink:
+        mask.paste(255, ink)
+    buf = io.BytesIO()
+    mask.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_an_older_recorder_does_not_black_out_the_panel():
+    """A recorder older than this client doesn't REJECT `?layer=text` — FastAPI
+    ignores query params a route doesn't declare, so it answers 200 with the
+    ordinary full-colour wall. Nothing raises, so a fallback that waits for an
+    exception never fires, and that RGB wall becomes the alpha mask: cream is
+    nearly opaque, so the panel gets stamped black almost edge to edge and the
+    hash cache holds it there (QA + review, 2026-08-20)."""
+    wall = _png_bytes(color=(236, 225, 198))  # the cream wall, as `main` serves
+
+    def handler(request):
+        return httpx.Response(200, content=wall)  # every URL: the same wall
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    picture, text = fc.fetch_layers(
+        "http://recorder/wall.png", timeout=5, client=client
+    )
+    assert text is None, "an RGB wall is not a lettering mask"
+    assert picture == wall
+
+    # And the consequence the guard exists to prevent.
+    panel = fc.dither_to_panel(Image.open(io.BytesIO(picture)), (40, 30))
+    import numpy as np
+
+    stamped_anyway = fc.stamp_text(panel, Image.open(io.BytesIO(wall)))
+    assert np.asarray(stamped_anyway.convert("L")).mean() < 60, (
+        "this is what the panel would have looked like — near black"
+    )
+
+
+def test_a_real_text_layer_is_used():
+    def handler(request):
+        if "layer=text" in str(request.url):
+            return httpx.Response(200, content=_mask_bytes())
+        return httpx.Response(200, content=_png_bytes())
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _picture, text = fc.fetch_layers(
+        "http://recorder/wall.png", timeout=5, client=client
+    )
+    assert text is not None
+    assert Image.open(io.BytesIO(text)).mode == "L"
+
+
+def test_the_fallback_refetches_the_captioned_wall():
+    """A recorder new enough to honour `layer` but failing on the text layer
+    would have sent a caption-less picture. A panel of unnamed birds is worse
+    than a dithered one, so the fallback asks again for the whole wall."""
+    asked = []
+
+    def handler(request):
+        asked.append(str(request.url))
+        if "layer=text" in str(request.url):
+            return httpx.Response(500)
+        return httpx.Response(200, content=_png_bytes())
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    _picture, text = fc.fetch_layers(
+        "http://recorder/wall.png", timeout=5, client=client
+    )
+    assert text is None
+    assert asked[-1] == "http://recorder/wall.png", "the plain wall, with captions"
+
+
+def test_the_text_mask_lands_square_on_a_portrait_panel():
+    """`BP_FRAME_ROTATE=90` is a documented mounting. The picture rotates then
+    resizes; the mask used to resize then rotate, coming out transposed
+    (1200x1600 over a 1600x1200 panel) and getting squashed back into place —
+    every caption in the wrong spot."""
+    picture_src = Image.new("RGB", (160, 120), (255, 255, 255))
+    mask_src = _mask_bytes(size=(160, 120), ink=(10, 10, 40, 30))
+    for rotate in (0, 90, 180, 270):
+        size = (120, 160) if rotate in (90, 270) else (160, 120)
+        picture = fc.dither_to_panel(picture_src, size, rotate)
+        mask = fc.dither_free_mask(mask_src, size, rotate)
+        assert mask.size == picture.size, f"rotate={rotate}"
+
+
+def test_stamping_leaves_only_panel_colours():
+    """The picture is quantised to six colours and nothing quantises after the
+    stamp, so a part-lit glyph edge would put an off-palette colour on the
+    panel for good."""
+    picture = fc.dither_to_panel(Image.new("RGB", (60, 40), (200, 40, 40)), (60, 40))
+    soft = Image.new("L", (60, 40), 0)
+    soft.paste(90, (5, 5, 30, 20))  # a half-lit edge: neither ink nor ground
+    soft.paste(255, (10, 10, 20, 15))
+    stamped = fc.stamp_text(picture, soft)
+    used = {color for _count, color in stamped.getcolors(maxcolors=4096)}
+    assert used <= set(fc.PANEL_PALETTE)

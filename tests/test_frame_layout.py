@@ -26,6 +26,38 @@ def place(count: int, salt: str = ""):
     return compute_frame_scatter(files, *PANEL, BAND_TOP)
 
 
+# What the renderer actually passes: each bird's own ink aspect, a fixed
+# caption height in pixels, and each caption's measured width. The suite used
+# to call compute_frame_scatter with none of them, which is why a placement bug
+# reached the panel — with plain unit cells the rosette never got wide enough
+# to leave a tempting gap between its petals.
+IN_THE_WILD_ASPECTS = [1.05, 0.72, 1.55, 0.88, 1.30, 0.95, 1.80, 0.65, 1.20,
+                       1.40, 0.80, 1.10, 1.62, 0.90, 1.15, 0.75]
+IN_THE_WILD_CAPTIONS = [150, 220, 190, 260, 170, 210, 240, 160, 200, 180,
+                        230, 175, 205, 145, 250, 165]
+CAPTION_PX = 33.0
+
+
+def place_as_rendered(count: int, salt: str = ""):
+    files = [f"bird{salt}{i:02d}.jpg" for i in range(count)]
+    return compute_frame_scatter(
+        files, *PANEL, BAND_TOP,
+        aspects=IN_THE_WILD_ASPECTS[:count],
+        caption_px=CAPTION_PX,
+        caption_widths=IN_THE_WILD_CAPTIONS[:count],
+    )
+
+
+def rendered_footprint(p, index):
+    """The box the renderer really occupies: the caption's measured width is a
+    floor on it, so two small neighbours can't overlap each other's lettering."""
+    w = max(p.size_vmin * VMIN, IN_THE_WILD_CAPTIONS[index])
+    h = p.height_vmin * VMIN
+    left = (p.x + PANEL[0] / 2) - w / 2
+    top = (p.y + PANEL[1] / 2) - h / 2
+    return (left, top, left + w, top + h + CAPTION_PX)
+
+
 def footprint(p):
     w = p.size_vmin * VMIN
     h = p.height_vmin * VMIN
@@ -152,3 +184,59 @@ def test_smaller_birds_sit_further_out_than_larger_ones():
         ring = [from_focus(p) for p in placements[1 : RECENT_COUNT + 1]]
         oldest = [from_focus(p) for p in placements[-3:]]  # the smallest three
         assert sum(oldest) / len(oldest) > 1.15 * (sum(ring) / len(ring)), salt
+
+
+def test_no_old_bird_sits_inside_the_ring_on_a_real_wall():
+    """The averages above passed while the single oldest bird sat nearer the
+    anchor than every other bird on the panel (QA, 2026-08-20). A gap BETWEEN
+    two ring petals scores well on emptiness, so the outward pull — a score
+    term — was outvoted. No old bird may sit inside the body of the rosette,
+    and the check has to run on production-shaped input: with plain unit cells
+    the rosette is too tight to leave such a gap.
+
+    The bar is the ring's MEDIAN radius. A single petal can creep far out
+    hunting for space, and holding every later bird beyond that outlier is a
+    bar the sheet may simply not have room for."""
+    for count in (7, 9, 12, 16):
+        for salt in ("", "a", "b", "c"):
+            placements = place_as_rendered(count, salt)
+            anchor = placements[0]
+
+            def distance(p, anchor=anchor):
+                return math.hypot(p.x - anchor.x, p.y - anchor.y)
+
+            ring = sorted(distance(p) for p in placements[1 : RECENT_COUNT + 1])
+            old = [distance(p) for p in placements[RECENT_COUNT + 1 :]]
+            body = ring[len(ring) // 2]
+            # A hair of tolerance: on a full sheet the last bird can find no
+            # non-overlapping spot outside the rosette at all, and a placement
+            # just inside the bar beats no placement. The bug this guards
+            # against was not marginal — an old bird at 291 against a ring at
+            # 537 — so a 5% skirt still catches it with room to spare.
+            assert min(old) >= body * 0.95, (
+                f"{count} birds, salt {salt!r}: an old bird at {min(old):.0f} "
+                f"sits inside the rosette's body at {body:.0f}"
+            )
+
+
+def test_a_real_wall_never_overlaps_or_runs_off_the_sheet():
+    """The same production shape, against the two invariants that matter most:
+    captions are fixed-size, so a small bird's lettering is wider than the bird
+    and is what actually collides."""
+    for count in (1, 2, 6, 9, 12, 16):
+        for salt in ("", "a", "b"):
+            rects = [
+                rendered_footprint(p, i)
+                for i, p in enumerate(place_as_rendered(count, salt))
+            ]
+            for a in rects:
+                assert a[0] >= PANEL[0] * SIDE_MARGIN - 1
+                assert a[2] <= PANEL[0] * (1 - SIDE_MARGIN) + 1
+                assert a[1] >= BAND_TOP - 1
+                assert a[3] <= PANEL[1] * (1 - BOTTOM_MARGIN) + 1
+            for i, a in enumerate(rects):
+                for b in rects[i + 1 :]:
+                    assert (
+                        a[2] <= b[0] or b[2] <= a[0]
+                        or a[3] <= b[1] or b[3] <= a[1]
+                    ), f"{count} birds, salt {salt!r}: {a} collides with {b}"
