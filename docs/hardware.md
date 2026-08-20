@@ -231,7 +231,8 @@ Notes on the bigger panel:
    and not worth a 30 s redraw to announce; the notice only appears if the
    search finds nothing. While the recorder is away the frame retries every few
    seconds instead of on the slow timer, and the first wall it gets replaces
-   the notice. `BP_FRAME_SEARCH_SECONDS=0` skips the notice — the frame still
+   the notice. (The very first retry waits out `BP_FRAME_MIN_SECONDS` — drawing
+   the notice wore the panel, and that floor applies to every redraw.) `BP_FRAME_SEARCH_SECONDS=0` skips the notice — the frame still
    looks for the recorder, it just never says so, leaving whatever the panel
    already holds.
 
