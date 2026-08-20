@@ -345,6 +345,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
     (the collage placement maths), so `/wall.png` places birds identically to
     the live wall. A parity test keeps the two in sync.
+  - `fonts.py` — the house serif's candidate paths + `first_existing`. Its own
+    module so `frame_client` (on the frame Pi, installed `--no-deps`, no scipy)
+    can find a font without importing `render`.
   - `frame_layout.py` — `compute_frame_scatter(...)`: the e-paper panel's own
     placement (`style=panel`), a focal scatter rather than the wall's spiral —
     newest bird largest on an anchor in a central box, the five before it
@@ -357,7 +360,11 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     birds cropped to their own ink; `layer=picture|text` splits the render so
     the frame can dither the picture and stamp unditherable lettering on top.
   - `frame_client.py` — `python -m bird_painter.frame_client`: the thin e-paper
-    frame client (runs on the frame Pi). Fetches the recorder's `/wall.png` on
+    frame client (runs on the frame Pi). At boot it looks for the recorder for
+    `BP_FRAME_SEARCH_SECONDS` (60) and, only if it finds nothing, draws a
+    centred "Looking for recorder" notice — the two machines don't boot in step
+    and a redraw costs ~30 s of panel wear. Then fetches the recorder's
+    `/wall.png` on
     a slow timer, dithers to the Spectra 6 six-colour palette, pushes to the
     panel via the Waveshare `epd13in3E` driver (imported lazily — hardware-only,
     so the module imports/tests without it); redraws only when the wall changed.

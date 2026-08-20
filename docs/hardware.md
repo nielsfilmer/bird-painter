@@ -223,7 +223,15 @@ Notes on the bigger panel:
    ```
    It fetches `/wall.png` every few minutes (the panel takes ~25–35 s per full
    redraw, so don't go faster), dithers it to the six panel colours, and only
-   redraws when the wall actually changed. Autostart it with its own `systemd`
+   redraws when the wall actually changed.
+
+   At boot it looks for the recorder for `BP_FRAME_SEARCH_SECONDS` (default 60)
+   before putting **"Looking for recorder"** on the panel. The two machines
+   don't boot in step and the frame is often first, so a short wait is normal
+   and not worth a 30 s redraw to announce; the notice only appears if the
+   search finds nothing. While it's up the frame retries every few seconds
+   instead of on the slow timer, and the first wall it gets replaces it. Set
+   `BP_FRAME_SEARCH_SECONDS=0` to keep whatever the panel is holding instead. Autostart it with its own `systemd`
    unit (`bird-painter-frame.service`, same shape as the recorder's but
    `ExecStart=…/.venv/bin/python -m bird_painter.frame_client` and the
    `BP_FRAME_*` values — including `BP_FRAME_DRIVER_PATH` — as `Environment=`

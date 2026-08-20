@@ -47,6 +47,19 @@ Config via environment:
                              would otherwise dither into a speckle everywhere.
                              Falls back to the single-image fetch if the
                              recorder is too old to serve layers.
+  BP_FRAME_SEARCH_SECONDS    how long to look for the recorder at boot before
+                             putting "Looking for recorder" on the panel
+                             (default 60; 0 disables the notice entirely). The
+                             frame and the recorder are two machines on one
+                             network and they don't boot in step — a frame that
+                             came up first would otherwise sit on last week's
+                             birds, or on whatever the panel happened to be
+                             holding, with nothing to say it was waiting.
+                             The notice is drawn at most once per boot, and
+                             only if the search finds nothing: an e-paper
+                             redraw takes ~30 s and wears the panel, so a
+                             recorder that answers in time is never interrupted
+                             by it.
   BP_FRAME_DRIVER_PATH       dir to add to sys.path to find the Waveshare
                              driver. The Spectra 6 (E) driver ships as a flat
                              `epd13in3E` module under the panel's own
@@ -67,7 +80,9 @@ import time
 import urllib.parse
 
 import httpx
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+
+from .fonts import SERIF, first_existing
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +98,17 @@ DEFAULT_MIN_SECONDS = 90
 STREAM_RETRY_SECONDS = 30
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_SIZE = (1600, 1200)
+# How long the frame looks for the recorder at boot before saying so on the
+# panel, and how often it tries within that window.
+DEFAULT_SEARCH_SECONDS = 60
+SEARCH_POLL_SECONDS = 5
+SEARCHING_TEXT = "Looking for recorder"
+# The notice's type, as a share of the panel's shorter side.
+NOTICE_TEXT_VMIN = 0.06
+# Stands in for an image hash so the main loop's dedupe treats the notice like
+# any other drawn frame: it won't be redrawn while it's up, and the first real
+# wall that arrives replaces it (no wall can hash to this).
+NOTICE_HASH = "notice:looking-for-recorder"
 # A mask pixel this bright or brighter gets the ink. Glyph edges are
 # anti-aliased, and a partial paste would blend black with the picture into a
 # colour the six-colour panel doesn't have — after the only quantisation step,
@@ -302,19 +328,28 @@ def refresh_once(
     panel_factory=load_panel,
     push=_push,
     crisp_text: bool = True,
+    quiet: bool = False,
 ) -> str | None:
     """One fetch→(maybe)draw cycle. Skips the panel redraw when the image is
     byte-identical to the last one drawn — no point wearing the panel (and
     spending ~30 s) on an unchanged wall. Returns the hash to carry forward;
     on any error it logs and returns `last_hash` unchanged (keep the current
-    frame, retry next tick)."""
+    frame, retry next tick).
+
+    `quiet` is for the boot search, where the recorder being absent is the
+    expected case rather than a fault: it logs one line instead of a traceback,
+    so a minute of looking doesn't fill the journal with stack traces that say
+    nothing but "connection refused"."""
     try:
         if crisp_text:
             data, text = fetch_layers(url, timeout=timeout, client=client)
         else:
             data, text = fetch_image(url, client=client, timeout=timeout), None
-    except Exception:  # noqa: BLE001 — a bad fetch must not kill the loop
-        logger.exception("frame: fetch failed; keeping the current image")
+    except Exception as error:  # noqa: BLE001 — a bad fetch must not kill the loop
+        if quiet:
+            logger.info("frame: no answer from %s (%s)", url, type(error).__name__)
+        else:
+            logger.exception("frame: fetch failed; keeping the current image")
         return last_hash
     # Hash both layers: the picture can be unchanged while a caption's clock
     # has moved on, and vice versa.
@@ -335,6 +370,88 @@ def refresh_once(
         return last_hash
     logger.info("frame: updated")
     return digest
+
+
+def render_notice(text: str, size: tuple[int, int], rotate: int) -> Image.Image:
+    """A centred line of text on the panel's own white, ready to push.
+
+    Built through the SAME mask-and-stamp path the wall's lettering uses, for
+    the same reason: black and white are both panel colours, but the grey edges
+    of an anti-aliased glyph are not, and dithering them turns a clean line of
+    type into speckle. Going through `dither_free_mask` also gets the rotation
+    handling for free, so the notice reads the right way up on a panel hung
+    portrait."""
+    # Draw in the panel's pre-rotation frame; dither_free_mask turns it.
+    logical = (size[1], size[0]) if rotate in (90, 270) else size
+    mask = Image.new("L", logical, 0)
+    canvas = ImageDraw.Draw(mask)
+    face = first_existing(SERIF)
+    points = max(12, round(min(logical) * NOTICE_TEXT_VMIN))
+    try:
+        font = (
+            ImageFont.truetype(face, points)
+            if face
+            else ImageFont.load_default(points)
+        )
+    except OSError:  # a listed face that exists but won't load
+        font = ImageFont.load_default(points)
+    canvas.text(
+        (logical[0] / 2, logical[1] / 2), text, font=font, fill=255, anchor="mm"
+    )
+    buffer = io.BytesIO()
+    mask.save(buffer, "PNG")
+    return stamp_text(
+        Image.new("RGB", size, (255, 255, 255)),
+        dither_free_mask(buffer.getvalue(), size, rotate),
+    )
+
+
+def show_notice(
+    text: str,
+    size: tuple[int, int],
+    rotate: int,
+    *,
+    panel_factory=load_panel,
+    push=_push,
+) -> str | None:
+    """Put a notice on the panel. Returns the sentinel hash to carry forward,
+    or None if it couldn't be drawn — in which case the caller keeps whatever
+    the panel already holds, exactly as a failed wall draw does."""
+    try:
+        push(panel_factory(), render_notice(text, size, rotate))
+    except Exception:  # noqa: BLE001 — a notice must never kill the loop
+        logger.exception("frame: couldn't draw the notice")
+        return None
+    logger.info("frame: showing %r", text)
+    return NOTICE_HASH
+
+
+def search_for_recorder(
+    draw,
+    *,
+    search_seconds: float,
+    poll_seconds: float = SEARCH_POLL_SECONDS,
+    now=time.monotonic,
+    sleep=time.sleep,
+) -> str | None:
+    """Look for the recorder at boot, returning the hash of what got drawn, or
+    None if the window closed with nothing found.
+
+    `draw` is a full fetch-and-draw attempt (`refresh_once`), not a liveness
+    ping: if the recorder IS up, the right thing to do is draw its wall, and
+    doing it this way means a found recorder costs no extra request. There is
+    no cheaper probe worth having — a HEAD on /wall.png is refused (405), and
+    /api doesn't exist on older recorders, so probing it would report a
+    perfectly good recorder as missing."""
+    deadline = now() + search_seconds
+    while True:
+        digest = draw()
+        if digest is not None:
+            return digest
+        remaining = deadline - now()
+        if remaining <= 0:
+            return None
+        sleep(min(poll_seconds, remaining))
 
 
 def stream_url(source: str) -> str:
@@ -522,8 +639,25 @@ def main() -> None:
             url, interval, size[0], size[1], rotate,
         )
 
-    last_hash: str | None = None
-    last_redraw_at: float | None = None
+    # Boot: look for the recorder before showing anything. The two machines
+    # don't come up together — the frame is often first — so a few seconds of
+    # "nothing yet" is normal and not worth a ~30 s redraw to announce.
+    search_seconds = _int_env("BP_FRAME_SEARCH_SECONDS", DEFAULT_SEARCH_SECONDS)
+    last_hash = search_for_recorder(
+        lambda: refresh_once(
+            url, size, rotate, None,
+            timeout=timeout, crisp_text=crisp_text, quiet=True,
+        ),
+        search_seconds=search_seconds,
+    )
+    if last_hash is None and search_seconds > 0:
+        logger.info(
+            "frame: no recorder at %s after %ds; saying so on the panel",
+            url, search_seconds,
+        )
+        last_hash = show_notice(SEARCHING_TEXT, size, rotate)
+    last_redraw_at = time.monotonic() if last_hash else None
+
     while True:
         before = last_hash
         last_hash = refresh_once(
@@ -533,8 +667,16 @@ def main() -> None:
             # refresh_once only returns a new hash when it actually pushed to
             # the panel, so this — not the fetch — is when the panel was worn.
             last_redraw_at = time.monotonic()
+        # While the notice is up there's nothing to wait for but the recorder,
+        # so look often rather than on the wall's leisurely timer — a failed
+        # fetch against a machine that isn't there costs a refused connection.
+        # The redraw floor still applies, so finding it early can't wear the
+        # panel twice in quick succession.
         wait_for_next_draw(
-            wake, last_redraw_at, interval=interval, min_seconds=min_seconds
+            wake,
+            last_redraw_at,
+            interval=SEARCH_POLL_SECONDS if last_hash == NOTICE_HASH else interval,
+            min_seconds=min_seconds,
         )
 
 
