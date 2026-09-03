@@ -11,10 +11,13 @@ no side effects; uvicorn builds the production app via
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime
+import importlib.metadata
 import ipaddress
 import logging
 import mimetypes
+import socket
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -22,9 +25,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import brush
+from . import brush, unit
 from .api_docs import describe, openapi_websocket_path
 from .config import Config, load_config
 from .events import PING_SECONDS, EventHub, absolutize, announce_painted
@@ -35,6 +39,7 @@ from .placeholder import placeholder_svg
 from .runner import PaintRunner
 from .store import Store
 from .trim import trim_to_bird
+from .unit import LiveSettings
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -114,7 +119,7 @@ def _route_path(scope: Scope) -> str:
     if path == root:
         return ""
     if path[len(root)] == "/":
-        return path[len(root):]
+        return path[len(root) :]
     return path
 
 
@@ -276,6 +281,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     events = EventHub()
     runner = PaintRunner(config, store, gate, events)
     night = watch_from_config(config)
+    # What the table model's settings screen may change while running (#123):
+    # the bird cap and the night schedule live here, the frozen Config stays
+    # what the process started with.
+    live_settings = LiveSettings.from_config(config)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -327,6 +336,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.store = store
     app.state.events = events
     app.state.night = night
+    app.state.live_settings = live_settings
 
     @app.get("/", response_class=HTMLResponse)
     def wall() -> HTMLResponse:
@@ -338,6 +348,18 @@ def create_app(config: Config | None = None) -> FastAPI:
         # The wall imports this ES module (its layout maths, unit-tested).
         return FileResponse(
             STATIC_DIR / "layout.js", media_type="text/javascript", headers=REVALIDATE
+        )
+
+    @app.get("/unit-screen.js")
+    def unit_screen_js() -> FileResponse:
+        # The table model's settings screen (panel mode imports it; it only
+        # does anything on the unit itself, where /unit answers).
+        # Revalidated like layout.js (#151): a stale copy against a fresh page
+        # fails the dynamic import, which the page deliberately swallows.
+        return FileResponse(
+            STATIC_DIR / "unit-screen.js",
+            media_type="text/javascript",
+            headers=REVALIDATE,
         )
 
     @app.get("/api/docs", response_class=HTMLResponse)
@@ -352,11 +374,16 @@ def create_app(config: Config | None = None) -> FastAPI:
     def api_description() -> JSONResponse:
         """The same documentation as JSON, with this instance's settings —
         what `/api/docs` reads, and what a script would."""
-        return JSONResponse(describe(config))
+        # The cap the settings screen may have changed since startup.
+        return JSONResponse(
+            describe(
+                dataclasses.replace(config, wall_max_live=live_settings.wall_max_live)
+            )
+        )
 
     @app.get("/api/live")
     def live() -> JSONResponse:
-        paintings = store.live()[: config.wall_max_live]
+        paintings = store.live()[: live_settings.wall_max_live]
         return JSONResponse(
             {
                 "ttl_seconds": config.paint_ttl_seconds,
@@ -462,7 +489,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 "species_common": p.species_common,
                 "born_at": p.born_at,
             }
-            for p in store.live()[: config.wall_max_live]
+            for p in store.live()[: live_settings.wall_max_live]
         ]
 
     @app.get("/wall.png")
@@ -537,9 +564,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             if not LAYOUT_MIN_SIDE <= value <= LAYOUT_MAX_SIDE:
                 raise HTTPException(
                     status_code=422,
-                    detail=(
-                        f"{name} must be {LAYOUT_MIN_SIDE}..{LAYOUT_MAX_SIDE}"
-                    ),
+                    detail=(f"{name} must be {LAYOUT_MIN_SIDE}..{LAYOUT_MAX_SIDE}"),
                 )
         plan = plan_wall(
             _live_for_render(),
@@ -677,5 +702,112 @@ def create_app(config: Config | None = None) -> FastAPI:
         return JSONResponse(
             {"painted": painting.file, "source": source}, status_code=201
         )
+
+    # ---- the unit's own screen (table model, #123) --------------------------
+    # Loopback-only, twice: LocalOnly refuses /unit* at the door, and each
+    # handler checks again — these change the unit and its network.
+    def _require_local(request: Request) -> None:
+        if not _is_loopback(request.client):
+            raise HTTPException(status_code=404, detail="Not Found")
+
+    def _about() -> dict:
+        try:
+            version = importlib.metadata.version("bird-painter")
+        except importlib.metadata.PackageNotFoundError:
+            version = "dev"
+        if config.enable_listener:
+            mic = f" (mic: {config.input_device})" if config.input_device else ""
+            recorder = f"this unit{mic}"
+        else:
+            recorder = "off — wall only"
+        return {
+            "unit": f"{socket.gethostname()} · bird-painter {version}",
+            "recorder": recorder,
+            "ears": f"BirdNET · floor {config.confidence_floor:.2f}",
+            "wall": (
+                f"paintings stay {config.paint_ttl_seconds / 3600:g} h · "
+                f"archive kept {config.retention_days} days"
+            ),
+        }
+
+    async def _json_object(request: Request) -> dict:
+        """The request's JSON object, or a 400 that says so — a malformed or
+        empty body is the caller's mistake, not a server error."""
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="expected a JSON object"
+            ) from None
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="expected a JSON object")
+        return body
+
+    def _unit_payload(rescan: bool = False) -> dict:
+        return {
+            "settings": live_settings.as_json(),
+            "bounds": unit.knobs_json(),
+            "night": {
+                "is_night": bool(night.is_night),
+                "backlight": night.backlight is not None,
+            },
+            "connectivity": unit.connectivity(rescan).as_json(),
+            "about": _about(),
+        }
+
+    @app.get("/unit")
+    async def unit_state(request: Request) -> JSONResponse:
+        _require_local(request)
+        return JSONResponse(await run_in_threadpool(_unit_payload))
+
+    @app.put("/unit")
+    async def unit_update(request: Request) -> JSONResponse:
+        _require_local(request)
+        updates = unit.clean_updates(await _json_object(request))
+        if not updates:
+            raise HTTPException(status_code=400, detail="nothing to change")
+        try:
+            unit.apply(updates, live_settings)
+        except unit.SettingsWriteError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        night.reschedule(live_settings.night)
+        return JSONResponse(await run_in_threadpool(_unit_payload))
+
+    @app.get("/unit/wifi")
+    async def unit_wifi(request: Request, rescan: bool = False) -> JSONResponse:
+        _require_local(request)
+        found = await run_in_threadpool(unit.connectivity, rescan)
+        return JSONResponse(found.as_json())
+
+    @app.post("/unit/wifi/join")
+    async def unit_wifi_join(request: Request) -> JSONResponse:
+        _require_local(request)
+        body = await _json_object(request)
+        ssid = str(body.get("ssid", ""))
+        password = body.get("password")
+        ok, message = await run_in_threadpool(unit.join, ssid, password or None)
+        if not ok:
+            raise HTTPException(status_code=400, detail=message)
+        found = await run_in_threadpool(unit.connectivity)
+        return JSONResponse(
+            {"ok": True, "message": message, "connectivity": found.as_json()}
+        )
+
+    @app.post("/unit/wifi/forget")
+    async def unit_wifi_forget(request: Request) -> JSONResponse:
+        _require_local(request)
+        body = await _json_object(request)
+        ok, message = await run_in_threadpool(unit.forget, str(body.get("ssid", "")))
+        if not ok:
+            raise HTTPException(status_code=400, detail=message)
+        return JSONResponse({"ok": True, "message": message})
+
+    @app.post("/unit/reboot")
+    async def unit_reboot(request: Request) -> JSONResponse:
+        _require_local(request)
+        ok, message = await run_in_threadpool(unit.reboot)
+        if not ok:
+            raise HTTPException(status_code=500, detail=message)
+        return JSONResponse({"ok": True, "message": message})
 
     return app

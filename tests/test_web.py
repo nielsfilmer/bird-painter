@@ -27,6 +27,95 @@ def test_wall_page_serves(client):
     assert "<title>bird-painter</title>" in response.text
 
 
+def test_unit_screen_api_is_loopback_only_and_writes_its_files(
+    config, tmp_path, monkeypatch
+):
+    """#123: the settings screen's API. Off-machine it does not exist; on the
+    unit a PUT lands in unit.conf / .env, in the running settings, and in the
+    night watch, and the GET reports it all."""
+    from bird_painter import unit
+
+    conf, env = tmp_path / "unit.conf", tmp_path / ".env"
+    conf.write_text("CAPTION=1.5\nUI=1.5\nMAX_LIVE=3\nROTATE=90\nOUTPUT=DSI-2\n")
+    env.write_text("FAL_KEY=secret\nBP_WALL_MAX_LIVE=3\n")
+    monkeypatch.setattr(unit, "UNIT_CONF", conf)
+    monkeypatch.setattr(unit, "ENV_FILE", env)
+    monkeypatch.setattr(unit, "connectivity", lambda rescan=False: unit.Connectivity())
+    app = create_app(dataclasses.replace(config, wall_max_live=3))
+    with TestClient(app, client=REMOTE) as remote:
+        assert remote.get("/unit").status_code == 404
+        assert remote.put("/unit", json={"CAPTION": 2}).status_code == 404
+        assert remote.post("/unit/reboot").status_code == 404
+    with TestClient(app, client=LOCAL) as local:
+        for _ in range(4):
+            local.post("/dev/paint/robin")
+        state = local.get("/unit").json()
+        assert (
+            state["settings"]["CAPTION"] == 1.5 and state["settings"]["MAX_LIVE"] == 3
+        )
+        assert state["night"]["is_night"] is False
+        assert state["connectivity"]["state"] == "unknown"
+        assert "bird-painter" in state["about"]["unit"]
+        assert len(local.get("/api/live").json()["paintings"]) == 3
+        changed = local.put(
+            "/unit",
+            json={"CAPTION": "1.7", "MAX_LIVE": 4, "NIGHT_FROM": 23, "FAL_KEY": "x"},
+        )
+        assert changed.status_code == 200
+        assert changed.json()["settings"]["CAPTION"] == 1.7
+        assert changed.json()["settings"]["NIGHT_FROM"] == 23
+        assert len(local.get("/api/live").json()["paintings"]) == 4  # at once
+        assert app.state.night.schedule.start_hour == 23  # rescheduled
+        assert unit.read_conf(conf)["CAPTION"] == "1.7"
+        assert unit.read_conf(env) == {
+            "FAL_KEY": "secret",
+            "BP_WALL_MAX_LIVE": "4",
+            "BP_NIGHT_FROM": "23",
+        }
+        assert local.put("/unit", json={"FAL_KEY": "x"}).status_code == 400
+        assert local.put("/unit", json=[1]).status_code == 400
+        assert local.put("/unit", content=b"x").status_code == 400  # not 500
+        assert local.post("/unit/wifi/join", content=b"").status_code == 400
+        assert local.get("/unit").json()["bounds"]["CAPTION"]["max"] == 2.0
+        # /api reports the cap the screen set, not the one the process started with
+        assert local.get("/api").json()["settings"]["wall_max_live"] == 4
+
+
+def test_unit_wifi_routes_drive_nmcli_and_report_its_refusal(config, monkeypatch):
+    from bird_painter import unit
+
+    calls = []
+
+    def fake_join(ssid, password):
+        calls.append((ssid, password))
+        return (
+            (False, "Secrets were required, but not provided.")
+            if ssid == "locked"
+            else (True, "activated")
+        )
+
+    monkeypatch.setattr(unit, "join", fake_join)
+    monkeypatch.setattr(unit, "forget", lambda ssid: (True, "forgotten"))
+    monkeypatch.setattr(
+        unit, "connectivity", lambda rescan=False: unit.Connectivity(state="full")
+    )
+    monkeypatch.setattr(unit, "reboot", lambda: (False, "polkit refused"))
+    app = create_app(config)
+    with TestClient(app, client=LOCAL) as local:
+        assert local.get("/unit/wifi?rescan=1").json()["state"] == "full"
+        ok = local.post("/unit/wifi/join", json={"ssid": "open", "password": ""})
+        assert ok.status_code == 200 and ok.json()["connectivity"]["state"] == "full"
+        refused = local.post(
+            "/unit/wifi/join", json={"ssid": "locked", "password": "no"}
+        )
+        assert refused.status_code == 400 and "Secrets" in refused.json()["detail"]
+        assert calls == [("open", None), ("locked", "no")]
+        assert local.post("/unit/wifi/forget", json={"ssid": "open"}).json()["ok"]
+        assert local.post("/unit/reboot").status_code == 500
+    with TestClient(app, client=REMOTE) as remote:
+        assert remote.get("/unit/wifi").status_code == 404
+
+
 def test_wall_page_and_its_module_revalidate(client):
     """#151: the kiosk's Chromium served a cached layout.js against a fresh
     index.html after a deploy and the import died silently. Both — and the
@@ -39,6 +128,7 @@ def test_wall_page_and_its_module_revalidate(client):
         "/layout.js": "text/javascript",
         "/api/docs": "text/html",
     }
+    types["/unit-screen.js"] = "text/javascript"
     for path, mime in types.items():
         response = client.get(path)
         assert response.headers["cache-control"] == "no-cache", path
@@ -291,7 +381,7 @@ def test_ws_streams_a_painted_bird_with_name_time_image_and_sound(config):
 
         event = ws.receive_json()
         assert event["type"] == "painted"
-        assert event["species_common"] == "Wren"           # the name
+        assert event["species_common"] == "Wren"  # the name
         assert event["time"] and event["at"] == painting.born_at  # the time
         # urls are absolute for whoever connected, and both actually resolve
         assert event["image"]["url"].startswith("http://testserver/images/")
@@ -450,9 +540,10 @@ def test_download_flag_is_read_leniently(config):
             expected = value != ""
             assert ("content-disposition" in headers) is expected, value
         for value in ("0", "false", "no", "off"):
-            assert "content-disposition" not in client.get(
-                f"/audio/{clip}?download={value}"
-            ).headers, value
+            assert (
+                "content-disposition"
+                not in client.get(f"/audio/{clip}?download={value}").headers
+            ), value
 
 
 def test_replay_dedupe_matches_by_identity_and_ends_at_the_first_fresh_event():
@@ -645,10 +736,20 @@ def test_everything_else_stays_reachable_from_the_network(config):
             ).file
         )
     with TestClient(app, client=REMOTE) as remote:
-        for path in ("/", "/api", "/api/docs", "/api/live", "/api/archive",
-                     "/wall.png", "/docs", "/openapi.json", "/layout.js",
-                     f"/images/{painted}", f"/audio/{clip}",
-                     f"/audio/{clip}?download=1"):
+        for path in (
+            "/",
+            "/api",
+            "/api/docs",
+            "/api/live",
+            "/api/archive",
+            "/wall.png",
+            "/docs",
+            "/openapi.json",
+            "/layout.js",
+            f"/images/{painted}",
+            f"/audio/{clip}",
+            f"/audio/{clip}?download=1",
+        ):
             assert remote.get(path).status_code == 200, path
         with remote.websocket_connect("/ws/detections") as ws:
             assert ws.receive_json()["type"] == "hello"
@@ -701,8 +802,11 @@ def test_api_layout_is_the_plan_the_png_draws(config):
         assert (body["style"], body["width"], body["height"]) == ("panel", 320, 240)
         live = client.get("/api/live").json()["paintings"]
         paintings = [
-            {"file": p["file"], "species_common": p["species_common"],
-             "born_at": p["born_at"]}
+            {
+                "file": p["file"],
+                "species_common": p["species_common"],
+                "born_at": p["born_at"],
+            }
             for p in live
         ]
         plan = plan_wall(paintings, small.archive_dir, 320, 240, style="panel")
@@ -725,7 +829,11 @@ def test_api_layout_is_the_plan_the_png_draws(config):
 def test_api_layout_refuses_bad_style_and_sizes(config):
     with TestClient(create_app(config), client=LOCAL) as client:
         for query in (
-            "style=bogus", "style=", "width=10", "height=99999", "width=abc",
+            "style=bogus",
+            "style=",
+            "width=10",
+            "height=99999",
+            "width=abc",
             "width=0&height=0",
         ):
             assert client.get(f"/api/layout?{query}").status_code == 422, query
@@ -787,8 +895,12 @@ def test_images_bare_serves_the_birds_ink_with_the_ground_keyed_out(config):
     plate.save(buf, "PNG")
     store = Store(config.archive_dir, ttl_seconds=100)
     painting = store.add(
-        image_bytes=buf.getvalue(), extension="png", species_common="Test Bird",
-        species_scientific="Testus birdus", confidence=0.9, source="detection",
+        image_bytes=buf.getvalue(),
+        extension="png",
+        species_common="Test Bird",
+        species_scientific="Testus birdus",
+        confidence=0.9,
+        source="detection",
     )
     with TestClient(create_app(config), client=LOCAL) as client:
         plain = client.get(f"/images/{painting.file}")
@@ -811,13 +923,17 @@ def test_images_bare_serves_the_birds_ink_with_the_ground_keyed_out(config):
         # bounding box) has that ground keyed to alpha.
         soft = Image.new("RGB", (200, 250), (255, 255, 255))
         d = ImageDraw.Draw(soft)
-        d.rectangle((40, 50, 119, 60), fill=(60, 40, 20))   # a bar at the top
+        d.rectangle((40, 50, 119, 60), fill=(60, 40, 20))  # a bar at the top
         d.rectangle((40, 190, 119, 199), fill=(60, 40, 20))  # and the bottom
         buf2 = io.BytesIO()
         soft.save(buf2, "PNG")
         p2 = store.add(
-            image_bytes=buf2.getvalue(), extension="png", species_common="Bar Bird",
-            species_scientific="Barrus", confidence=0.9, source="detection",
+            image_bytes=buf2.getvalue(),
+            extension="png",
+            species_common="Bar Bird",
+            species_scientific="Barrus",
+            confidence=0.9,
+            source="detection",
         )
         keyed = Image.open(io.BytesIO(client.get(f"/images/{p2.file}?bare=1").content))
         assert keyed.size == (80, 150)
@@ -826,8 +942,11 @@ def test_images_bare_serves_the_birds_ink_with_the_ground_keyed_out(config):
 
         # Nothing to crop (an SVG placeholder): the plain file, plain type.
         client.post("/dev/paint/robin")
-        svg = next(p for p in client.get("/api/live").json()["paintings"]
-                   if p["file"].endswith(".svg"))
+        svg = next(
+            p
+            for p in client.get("/api/live").json()["paintings"]
+            if p["file"].endswith(".svg")
+        )
         fallback = client.get(f"/images/{svg['file']}?bare=1")
         assert fallback.status_code == 200
         assert fallback.headers["content-type"].startswith("image/svg")

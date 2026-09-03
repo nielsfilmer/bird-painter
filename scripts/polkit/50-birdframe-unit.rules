@@ -1,0 +1,28 @@
+// bird-painter table model: what the unit's own settings screen may do.
+// Installed by scripts/setup-table-model.sh with __USER__ replaced by the
+// unit's user. The service runs as that user with no login session, so
+// polkit would otherwise answer "auth" to NetworkManager and logind and
+// nothing on a touchscreen could grant it. Scoped to one user; the rules
+// grant nothing to anyone else on the box.
+polkit.addRule(function (action, subject) {
+  if (subject.user !== "__USER__") {
+    return polkit.Result.NOT_HANDLED;
+  }
+  // Exactly what `nmcli device wifi list --rescan`, `device wifi connect`
+  // and `connection delete` need — not the whole NetworkManager prefix
+  // (which would add hostname, sleep/wake, radio switches).
+  var nm = [
+    "org.freedesktop.NetworkManager.wifi.scan",
+    "org.freedesktop.NetworkManager.network-control",
+    "org.freedesktop.NetworkManager.settings.modify.system",
+    "org.freedesktop.NetworkManager.settings.modify.own",
+  ];
+  if (nm.indexOf(action.id) !== -1) {
+    return polkit.Result.YES;
+  }
+  if (action.id === "org.freedesktop.login1.reboot" ||
+      action.id === "org.freedesktop.login1.reboot-multiple-sessions") {
+    return polkit.Result.YES; // the settings screen's restart button
+  }
+  return polkit.Result.NOT_HANDLED;
+});

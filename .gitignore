@@ -17,3 +17,4 @@ data/
 
 # Local audio test clips (not committed — licensing/size)
 samples/
+.bp-dev/

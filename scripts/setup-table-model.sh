@@ -55,7 +55,8 @@ MAX_LIVE="${BP_WALL_MAX_LIVE:-${MAX_LIVE:-12}}"
 ROTATE="${BP_ROTATE:-${ROTATE:-90}}"
 OUTPUT="${BP_OUTPUT:-${OUTPUT:-DSI-2}}"
 mkdir -p "$(dirname "$UNIT_CONF")"
-printf 'CAPTION=%s\nUI=%s\nMAX_LIVE=%s\nROTATE=%s\nOUTPUT=%s\n' \
+# OUTPUT is quoted: the login shell sources this file for the rotation.
+printf 'CAPTION=%s\nUI=%s\nMAX_LIVE=%s\nROTATE=%s\nOUTPUT="%s"\n' \
   "$CAPTION" "$UI" "$MAX_LIVE" "$ROTATE" "$OUTPUT" > "$UNIT_CONF"
 WALL_URL="http://127.0.0.1:${PORT}/?style=panel&caption=${CAPTION}&ui=${UI}"
 
@@ -214,9 +215,13 @@ AUTOSTART="$HOME/.config/labwc/autostart"
 touch "$AUTOSTART"
 # Rotation first, kiosk second: Chromium sizes itself to the output it finds.
 # Only this script's own rotation line: a hand-added `--mode` line stays.
+# The rotation is read from unit.conf at login rather than baked in, so a
+# change from the settings screen (#123) takes effect on the next restart
+# without re-running this script.
 sed -i '/^wlr-randr --output [^ ]* --transform [0-9]*$/d' "$AUTOSTART"
+sed -i '/^\. .*unit\.conf"*; wlr-randr --output /d' "$AUTOSTART"
 sed -i "\#^$HOME/.local/bin/bird-kiosk &\$#d" "$AUTOSTART"
-append_line "$AUTOSTART" "wlr-randr --output ${OUTPUT} --transform ${ROTATE}"
+append_line "$AUTOSTART" ". \"${UNIT_CONF}\"; wlr-randr --output \"\${OUTPUT}\" --transform \"\${ROTATE}\""
 append_line "$AUTOSTART" "$HOME/.local/bin/bird-kiosk &"
 # Apply to the running session too, if there is one.
 if [ -S /run/user/$(id -u)/wayland-0 ]; then
@@ -255,6 +260,13 @@ ENVFILE="$HOME/.config/labwc/environment"
 touch "$ENVFILE"
 sed -i '/^XCURSOR_THEME=/d' "$ENVFILE"
 append_line "$ENVFILE" "XCURSOR_THEME=invisible"
+
+log "unit: the settings screen's permissions"
+# The service (no login session) drives NetworkManager and reboots through
+# polkit; without a rule both answer "auth" that nothing can grant. The rule
+# is scoped to this user only and lives with the repo (scripts/polkit/).
+sed "s/__USER__/${USER}/g" "$APP_DIR/scripts/polkit/50-birdframe-unit.rules" \
+  | sudo tee /etc/polkit-1/rules.d/50-birdframe-unit.rules >/dev/null
 
 log "console: autologin to the desktop, no screen blanking"
 if command -v raspi-config >/dev/null; then

@@ -378,10 +378,19 @@
      relaunched at 03:00 must not show four seconds of bright cream. */
   body.polled #night { transition: opacity 4s ease; }
   body.night #night { opacity: 0.55; }
+  /* The unit's offline line (#123): italic, dim, low on the sheet, only in
+     panel mode and only while the network is not fully up. */
+  #offline {
+    position: fixed; left: 0; right: 0; bottom: 3.6vh; z-index: 9; text-align: center;
+    font-style: italic; letter-spacing: 0.12em; color: var(--ink-dim, #8d8065);
+    font-size: calc(2.6vmin * var(--ui-scale, 1)); pointer-events: none;
+  }
+  body:not(.panel) #offline { display: none; }
 </style>
 </head>
 <body>
 <div id="night" aria-hidden="true"></div>
+<div id="offline" hidden>offline — still listening…</div>
 <div id="header">
   <div class="eyebrow">birds outside</div>
   <div class="title">heard recently</div>
@@ -438,6 +447,47 @@ document.documentElement.style.setProperty("--ui-scale", String(panelOpts.uiScal
 const panelStyle = params.get("style") === "panel";
 if (panelStyle) document.body.classList.add("panel");
 else document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));
+
+// The table model's own settings (#123). On the unit itself /unit answers
+// (it is loopback-only) and its CAPTION/UI are what the owner set on the
+// screen, so they win over the kiosk URL's; anywhere else the URL stands.
+// The settings screen is loaded only in panel mode, and only mounts when
+// /unit answers — the desktop wall never sees it.
+function applyUnitSettings(settings) {
+  const next = normalizePanelOpts({
+    spread: params.get("spread"),
+    captionScale: settings.CAPTION,
+    uiScale: settings.UI,
+  });
+  panelOpts.captionScale = next.captionScale;
+  panelOpts.uiScale = next.uiScale;
+  document.documentElement.style.setProperty("--ui-scale", String(panelOpts.uiScale));
+  lastPlanKey = null; // the plan depends on the caption scale: ask again
+  layoutPanel();
+}
+// "offline — still listening…": the unit's own line, shown while the
+// network is not fully up (#123). The screen module keeps it current.
+let isOffline = () => false; // the settings module's rule, once it is loaded
+function showConnectivity(c) {
+  const line = document.getElementById("offline");
+  if (line) line.hidden = !isOffline(c);
+}
+if (panelStyle) {
+  fetch("/unit", { cache: "no-store" })
+    .then(res => (res.ok ? res.json() : null))
+    .then(state => {
+      if (!state) return; // not the unit: no screen, the URL's values stand
+      applyUnitSettings(state.settings);
+      return import("/unit-screen.js").then(m => (isOffline = m.isOffline) && m.mountUnitScreen({
+        initial: state,
+        onSettings: s => applyUnitSettings(s.settings),
+        onConnectivity: showConnectivity,
+      }));
+    })
+    // A stale module against a fresh page is #151's failure; say so rather
+    // than sit quietly without a settings screen.
+    .catch(err => console.warn("settings screen not loaded:", err));
+}
 
 function heardText(bornAt) {
   // A fixed clock time, not "x min ago": the e-ink frame only refreshes every
@@ -496,7 +546,7 @@ async function layoutPanel() {
   // The plan is deterministic per live set and viewport, so only ask when
   // one of them changed — the wall polls every few seconds, and the recorder
   // measures every live plate to answer.
-  const key = `${W}x${H}|${files.join("|")}`;
+  const key = `${W}x${H}|${panelOpts.captionScale}|${files.join("|")}`;
   if (key === lastPlanKey || planInFlight) return;
   planInFlight = true;
   let plan;
@@ -510,7 +560,7 @@ async function layoutPanel() {
   // A bird may have arrived or left, or the window changed shape, while we
   // waited: a plan for the old set would miss one or place a ghost, and a
   // plan for the old size lands 190px off (QA on #139). Let the next poll ask.
-  const nowKey = `${wall.clientWidth}x${wall.clientHeight}|${liveOrder.filter(f => plates.has(f)).join("|")}`;
+  const nowKey = `${wall.clientWidth}x${wall.clientHeight}|${panelOpts.captionScale}|${liveOrder.filter(f => plates.has(f)).join("|")}`;
   if (nowKey !== key) return;
   // An empty plan is the planner declining (a viewport too small for one
   // plate): don't remember it as done, or the wall stays frozen at that size.
