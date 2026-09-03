@@ -270,7 +270,7 @@ def test_the_page_can_still_stream_when_the_description_fails(client):
 def test_documented_download_values_are_the_ones_the_code_refuses():
     """The `?download` prose was the one documented constant not pinned — and
     it is exactly the sentence that was wrong in round 1."""
-    from bird_painter.web import _NOT_DOWNLOAD
+    from bird_painter.web import _FLAG_OFF
 
     note = next(
         p["note"]
@@ -279,7 +279,7 @@ def test_documented_download_values_are_the_ones_the_code_refuses():
         for p in e["params"]
         if p["name"] == "download"
     )
-    for refused in _NOT_DOWNLOAD - {""}:
+    for refused in _FLAG_OFF - {""}:
         assert refused in note
     assert "empty" in note  # the "" case, which reads as a word not a value
 
@@ -381,18 +381,45 @@ def test_documented_wall_params_match_layout_js_clamps():
     )
 
 
-def test_documented_layout_example_matches_the_live_response(client):
+def test_documented_layout_example_matches_the_live_response(config):
     """Same rule as the other endpoint examples: the shape shown on /api/docs
     is the shape /api/layout actually returns, down to a placement's keys."""
-    client.post("/dev/paint/robin")
-    live = client.get("/api/layout").json()
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    from bird_painter.store import Store
+
+    # A RASTER plate, so the live `ink` carries a real box: under /dev/paint
+    # alone every plate is an SVG placeholder and every box is null, which
+    # left the documented 4-float shape unpinned (round-2 review of #139).
+    plate = Image.new("RGB", (200, 250), (255, 255, 255))
+    ImageDraw.Draw(plate).rectangle((40, 50, 119, 199), fill=(60, 40, 20))
+    buf = BytesIO()
+    plate.save(buf, "PNG")
+    painting = Store(config.archive_dir, ttl_seconds=100).add(
+        image_bytes=buf.getvalue(), extension="png", species_common="Test Bird",
+        species_scientific="Testus", confidence=0.9, source="detection",
+    )
+    # Built AFTER the plate exists: the app's store reads the archive once, at
+    # startup, and a plate added behind its back is invisible to it.
+    with TestClient(create_app(config), client=LOCAL) as client:
+        client.post("/dev/paint/robin")
+        live = client.get("/api/layout").json()
     example = next(
         e["example"] for e in ENDPOINTS
         if e["method"] == "GET" and e["path"] == "/api/layout"
     )
     assert set(live) == set(example)
     assert set(live["placements"][0]) == set(example["placements"][0])
-    assert list(live["ink"]) == [live["placements"][0]["file"]]
+    assert set(live["ink"]) == {p["file"] for p in live["placements"]}
+    box = live["ink"][painting.file]
+    doc_box = next(iter(example["ink"].values()))
+    assert len(box) == len(doc_box) == 4
+    assert all(isinstance(v, float) and 0.0 <= v <= 1.0 for v in box)
+    # …and the placeholder's is the documented null.
+    svg = next(f for f in live["ink"] if f.endswith(".svg"))
+    assert live["ink"][svg] is None
 
 
 def test_documented_layout_bounds_are_the_ones_the_endpoint_enforces():

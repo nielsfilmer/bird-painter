@@ -372,20 +372,23 @@ def _bare_bird_png(path_str: str, mtime_ns: int) -> bytes | None:
         return None
 
 
-def bare_bird_png(path: Path) -> bytes | None:
+def _mtime_ns(path: Path) -> int:
+    """The cache key's second half. -1 when the file can't be stat'ed, for
+    ANY reason — the module's contract is fail-soft (an unreadable plate is
+    kept, never a crash), and a narrower `except OSError` here quietly made
+    two entry points less soft than the rest (review of #139, N12)."""
     try:
-        mtime_ns = path.stat().st_mtime_ns
-    except OSError:
-        return None
-    return _bare_bird_png(str(path), mtime_ns)
+        return path.stat().st_mtime_ns
+    except Exception:  # noqa: BLE001 — see docstring
+        return -1
+
+
+def bare_bird_png(path: Path) -> bytes | None:
+    return _bare_bird_png(str(path), _mtime_ns(path))
 
 
 def _ink_for(path: Path) -> tuple[float, InkBox | None]:
-    try:
-        mtime_ns = path.stat().st_mtime_ns
-    except OSError:
-        mtime_ns = -1
-    return _ink_metrics(str(path), mtime_ns)
+    return _ink_metrics(str(path), _mtime_ns(path))
 
 
 def _caption_width(draw, meta, species_font, heard_font, tracking) -> float:

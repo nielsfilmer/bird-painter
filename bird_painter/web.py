@@ -86,14 +86,16 @@ def _base_url(websocket: WebSocket) -> str:
     return f"{scheme}://{url.netloc}"
 
 
-# The values that mean "no, stream it" — everything else hands the file over.
-# A bare `?download` is indistinguishable from `?download=` (both parse to the
-# empty string), so it streams too; the documented form is `?download=1`.
-_NOT_DOWNLOAD = {"", "0", "false", "no", "off"}
+# The values that mean "no" for a query-string flag (`?download=`, `?bare=`)
+# — everything else means yes. A bare `?download` is indistinguishable from
+# `?download=` (both parse to the empty string), so it counts as no too; the
+# documented form is `?download=1`. Flags on links people type and share are
+# read leniently: a typo should hand over the thing, not a 422.
+_FLAG_OFF = {"", "0", "false", "no", "off"}
 
 
 def _flag_set(value: str | None) -> bool:
-    return value is not None and value.strip().lower() not in _NOT_DOWNLOAD
+    return value is not None and value.strip().lower() not in _FLAG_OFF
 
 
 def _is_replay_duplicate(event: dict, replayed: list[dict]) -> bool:
