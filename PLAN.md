@@ -604,3 +604,27 @@ whole magic; ship it first.
   the page so the CSS custom property and the layout's caption reserve can
   never receive different numbers. A `BP_*` default remains available later if
   a unit ever needs one baked in.
+- **2026-09-03** — **The table model places birds exactly as the e-paper
+  panel does** (owner: "Harmonize the bird placement with the rendered image
+  of the e-paper display. The way the birds are placed should be exactly the
+  same."). Not by porting `frame_layout` to JavaScript: the panel's focal
+  scatter is fed by measurements a browser cannot reproduce — each bird's ink
+  found with scipy, each caption measured with the house serif's PIL metrics,
+  Mersenne-Twister jitter — so a port could match the arithmetic and still
+  not match the picture, and the JS↔Python parity test exists precisely
+  because two implementations of one layout drift. Instead the SERVER owns
+  the plan: `render.plan_wall` is the one function that decides placement,
+  `render_wall_png` draws it, and a new `GET /api/layout` serves it as JSON
+  for any viewport. The browser wall's `?style=panel` (the kiosk URL) fetches
+  that plan for its own size and applies it — bird-shaped cells, the panel's
+  fixed-size type — computing nothing itself; each cell shows
+  `/images/<file>?bare=1`, the bird as the frame pastes it (the same ink crop
+  and ground key-out, done server-side — review found a client-side crop left
+  the plate's ground magnified under the bird as a darker oval). `/wall.png` output is byte-identical before and after the
+  extraction (checked across every style × layer × four sizes). The default
+  `/` keeps the spiral, so the dev wall and the e-paper installation are
+  untouched; `?spread=`/`?caption=` remain the spiral's knobs and don't apply
+  in panel mode. The ground stays the cream paper the browser can blend on —
+  placement was the instruction; the white sheet is a one-line follow-on if
+  wanted. For the table model this also retires the spiral's caption-metrics
+  gap (#133/#136): the panel plan measures captions server-side.

@@ -40,6 +40,13 @@ STATIC_DIR = Path(__file__).parent / "static"
 # documentation all read the same sets — api_docs.py imports them.
 WALL_LAYERS = ("all", "picture", "text")
 WALL_STYLES = ("wall", "panel")
+# /api/layout sizes a plan for any viewport a caller names. The bound is a
+# sanity range, not a defence: the plan's cost is set by the live set
+# (wall_max_live plates, ink measured once and cached), not by the size —
+# review measured ~4 ms at both 64² and 8192². What the bound refuses is a
+# size no screen has, which would only produce a plan nobody can draw.
+LAYOUT_MIN_SIDE = 64
+LAYOUT_MAX_SIDE = 8192
 
 
 def _is_loopback(client: tuple[str, int] | None) -> bool:
@@ -79,14 +86,16 @@ def _base_url(websocket: WebSocket) -> str:
     return f"{scheme}://{url.netloc}"
 
 
-# The values that mean "no, stream it" — everything else hands the file over.
-# A bare `?download` is indistinguishable from `?download=` (both parse to the
-# empty string), so it streams too; the documented form is `?download=1`.
-_NOT_DOWNLOAD = {"", "0", "false", "no", "off"}
+# The values that mean "no" for a query-string flag (`?download=`, `?bare=`)
+# — everything else means yes. A bare `?download` is indistinguishable from
+# `?download=` (both parse to the empty string), so it counts as no too; the
+# documented form is `?download=1`. Flags on links people type and share are
+# read leniently: a typo should hand over the thing, not a 422.
+_FLAG_OFF = {"", "0", "false", "no", "off"}
 
 
-def _asked_to_download(value: str | None) -> bool:
-    return value is not None and value.strip().lower() not in _NOT_DOWNLOAD
+def _flag_set(value: str | None) -> bool:
+    return value is not None and value.strip().lower() not in _FLAG_OFF
 
 
 def _is_replay_duplicate(event: dict, replayed: list[dict]) -> bool:
@@ -350,6 +359,29 @@ def create_app(config: Config | None = None) -> FastAPI:
                 if getter is not None:
                     getter.cancel()
 
+    def _require_style(style: str) -> None:
+        """422 for a style the renderer doesn't know. Shared by /wall.png and
+        /api/layout, which must agree on the set — a value one accepted and
+        the other refused would be a plan nobody can draw."""
+        if style not in WALL_STYLES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"style must be {', '.join(sorted(WALL_STYLES))}",
+            )
+
+    def _live_for_render() -> list[dict]:
+        """The live set in the shape the planner and renderer take — the same
+        list for /wall.png and /api/layout, so the picture and the plan are
+        of the same birds."""
+        return [
+            {
+                "file": p.file,
+                "species_common": p.species_common,
+                "born_at": p.born_at,
+            }
+            for p in store.live()[: config.wall_max_live]
+        ]
+
     @app.get("/wall.png")
     def wall_png(layer: str = "all", style: str = "wall") -> Response:
         """The collage rendered server-side to a PNG — what the e-paper frame
@@ -374,21 +406,9 @@ def create_app(config: Config | None = None) -> FastAPI:
                 status_code=422,
                 detail=f"layer must be {', '.join(sorted(WALL_LAYERS))}",
             )
-        if style not in WALL_STYLES:
-            raise HTTPException(
-                status_code=422,
-                detail=f"style must be {', '.join(sorted(WALL_STYLES))}",
-            )
-        paintings = [
-            {
-                "file": p.file,
-                "species_common": p.species_common,
-                "born_at": p.born_at,
-            }
-            for p in store.live()[: config.wall_max_live]
-        ]
+        _require_style(style)
         png = render_wall_png(
-            paintings,
+            _live_for_render(),
             config.archive_dir,
             config.wall_png_width,
             config.wall_png_height,
@@ -398,6 +418,47 @@ def create_app(config: Config | None = None) -> FastAPI:
             style=style,
         )
         return Response(content=png, media_type="image/png")
+
+    @app.get("/api/layout")
+    def layout(
+        style: str = "panel",
+        width: int | None = None,
+        height: int | None = None,
+    ) -> JSONResponse:
+        """Where the birds go, as data — the same plan `/wall.png` draws.
+
+        The table model runs the browser wall on a panel read from across a
+        room, and the owner wants it placed exactly as the e-paper frame is
+        (#138). The frame's layout depends on things a browser cannot
+        reproduce — each bird's ink measured with scipy, each caption with the
+        house serif's own metrics — so instead of porting the layout, the
+        browser asks for it. `style=panel` is the frame's focal scatter;
+        `style=wall` the spiral, for completeness. Size defaults to the
+        configured `/wall.png` size, so a bare call IS the frame's placement;
+        the browser passes its own viewport."""
+        from .render import plan_wall
+
+        _require_style(style)
+        width = config.wall_png_width if width is None else width
+        height = config.wall_png_height if height is None else height
+        for name, value in (("width", width), ("height", height)):
+            if not LAYOUT_MIN_SIDE <= value <= LAYOUT_MAX_SIDE:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{name} must be {LAYOUT_MIN_SIDE}..{LAYOUT_MAX_SIDE}"
+                    ),
+                )
+        plan = plan_wall(
+            _live_for_render(),
+            config.archive_dir,
+            width,
+            height,
+            style=style,
+            font=config.wall_font,
+            italic_font=config.wall_font_italic,
+        )
+        return JSONResponse(plan.as_json())
 
     @app.get("/api/archive")
     def archive(offset: int = 0, limit: int = 60) -> JSONResponse:
@@ -440,14 +501,25 @@ def create_app(config: Config | None = None) -> FastAPI:
         return FileResponse(
             path,
             media_type="audio/wav",
-            filename=filename if _asked_to_download(download) else None,
+            filename=filename if _flag_set(download) else None,
         )
 
     @app.get("/images/{filename}")
-    def image(filename: str) -> FileResponse:
+    def image(filename: str, bare: str | None = None) -> Response:
+        """An archived painting. `?bare=1` serves it as the e-paper frame
+        pastes it — cropped to the bird's own ink with the plate's ground
+        keyed out to alpha — so the browser wall's panel mode shows the same
+        pixels the frame does (#139). Falls back to the plain file when there
+        is nothing to crop (an SVG placeholder, a blank plate)."""
         path = store.image_path(filename)
         if path is None:
             raise HTTPException(status_code=404)
+        if _flag_set(bare):
+            from .render import bare_bird_png
+
+            png = bare_bird_png(path)
+            if png is not None:
+                return Response(content=png, media_type="image/png")
         media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         return FileResponse(path, media_type=media_type)
 

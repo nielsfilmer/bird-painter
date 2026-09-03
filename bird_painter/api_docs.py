@@ -145,8 +145,25 @@ ENDPOINTS: list[dict] = [
         "summary": "A painting",
         "description": (
             "An archived painting by filename (as given in `file` fields). "
-            "Images only — the archive's metadata is not reachable here."
+            "Images only — the archive's metadata is not reachable here. "
+            "`?bare=1` returns the bird as the e-paper frame pastes it: "
+            "cropped to its own ink with the plate's ground keyed out to "
+            "alpha, as a PNG — what the browser wall's panel mode shows, so "
+            "screen and frame show the same bird in the same cell. Plates "
+            "with nothing to crop (an SVG placeholder, a speck) come back "
+            "plain."
         ),
+        "params": [
+            {
+                "name": "bare",
+                "type": "flag",
+                "default": None,
+                "note": (
+                    "any value serves the ink-cropped, ground-keyed PNG, "
+                    "except an explicit no (empty, 0, false, no, off)"
+                ),
+            }
+        ],
         "returns": "image/jpeg, image/png, image/webp or image/svg+xml",
         "statuses": {
             "200": "the painting",
@@ -222,6 +239,72 @@ ENDPOINTS: list[dict] = [
         "statuses": {
             "200": "the render",
             "422": "style or layer wasn't one of the values above",
+        },
+    },
+    {
+        "method": "GET",
+        "path": "/api/layout",
+        "summary": "Where the birds go, as data",
+        "description": (
+            "The placement /wall.png draws, as JSON, for a viewport of the "
+            "given size. The table model's browser wall asks for this with "
+            "style=panel so it places its plates exactly where the e-paper "
+            "frame does — the frame's layout depends on measurements a "
+            "browser can't make (each bird's ink, each caption in the house "
+            "serif), so the browser fetches the plan instead of porting the "
+            "maths. Offsets are from the centre; size_vmin and height_vmin "
+            "are in the plan's own vmin; ink is each bird's own bounding "
+            "box as fractions of its plate (null for a plate with nothing "
+            "to crop, such as an SVG placeholder) — informational: the "
+            "browser shows /images/{file}?bare=1, which is already that crop."
+        ),
+        "params": [
+            {
+                "name": "style",
+                "type": "enum",
+                "default": "panel",
+                "note": "panel = the frame's focal scatter; wall = the spiral",
+            },
+            {
+                "name": "width",
+                "type": "int",
+                "default": "BP_WALL_PNG_WIDTH",
+                "note": "64..8192; omit both to get the frame's own plan",
+            },
+            {
+                "name": "height",
+                "type": "int",
+                "default": "BP_WALL_PNG_HEIGHT",
+                "note": "64..8192",
+            },
+        ],
+        "returns": "application/json",
+        "statuses": {
+            "200": "the plan",
+            "422": "unknown style, or a size outside 64..8192",
+        },
+        "example": {
+            "style": "panel",
+            "width": 1200,
+            "height": 1920,
+            "band_top": 86.4,
+            "layout_h": 1894,
+            "vmin": 12.0,
+            "species_size": 14,
+            "heard_size": 16,
+            "caption_gap": 16.8,
+            "tracking": 1.2,
+            "placements": [
+                {
+                    "file": EXAMPLE_PAINTING_FILE,
+                    "x": -41.7,
+                    "y": 122.3,
+                    "size_vmin": 31.4,
+                    "height_vmin": 38.2,
+                    "z": 12,
+                }
+            ],
+            "ink": {EXAMPLE_PAINTING_FILE: [0.21, 0.12, 0.58, 0.79]},
         },
     },
     {

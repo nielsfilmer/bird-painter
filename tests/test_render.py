@@ -147,3 +147,57 @@ def test_the_browser_wall_captions_still_fit_the_room_the_layout_reserves():
         assert species > heard, "on the wall the headline outranks the timestamp"
         panel_species, _panel_heard = _caption_sizes(vmin, panel=True)
         assert panel_species > species, "the panel's type is its own, and bigger"
+
+
+def test_ink_box_is_the_birds_own_bounds_as_fractions(tmp_path):
+    """/api/layout hands the browser each bird's ink box so it can crop as the
+    frame's _fit_to_cell does. Fractions of the plate, (left, top, w, h)."""
+    from PIL import ImageDraw
+
+    from bird_painter.render import _ink_for, _ink_metrics
+
+    plate = Image.new("RGB", (200, 250), (255, 255, 255))
+    ImageDraw.Draw(plate).rectangle((40, 50, 119, 199), fill=(60, 40, 20))
+    path = tmp_path / "bird.png"
+    plate.save(path, "PNG")
+
+    aspect, box = _ink_for(path)
+    assert box is not None
+    left, top, w, h = box
+    assert abs(left - 0.20) < 0.01 and abs(top - 0.20) < 0.01
+    assert abs(w - 0.40) < 0.01 and abs(h - 0.60) < 0.01
+    assert abs(aspect - 1.875) < 0.02  # 150 tall / 80 wide
+
+    # Cached by (path, mtime): the browser asks for the plan every poll.
+    before = _ink_metrics.cache_info().hits
+    _ink_for(path)
+    assert _ink_metrics.cache_info().hits == before + 1
+
+    # Nothing to crop to: no box, the 4:5 default aspect.
+    from bird_painter.render import PLATE_ASPECT
+
+    blank = tmp_path / "blank.png"
+    Image.new("RGB", (200, 250), (255, 255, 255)).save(blank, "PNG")
+    assert _ink_for(blank) == (PLATE_ASPECT, None)
+
+
+def test_plan_wall_carries_what_the_browser_needs(tmp_path):
+    from bird_painter.render import PANEL_TOP_MARGIN, PLATE_ASPECT, plan_wall
+
+    for i in range(4):
+        _make_image(tmp_path / f"bird{i}.png")
+    paintings = [
+        {"file": f"bird{i}.png", "species_common": f"Test Bird {i}",
+         "born_at": 1784570000 + i}
+        for i in range(4)
+    ]
+    panel = plan_wall(paintings, tmp_path, 720, 1280, style="panel")
+    assert panel.style == "panel" and panel.band_top == 1280 * PANEL_TOP_MARGIN
+    assert [p["file"] for p in panel.placements] == [p["file"] for p in paintings]
+    assert set(panel.ink) == {p["file"] for p in paintings}
+    assert panel.heard_size > panel.species_size  # the panel's own type
+    assert panel.caption_gap > 0
+    wall = plan_wall(paintings, tmp_path, 720, 1280, style="wall")
+    assert wall.ink == {} and wall.caption_gap < 0
+    for p in wall.placements:
+        assert abs(p["height_vmin"] - p["size_vmin"] * PLATE_ASPECT) < 1e-9

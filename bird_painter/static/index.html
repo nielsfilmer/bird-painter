@@ -70,6 +70,89 @@
     -webkit-mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
     mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
   }
+  /* ---- ?style=panel: the e-paper frame's layout, on a screen ------------
+     The table model is read from across a room, like the frame, and the
+     owner wants the birds placed exactly as the frame places them (#138).
+     The plan comes from /api/layout — the same function that draws
+     /wall.png?style=panel — so nothing here decides WHERE anything goes; it
+     only draws what it is told. Sizes below are set from the plan in px,
+     which is why the vmin-based rules above are overridden rather than
+     reused: the plan's vmin is the frame's (layout height, not viewport
+     height), and the type is fixed-size by decision (PLAN.md 2026-08-13). */
+  body.panel #header { display: none; } /* the sheet is the header */
+  body.panel .plate .cell {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    transition: height 1.6s cubic-bezier(0.22, 1, 0.36, 1);
+    /* The FRAME's feather, not the wall's: render._feather_mask(soft=False)
+       widens the ellipse to 0.80 because the bird's ink is fitted to the
+       cell and the wall's 0.58 ellipse would clip a heron's beak and feet
+       (QA on #139 measured alpha 0.41 at the cell's edge against the frame's
+       1.0). Same 72%→96% fade. */
+    -webkit-mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 72%, transparent 96%);
+    mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 72%, transparent 96%);
+  }
+  body.panel .plate .cell img {
+    /* The image is /images/<file>?bare=1 — the bird's own ink with the
+       plate's ground keyed to alpha, what the frame pastes. Its aspect is
+       the cell's to within ~1.7% (the plan measures ink on a 256px
+       thumbnail, the crop is full-size), so `contain` letterboxes a sliver —
+       and so does the frame's _fit_to_cell, identically, centred the same
+       way (review of #139 measured both). Not exact by construction;
+       faithful because the two sides share the mismatch. */
+    position: static;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    object-fit: contain;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  /* The "sing" pulse on the cell, not the img: the img is clipped by the
+     cell's overflow, and scaling a cropped img about its own centre moved
+     the bird (QA + review on #139). */
+  body.panel .plate.playing img { animation: none; }
+  body.panel .plate.playing .cell { animation: sing 1.1s ease-in-out infinite; }
+  body.panel .plate figcaption {
+    /* The frame draws each caption as ONE line centred under the bird and
+       reserves its measured width in the plan's footprint, so neighbours
+       can't collide. Wrapping here would put the lettering somewhere the
+       plan didn't account for — so: never wrap, centre a max-content box on
+       the cell, and let it overhang the cell on both sides as the frame's
+       does. (The plate is exactly the cell's width, so a plain centred
+       block would overflow to the right only.) */
+    margin: var(--panel-gap, 0px) 0 0;
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+  body.panel .plate .species {
+    /* The frame sets the species line in caps with tracking, and places the
+       "heard at" line species_size * 1.3 below it — so that is this line's
+       box. The plan reserved exactly that; inheriting the wall's 1.15 made
+       this the one number the browser still decided for itself (review of
+       #139, N10). */
+    text-transform: uppercase;
+    font-variant: normal;
+    font-size: var(--panel-species, 12px);
+    line-height: 1.3;
+    letter-spacing: var(--panel-tracking, 0.05em);
+  }
+  body.panel .plate .heard {
+    /* Deliberately the larger of the two on the panel (owner, 2026-08-07).
+       The plan reserves heard_size * 1.25 for it. */
+    font-size: var(--panel-heard, 14px);
+    line-height: 1.25;
+    margin-top: 0;
+  }
+  /* A plate's first placement must not animate: it would glide 500px in
+     from the un-transformed origin while fading in (QA on #139, N5). */
+  body.panel .plate.placing { transition: none; }
+
   /* Per-bird label, added programmatically (never baked into the image). */
   .plate figcaption {
     text-align: center;
@@ -297,7 +380,15 @@ const panelOpts = normalizePanelOpts({
   spread: params.get("spread"),
   captionScale: params.get("caption"),
 });
-document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));
+// ?style=panel — place the birds exactly as the e-paper frame does (#138).
+// The layout is fetched from /api/layout rather than computed here, because
+// the frame's placement depends on measurements only the server can make;
+// see layoutPanel(). ?spread= and ?caption= are the spiral's knobs: in this
+// mode the plan carries its own fixed-size type, and --caption-scale is left
+// at 1 so the archive overlay doesn't scale either (QA on #139: it did).
+const panelStyle = params.get("style") === "panel";
+if (panelStyle) document.body.classList.add("panel");
+else document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));
 
 function heardText(bornAt) {
   // A fixed clock time, not "x min ago": the e-ink frame only refreshes every
@@ -312,7 +403,70 @@ function heardText(bornAt) {
 // The maths — spiral placement, no-overlap, crowding scale — lives in that
 // module so `node --test` can guard it (layout.test.js).
 let liveOrder = []; // files, newest first — set by refresh()
+
+// ---- panel mode: apply the frame's plan ----------------------------------
+let lastPlanKey = null;  // viewport + live set the current plates were placed for
+let planInFlight = false;
+async function layoutPanel() {
+  const files = liveOrder.filter(f => plates.has(f));
+  const [W, H] = [wall.clientWidth, wall.clientHeight];
+  if (W <= 0 || H <= 0) return;
+  // The plan is deterministic per live set and viewport, so only ask when
+  // one of them changed — the wall polls every few seconds, and the recorder
+  // measures every live plate to answer.
+  const key = `${W}x${H}|${files.join("|")}`;
+  if (key === lastPlanKey || planInFlight) return;
+  planInFlight = true;
+  let plan;
+  try {
+    const res = await fetch(`/api/layout?style=panel&width=${W}&height=${H}`);
+    if (!res.ok) return;
+    plan = await res.json();
+  } catch { return; } // recorder briefly away; keep the current wall
+  finally { planInFlight = false; }
+  // A bird may have arrived or left, or the window changed shape, while we
+  // waited: a plan for the old set would miss one or place a ghost, and a
+  // plan for the old size lands 190px off (QA on #139). Let the next poll ask.
+  const nowKey = `${wall.clientWidth}x${wall.clientHeight}|${liveOrder.filter(f => plates.has(f)).join("|")}`;
+  if (nowKey !== key) return;
+  // An empty plan is the planner declining (a viewport too small for one
+  // plate): don't remember it as done, or the wall stays frozen at that size.
+  if (!plan.placements.length) return;
+
+  const root = document.documentElement.style;
+  root.setProperty("--panel-species", `${plan.species_size}px`);
+  root.setProperty("--panel-heard", `${plan.heard_size}px`);
+  root.setProperty("--panel-gap", `${plan.caption_gap.toFixed(1)}px`);
+  root.setProperty("--panel-tracking", `${plan.tracking.toFixed(2)}px`);
+  for (const p of plan.placements) {
+    const el = plates.get(p.file);
+    if (!el) continue;
+    // Plan sizes are in the plan's vmin, in px here — the frame draws them
+    // the same way. x/y are the IMAGE's centre relative to the wall's centre
+    // (the caption hangs below it), so the figure's top-left is the centre
+    // less half the cell.
+    const w = p.size_vmin * plan.vmin, h = p.height_vmin * plan.vmin;
+    el.style.width = `${w.toFixed(1)}px`;
+    el.querySelector(".cell").style.height = `${h.toFixed(1)}px`;
+    el.style.transform =
+      `translate(-50%, 0) translate(${p.x.toFixed(1)}px, ${(p.y - h / 2).toFixed(1)}px)`;
+    el.style.zIndex = String(p.z);
+    if (!el.classList.contains("shown")) {
+      // A new plate is only shown once it has a place — and its FIRST place
+      // must land without the 1.6s glide, or it fades in while travelling
+      // from the un-transformed origin. The reflow between adding and
+      // removing `placing` is what commits the transform untransitioned.
+      el.classList.add("placing");
+      void el.offsetWidth;
+      el.classList.remove("placing");
+      el.classList.add("shown");
+    }
+  }
+  lastPlanKey = key; // committed only once the plan has actually been applied
+}
+
 function layoutAll() {
+  if (panelStyle) { layoutPanel(); return; }
   const header = document.getElementById("header");
   const bandTop = header ? header.getBoundingClientRect().bottom + 8 : 0;
   const files = liveOrder.filter(f => plates.has(f));
@@ -369,6 +523,16 @@ function makePlate(p) {
   const img = document.createElement("img");
   img.src = `/images/${encodeURIComponent(p.file)}`;
   img.alt = `Painting of ${p.species_common}`;
+  // Panel mode shows the bird as the frame pastes it — /images/<file>?bare=1
+  // is the ink crop with the ground keyed out — inside a cell the plan
+  // shaped to that ink. The spiral shows the whole plate and needs no wrapper.
+  let picture = img;
+  if (panelStyle) {
+    img.src += "?bare=1";
+    picture = document.createElement("div");
+    picture.className = "cell";
+    picture.append(img);
+  }
   const caption = document.createElement("figcaption");
   const species = document.createElement("div");
   species.className = "species";
@@ -377,8 +541,11 @@ function makePlate(p) {
   heard.className = "heard";
   heard.textContent = heardText(p.born_at);
   caption.append(species, heard);
-  fig.append(img, caption);
-  requestAnimationFrame(() => requestAnimationFrame(() => fig.classList.add("shown")));
+  fig.append(picture, caption);
+  // In panel mode the plate is shown by layoutPanel(), once it has a place.
+  if (!panelStyle) {
+    requestAnimationFrame(() => requestAnimationFrame(() => fig.classList.add("shown")));
+  }
   return fig;
 }
 

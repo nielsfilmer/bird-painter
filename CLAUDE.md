@@ -338,7 +338,12 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     on SVG placeholders/unreadable files.
   - `web.py` — FastAPI app via `create_app(config)` factory (no import-time
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
-    `/api/archive`, `/wall.png`, `/images/*`, `/audio/*` (`?download=1` for an
+    `/api/archive`, `/wall.png`, `/api/layout` (the placement `/wall.png`
+    draws, as JSON, for any viewport — what the table model's browser wall
+    fetches with `?style=panel` so it places birds exactly as the frame does),
+    `/images/*` (`?bare=1` for the bird as the frame pastes it — ink crop,
+    ground keyed to alpha — which is what panel mode shows), `/audio/*`
+    (`?download=1` for an
     attachment), `/ws/detections` (live event stream), `/api` + `/api/docs`
     (the API's own documentation), `/dev/paint/*` (loopback only — 404 from
     off-machine; it skips the cap and spends money).
@@ -353,12 +358,17 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     newest bird largest on an anchor in a central box, the five before it
     around it, older ones smaller and further out, deterministic per live set
     so the panel doesn't redraw for a reshuffle.
-  - `render.py` — `render_wall_png(...)`: composites the collage to a PNG
-    server-side (Pillow) for the e-paper frame — cream paper + feather-masked
+  - `render.py` — `plan_wall(...)` decides WHERE everything goes for a wall
+    of a given size (band, vmin, fixed caption sizes, placements, and each
+    bird's ink box) — one function, so `/wall.png` and `/api/layout` cannot
+    disagree. `render_wall_png(...)` draws that plan to a PNG server-side
+    (Pillow) for the e-paper frame — cream paper + feather-masked
     multiply-blended birds + captions + header; full-colour (the panel dithers).
     `style=panel` swaps in the panel's white ground, the focal scatter, and
     birds cropped to their own ink; `layer=picture|text` splits the render so
     the frame can dither the picture and stamp unditherable lettering on top.
+    Ink measurements are cached per (path, mtime): the browser asks for the
+    panel plan on every poll.
   - `frame_client.py` — `python -m bird_painter.frame_client`: the thin e-paper
     frame client (runs on the frame Pi). At boot it looks for the recorder for
     `BP_FRAME_SEARCH_SECONDS` (60) and, only if it finds nothing, draws a
@@ -382,7 +392,11 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     module and applies it to the plate DOM. Reads the table model's panel
     tuning from the query string (`?spread=`, `?caption=`) and sets the CSS
     `--caption-scale` from the SAME normalised value the layout uses, so the
-    type and the room reserved for it can't disagree.
+    type and the room reserved for it can't disagree. `?style=panel` (the
+    table model's kiosk URL) computes nothing locally: it fetches the frame's
+    plan from `/api/layout` for its own viewport and applies it — positions,
+    bird-shaped cells, ink crops, the panel's fixed-size type — so the screen
+    places birds exactly as the e-paper does.
   - `static/layout.js` — pure collage-layout maths (`computeCollage`): spiral
     placement, no-overlap, crowding scale. No DOM — unit-tested. Also
     `normalizePanelOpts`: the single sanitising chokepoint for the panel
