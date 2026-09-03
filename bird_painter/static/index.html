@@ -228,6 +228,12 @@
   #empty.hidden { opacity: 0; }
   /* Archive: a quiet corner button + a full-screen overlay. Browser wall
      only — the server-rendered /wall.png never contains page chrome. */
+  /* --ui-scale sizes the archive chrome — the corner button, the overlay's
+     heading and close, "more", and the card lettering — independently of the
+     plates' captions. A frame read from across a room wants both bigger, but
+     not necessarily by the same amount, and in panel mode the caption scale
+     goes through the server's plan while this is purely the page's. Set from
+     ?ui= (owner, 2026-09-03: "make this configurable per frame size"). */
   #archive-button {
     position: fixed;
     right: 2vmin;
@@ -235,9 +241,9 @@
     z-index: 3;
     font-style: italic;
     font-size: clamp(
-      calc(11px * var(--caption-scale, 1)),
-      calc(1.4vmin * var(--caption-scale, 1)),
-      calc(15px * var(--caption-scale, 1))
+      calc(11px * var(--ui-scale, 1)),
+      calc(1.4vmin * var(--ui-scale, 1)),
+      calc(15px * var(--ui-scale, 1))
     );
     color: var(--ink-dim);
     background: none;
@@ -263,9 +269,9 @@
     letter-spacing: 0.18em;
     font-weight: normal;
     font-size: clamp(
-      calc(18px * var(--caption-scale, 1)),
-      calc(3vmin * var(--caption-scale, 1)),
-      calc(34px * var(--caption-scale, 1))
+      calc(18px * var(--ui-scale, 1)),
+      calc(3vmin * var(--ui-scale, 1)),
+      calc(34px * var(--ui-scale, 1))
     );
     text-align: center;
     margin-bottom: 3vmin;
@@ -278,13 +284,21 @@
     background: none;
     border: none;
     font-family: inherit;
-    font-size: clamp(20px, 3vmin, 30px);
+    font-size: clamp(
+      calc(20px * var(--ui-scale, 1)),
+      calc(3vmin * var(--ui-scale, 1)),
+      calc(30px * var(--ui-scale, 1))
+    );
+    /* A bigger × needs a bigger touch target, not just a bigger glyph. */
+    padding: calc(0.4em) calc(0.6em);
     color: var(--ink-dim);
     cursor: pointer;
   }
   #archive-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    /* Columns grow with the lettering, or bigger captions wrap under
+       narrower cards. */
+    grid-template-columns: repeat(auto-fill, minmax(calc(150px * var(--ui-scale, 1)), 1fr));
     gap: 3vmin 2vmin;
   }
   .arch-card { text-align: center; }
@@ -302,17 +316,17 @@
     font-variant: small-caps;
     letter-spacing: 0.05em;
     font-size: clamp(
-      calc(9px * var(--caption-scale, 1)),
-      calc(1.1vmin * var(--caption-scale, 1)),
-      calc(13px * var(--caption-scale, 1))
+      calc(9px * var(--ui-scale, 1)),
+      calc(1.1vmin * var(--ui-scale, 1)),
+      calc(13px * var(--ui-scale, 1))
     );
   }
   .arch-card .when {
     font-style: italic;
     font-size: clamp(
-      calc(8px * var(--caption-scale, 1)),
-      calc(0.95vmin * var(--caption-scale, 1)),
-      calc(11px * var(--caption-scale, 1))
+      calc(8px * var(--ui-scale, 1)),
+      calc(0.95vmin * var(--ui-scale, 1)),
+      calc(11px * var(--ui-scale, 1))
     );
     color: #6b5e45;
   }
@@ -328,9 +342,9 @@
        there while every other archive label scaled — a "more" button a kiosk
        viewer can't read is a dead end in the only navigation this page has. */
     font-size: clamp(
-      calc(11px * var(--caption-scale, 1)),
-      calc(1.4vmin * var(--caption-scale, 1)),
-      calc(15px * var(--caption-scale, 1))
+      calc(11px * var(--ui-scale, 1)),
+      calc(1.4vmin * var(--ui-scale, 1)),
+      calc(15px * var(--ui-scale, 1))
     );
     padding: 0.8vmin 2.4vmin;
     cursor: pointer;
@@ -379,7 +393,11 @@ const params = new URLSearchParams(location.search);
 const panelOpts = normalizePanelOpts({
   spread: params.get("spread"),
   captionScale: params.get("caption"),
+  uiScale: params.get("ui"),
 });
+// The archive chrome's scale is the page's own in every mode — nothing in
+// the server's plan concerns the overlay.
+document.documentElement.style.setProperty("--ui-scale", String(panelOpts.uiScale));
 // ?style=panel — place the birds exactly as the e-paper frame does (#138).
 // The layout is fetched from /api/layout rather than computed here, because
 // the frame's placement depends on measurements only the server can make;
@@ -387,7 +405,7 @@ const panelOpts = normalizePanelOpts({
 // ?caption= is FORWARDED to /api/layout rather than applied in CSS: the plan
 // owns the panel's type and reserves room for it, so scaling must happen
 // where the reserve is computed (the 7" unit runs 1.5). --caption-scale is
-// left at 1 so the archive overlay doesn't scale either (QA on #139).
+// left at 1 here; the archive overlay has its own knob, ?ui= (--ui-scale).
 const panelStyle = params.get("style") === "panel";
 if (panelStyle) document.body.classList.add("panel");
 else document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));

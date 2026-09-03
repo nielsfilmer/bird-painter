@@ -354,7 +354,7 @@ def test_documented_wall_params_match_layout_js_clamps():
 
     entry = next(e for e in ENDPOINTS if e["path"] == "/")
     documented = {p["name"]: p for p in entry.get("params", [])}
-    assert set(documented) == {"spread", "caption"}
+    assert set(documented) == {"spread", "caption", "ui"}
 
     # Round-2 review, N10: substring-matching each bound against prose passed
     # even when a bound changed (4 -> 2 still "matched" a note containing a
@@ -363,12 +363,15 @@ def test_documented_wall_params_match_layout_js_clamps():
     def rendered(x: float) -> str:
         return f"{x:g}"
 
+    caption_range = (
+        f"({rendered(constant('CAPTION_SCALE_MIN'))} to "
+        f"{rendered(constant('CAPTION_SCALE_MAX'))})"
+    )
     expected = {
         "spread": f"({rendered(0)} to {rendered(constant('CLUSTER_W_FRAC'))})",
-        "caption": (
-            f"({rendered(constant('CAPTION_SCALE_MIN'))} to "
-            f"{rendered(constant('CAPTION_SCALE_MAX'))})"
-        ),
+        "caption": caption_range,
+        # The archive knob shares the caption knob's bounds, by design.
+        "ui": caption_range,
     }
     for name, phrase in expected.items():
         assert phrase in documented[name]["note"], (
@@ -379,6 +382,7 @@ def test_documented_wall_params_match_layout_js_clamps():
     assert float(documented["caption"]["default"]) == constant(
         "DEFAULT_CAPTION_SCALE"
     )
+    assert float(documented["ui"]["default"]) == constant("DEFAULT_UI_SCALE")
 
 
 def test_documented_layout_example_matches_the_live_response(config):

@@ -320,15 +320,21 @@ test("panel opts are sanitised, not trusted (they come from a query string)", ()
   ]) {
     assert.deepEqual(computeCollage(files, W, H, bandTop, junk), bare,
       `junk opts ${JSON.stringify(junk)} did not fall back to defaults`);
-    assert.deepEqual(normalizePanelOpts(junk), { spread: 0, captionScale: 1 });
+    assert.deepEqual(normalizePanelOpts(junk), { spread: 0, captionScale: 1, uiScale: 1 });
   }
   // Numeric but out of range → CLAMP, not fall back. Asking for more than we
   // allow means "as much as you allow", not "never mind".
-  assert.deepEqual(normalizePanelOpts({ spread: 99, captionScale: 99 }),
-    { spread: 0.92, captionScale: 2 });
-  assert.deepEqual(normalizePanelOpts({ spread: -5, captionScale: 0 }),
-    { spread: 0, captionScale: 0.5 });
-  assert.deepEqual(normalizePanelOpts({}), { spread: 0, captionScale: 1 });
+  assert.deepEqual(normalizePanelOpts({ spread: 99, captionScale: 99, uiScale: 99 }),
+    { spread: 0.92, captionScale: 2, uiScale: 2 });
+  assert.deepEqual(normalizePanelOpts({ spread: -5, captionScale: 0, uiScale: 0 }),
+    { spread: 0, captionScale: 0.5, uiScale: 0.5 });
+  assert.deepEqual(normalizePanelOpts({}), { spread: 0, captionScale: 1, uiScale: 1 });
+  // The archive knob is not a layout input: it must not move a single plate.
+  const [pw, ph] = PANEL_7IN;
+  assert.deepEqual(
+    computeCollage(files, pw, ph, bandTop, { uiScale: 2 }),
+    computeCollage(files, pw, ph, bandTop),
+  );
 });
 
 test("the off-screen guard covers the CAPTION, not just the bird", () => {

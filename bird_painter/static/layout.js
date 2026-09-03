@@ -99,6 +99,10 @@ const ROW_LIMIT = 3;         // up to this many birds: one horizontal row
 // dependency is one refactor away from a temporal-dead-zone ReferenceError.
 const DEFAULT_SPREAD = 0;        // 0 = no floor; widen-to-fit decides alone
 const DEFAULT_CAPTION_SCALE = 1; // 1 = today's clamp() sizes
+// The archive chrome's scale (?ui=). Not a layout input at all — the layout
+// never sees the overlay — but sanitised here so every knob a kiosk URL can
+// carry goes through the one chokepoint, with the caption knob's bounds.
+const DEFAULT_UI_SCALE = 1;
 // Capped at 2, not higher: above roughly 2x the linear reserve above stops
 // covering the wrapped caption and labels land on birds. QA measured the wall
 // clean at 1, 1.7 and 2 on both panels, and broken from 2.5 up.
@@ -144,6 +148,9 @@ export function normalizePanelOpts(opts = {}) {
     captionScale: clamp(
       opts.captionScale, CAPTION_SCALE_MIN, CAPTION_SCALE_MAX,
       DEFAULT_CAPTION_SCALE,
+    ),
+    uiScale: clamp(
+      opts.uiScale, CAPTION_SCALE_MIN, CAPTION_SCALE_MAX, DEFAULT_UI_SCALE,
     ),
   };
 }

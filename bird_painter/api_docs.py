@@ -80,6 +80,18 @@ ENDPOINTS: list[dict] = [
                     "where the plan scales type and reserve together"
                 ),
             },
+            {
+                "name": "ui",
+                "type": "number",
+                "default": "1",
+                "note": (
+                    "multiplier on the archive chrome (0.5 to 2): the corner "
+                    "button, the overlay's heading and close, 'more', and "
+                    "the card lettering. Independent of caption, so a frame "
+                    "can size its plates' type and its controls separately; "
+                    "the 7\" table model runs 1.5 for both"
+                ),
+            },
         ],
         "returns": "text/html",
     },
