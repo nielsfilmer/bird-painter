@@ -431,7 +431,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         height: int | None = None,
         caption: float = 1.0,
     ) -> JSONResponse:
-        """Where the birds go, as data — the same plan `/wall.png` draws.
+        """Where the birds go, as data — at `caption=1`, the same plan
+        `/wall.png` draws; a scaled caption is the browser's own plan.
 
         The table model runs the browser wall on a panel read from across a
         room, and the owner wants it placed exactly as the e-paper frame is

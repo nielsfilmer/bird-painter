@@ -644,4 +644,8 @@ whole magic; ship it first.
   the page's business rather than the plan's, and a frame may want its
   controls and its captions sized differently (owner, same day: "make this a
   configurable attribute so we can quickly switch per frame size"). Both
-  ride the kiosk URL the install script writes (`BP_CAPTION`, `BP_UI`).
+  scales live on the kiosk URL (`?caption=`, `?ui=`) and the bird cap in
+  `.env` (`BP_WALL_MAX_LIVE`); the table-model install script (#145) writes
+  that URL from per-unit variables. One deliberate change for the desktop
+  wall: its archive overlay used to scale with `?caption=` by accident and
+  now follows `?ui=` only.

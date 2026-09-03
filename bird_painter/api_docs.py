@@ -40,7 +40,7 @@ ENDPOINTS: list[dict] = [
         "description": (
             "The full-screen collage page: birds fade in when heard and out "
             "when their time is up. Meant for a spare screen, not for reading. "
-            "The two params tune it for the table model's portrait panel, "
+            "The params tune it for the table model's portrait panel, "
             "which is read from across a room rather than at a desk; both "
             "default to the look the wall has always had, so a plain / is "
             "unchanged. They live in the URL rather than in BP_* env vars "
