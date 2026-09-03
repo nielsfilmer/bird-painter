@@ -123,6 +123,7 @@ WIFI_LIST = (
     "yes:home-wifi:84:WPA2\n"
     "no:Cafe\\: Guest:55:\n"  # a colon in the name, escaped by nmcli
     "no::30:WPA2\n"
+    "no:odd-one:not-a-number:WPA2\n"  # one bad line loses that line only
     "no:neighbours-5G:22:WPA2 WPA3\n"
 )
 
@@ -132,12 +133,12 @@ def test_connectivity_parses_nmcli_and_dedupes_ssids(monkeypatch):
         {
             "networking connectivity": "full\n",
             "-f ACTIVE,SSID,SIGNAL,SECURITY device wifi list": WIFI_LIST,
-            "-f IP4.ADDRESS device show wlan0": "IP4.ADDRESS[1]:192.168.1.126/24\n",
+            "-f IP4.ADDRESS device show wlan0": "IP4.ADDRESS[1]:192.0.2.7/24\n",
         }
     )
     monkeypatch.setattr(unit.subprocess, "run", run)
     c = unit.connectivity()
-    assert c.state == "full" and c.ssid == "home-wifi" and c.ip == "192.168.1.126"
+    assert c.state == "full" and c.ssid == "home-wifi" and c.ip == "192.0.2.7"
     assert [n.ssid for n in c.networks] == ["home-wifi", "Cafe: Guest", "neighbours-5G"]
     assert c.networks[0].active and c.networks[0].signal == 84  # active beats stronger
     assert not c.networks[1].secured and c.networks[2].secured
@@ -215,7 +216,8 @@ def test_rotate_snaps_to_a_quarter_turn_and_nan_is_dropped():
     assert unit.clean_updates({"ROTATE": 45}) == {"ROTATE": 90}
     assert unit.clean_updates({"ROTATE": 300}) == {"ROTATE": 270}
     assert unit.clean_updates({"CAPTION": "nan"}) == {}
-    assert unit.clean_updates({"CAPTION": float("inf")}) == {"CAPTION": 2.0}
+    assert unit.clean_updates({"CAPTION": float("inf")}) == {}
+    assert unit.clean_updates({"CAPTION": 1e999}) == {}  # JSON's way of saying inf
 
 
 def test_apply_names_the_file_that_could_not_be_written(tmp_path: Path):

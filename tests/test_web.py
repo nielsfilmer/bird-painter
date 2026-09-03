@@ -128,6 +128,7 @@ def test_wall_page_and_its_module_revalidate(client):
         "/layout.js": "text/javascript",
         "/api/docs": "text/html",
     }
+    types["/unit-screen.js"] = "text/javascript"
     for path, mime in types.items():
         response = client.get(path)
         assert response.headers["cache-control"] == "no-cache", path

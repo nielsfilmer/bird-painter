@@ -74,7 +74,7 @@ KNOBS: dict[str, Knob] = {
     "NIGHT_ENABLED": Knob(0, 1, 1, unit=False, env="BP_NIGHT_ENABLED"),
     "NIGHT_FROM": Knob(0, 23, 1, unit=False, env="BP_NIGHT_FROM"),
     "NIGHT_TO": Knob(0, 23, 1, unit=False, env="BP_NIGHT_TO"),
-    "NIGHT_BRIGHTNESS": Knob(1, 100, 5, unit=False, env="BP_NIGHT_BRIGHTNESS"),
+    "NIGHT_BRIGHTNESS": Knob(5, 100, 5, unit=False, env="BP_NIGHT_BRIGHTNESS"),
 }
 
 
@@ -203,8 +203,8 @@ def clean_updates(payload: dict) -> dict[str, float]:
             value = float(payload[key])
         except (TypeError, ValueError):
             continue
-        if value != value:  # NaN is not a setting
-            continue
+        if value != value or value in (float("inf"), float("-inf")):
+            continue  # NaN and the infinities are not settings
         updates[key] = _bounded(key, value, value)
     return updates
 
@@ -340,25 +340,35 @@ def connectivity(rescan: bool = False) -> Connectivity:
             "list",
             *(["--rescan", "yes"] if rescan else []),
         )
-        for line in listing.splitlines():
-            parts = _fields(line)
-            if len(parts) < 4 or not parts[1]:
-                continue
-            active = parts[0] == "yes"
-            net = Network(
-                ssid=parts[1],
-                signal=int(parts[2] or 0),
-                secured=parts[3].strip() not in ("", "--"),
-                active=active,
-            )
-            networks.append(net)
-            if active:
-                ssid = net.ssid
+    except (OSError, subprocess.SubprocessError):
+        listing = ""
+    for line in listing.splitlines():
+        # One odd line (a signal that isn't a number) loses that line, not
+        # the list after it.
+        parts = _fields(line)
+        if len(parts) < 4 or not parts[1]:
+            continue
+        try:
+            signal = int(parts[2] or 0)
+        except ValueError:
+            continue
+        active = parts[0] == "yes"
+        net = Network(
+            ssid=parts[1],
+            signal=signal,
+            secured=parts[3].strip() not in ("", "--"),
+            active=active,
+        )
+        networks.append(net)
+        if active:
+            ssid = net.ssid
+    try:
         for line in _nmcli("-f", "IP4.ADDRESS", "device", "show", "wlan0").splitlines():
-            if line.startswith("IP4.ADDRESS"):
-                ip = _fields(line)[1].split("/")[0]
+            parts = _fields(line)
+            if parts[0].startswith("IP4.ADDRESS") and len(parts) > 1:
+                ip = parts[1].split("/")[0]
                 break
-    except (OSError, subprocess.SubprocessError, ValueError):
+    except (OSError, subprocess.SubprocessError):
         pass
     # One row per SSID — the active one whatever its signal, else the
     # strongest; the active one on top.
@@ -424,7 +434,11 @@ def reboot() -> tuple[bool, str]:
             check=True,
         )
     except subprocess.CalledProcessError as exc:
-        return False, (exc.stderr or "systemctl refused").strip().splitlines()[-1]
+        reason = (exc.stderr or "systemctl refused").strip().splitlines()[-1]
+        logger.warning("unit: reboot refused: %s", reason)
+        return False, reason
     except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("unit: could not run systemctl: %r", exc)
         return False, f"could not run systemctl: {exc.__class__.__name__}"
+    logger.info("unit: rebooting (settings screen)")
     return True, "rebooting"

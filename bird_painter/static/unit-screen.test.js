@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { bars, esc, friendly, nextValue } from "./unit-screen.js";
+import { CORNER_PX, bars, esc, friendly, inCorner, isOffline, nextValue, noConnection } from "./unit-screen.js";
 
 test("a stepper moves one server-given step and clamps to the server's bounds", () => {
   const caption = { min: 0.5, max: 2, step: 0.1 };
@@ -41,4 +41,22 @@ test("errors the owner can act on keep NetworkManager's words and lose the trace
   assert.equal(friendly("Error: Secrets were required, but not provided."), "Error: Secrets were required, but not provided.");
   assert.equal(friendly("could not run systemctl: FileNotFoundError"), "this unit can't do that from here");
   assert.equal(friendly("unit 500"), "the wall didn't answer");
+});
+
+test("the long-press corner is the bottom-left, and only there", () => {
+  assert.equal(inCorner(10, 710, 720), true);
+  assert.equal(inCorner(CORNER_PX, 720 - CORNER_PX, 720), true, "inclusive at the edge");
+  assert.equal(inCorner(CORNER_PX + 1, 710, 720), false);
+  assert.equal(inCorner(10, 720 - CORNER_PX - 1, 720), false);
+  assert.equal(inCorner(1270, 710, 720), false, "the archive button's corner is not it");
+});
+
+test("only NetworkManager's none opens the network list; the offline line ignores unknown", () => {
+  assert.equal(noConnection({ state: "none" }), true);
+  for (const state of ["full", "limited", "portal", "unknown"]) assert.equal(noConnection({ state }), false, state);
+  assert.equal(noConnection(null), false);
+  assert.equal(isOffline({ state: "none" }), true);
+  assert.equal(isOffline({ state: "limited" }), true);
+  assert.equal(isOffline({ state: "full" }), false);
+  assert.equal(isOffline({ state: "unknown" }), false, "a dev box without nmcli is not offline");
 });

@@ -28,7 +28,7 @@ test-js:
 	@if command -v node >/dev/null 2>&1; then \
 		node --test bird_painter/static/*.test.js; \
 	else \
-		echo "test-js: node not found — skipping JS layout tests"; \
+		echo "test-js: node not found — skipping the JS tests (layout, settings screen)"; \
 	fi
 
 review-checks: lint test test-js

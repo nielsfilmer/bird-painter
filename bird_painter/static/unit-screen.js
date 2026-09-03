@@ -21,6 +21,7 @@ export const PUT_DEBOUNCE_MS = 300;
 export const CONFIRM_MS = 5000;
 export const FIRST_BOOT_OPEN_MS = 20_000;
 export const CONNECTIVITY_POLL_MS = 60_000;
+export const SWALLOW_MS = 600;
 
 const hh = (h) => `${String(h).padStart(2, "0")}:00`;
 const pct = (v) => `${Math.round(v * 100)}%`;
@@ -42,8 +43,11 @@ const ICON = {
   lock: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8d8065" stroke-width="1.6"><rect x="5" y="10" width="14" height="10" rx="1"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
 };
 
-// The artboards are 1280×720; sizes below are those numbers in vh / vw / %
-// so the 7" and the 10" get the same proportions. Above the night wash
+// The artboards are 1280×720 AND drawn at the 7"'s --ui-scale of 1.5, so a
+// type size here is the artboard's px ÷ 1.5 ÷ 7.2 in vmin, times the scale
+// (round 2 of #157: deriving from the artboard at scale 1 made the unit's
+// type 1.5× too big). Lengths are vh / vw / % so both panels keep the
+// proportions. Above the night wash
 // (z-index 40): the owner opening settings at night to change the night
 // schedule should not get the worst-lit view of it — the backlight is
 // already at its night level.
@@ -55,25 +59,25 @@ const CSS = `
 #unit .screen { position: absolute; inset: 0; display: none; }
 #unit .screen.on { display: block; }
 #unit h2 { position: absolute; left: 0; right: 0; top: 6.1vh; margin: 0; text-align: center;
-  font-variant: small-caps; letter-spacing: 0.18em; font-weight: normal; font-size: calc(4.5vmin * var(--ui-scale, 1)); }
+  font-variant: small-caps; letter-spacing: 0.18em; font-weight: normal; font-size: calc(3vmin * var(--ui-scale, 1)); }
 #unit .close { position: absolute; top: 14px; right: 18px; width: 52px; height: 52px; display: flex;
   align-items: center; justify-content: center; color: #8d8065; cursor: pointer; }
 #unit .grid { position: absolute; left: 7.5%; right: 7.5%; top: 17.2vh; bottom: 3vh; display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5.5vh 7.5%; overflow-y: auto; overflow-x: hidden; }
+  grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5.5vh 8.8%; overflow-y: auto; overflow-x: hidden; }
 @media (orientation: portrait) { #unit .grid { grid-template-columns: minmax(0, 1fr); gap: 4vh 0; } }
 #unit .group { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-#unit .group-title { font-variant: small-caps; letter-spacing: 0.14em; font-size: calc(2.64vmin * var(--ui-scale, 1));
+#unit .group-title { font-variant: small-caps; letter-spacing: 0.14em; font-size: calc(1.76vmin * var(--ui-scale, 1));
   border-bottom: 1px solid rgba(141,128,101,0.45); padding-bottom: 6px; }
 #unit .row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 56px; }
-#unit .label { font-variant: small-caps; letter-spacing: 0.08em; font-size: calc(2.08vmin * var(--ui-scale, 1)); color: #8d8065; }
-#unit .value { font-size: calc(3.05vmin * var(--ui-scale, 1)); overflow-wrap: anywhere; }
+#unit .label { font-variant: small-caps; letter-spacing: 0.08em; font-size: calc(1.39vmin * var(--ui-scale, 1)); color: #8d8065; }
+#unit .value { font-size: calc(2.04vmin * var(--ui-scale, 1)); overflow-wrap: anywhere; }
 #unit .stepper { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 #unit .step { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px;
   border: 1px solid #8d8065; cursor: pointer; }
 #unit .step.off { opacity: 0.3; }
 #unit .stepper .value { min-width: 64px; text-align: center; }
 #unit .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 6px 30px;
-  border: 1px solid #8d8065; font-style: italic; font-size: calc(2.3vmin * var(--ui-scale, 1)); background: none;
+  border: 1px solid #8d8065; font-style: italic; font-size: calc(1.53vmin * var(--ui-scale, 1)); background: none;
   color: inherit; font-family: inherit; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 #unit .btn.primary { background: #4a3f2e; color: #f4edda; border-color: #4a3f2e; }
 #unit .btn.busy { opacity: 0.5; pointer-events: none; }
@@ -87,22 +91,22 @@ const CSS = `
 #unit .net { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 56px;
   border-bottom: 1px solid rgba(141,128,101,0.35); padding: 6px 0; }
 #unit .net .who { display: flex; align-items: center; gap: 20px; min-width: 0; }
-#unit .net .sub { font-style: italic; font-size: calc(2.2vmin * var(--ui-scale, 1)); color: #6b5e45; }
+#unit .net .sub { font-style: italic; font-size: calc(1.48vmin * var(--ui-scale, 1)); color: #6b5e45; }
 #unit .net .do { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
 #unit .foot { position: absolute; left: 0; right: 0; bottom: 8.3vh; display: flex; justify-content: center; gap: 24px; }
 #unit .hint { font-style: italic; letter-spacing: 0.12em; color: #8d8065; text-align: center;
-  font-size: calc(2.6vmin * var(--ui-scale, 1)); }
+  font-size: calc(1.73vmin * var(--ui-scale, 1)); }
 #unit .field { position: absolute; left: 15.6%; right: 15.6%; top: 6.9vh; display: flex; flex-direction: column; gap: 14px; }
-#unit .field .ssid { font-size: calc(3.6vmin * var(--ui-scale, 1)); text-align: center; }
+#unit .field .ssid { font-size: calc(2.4vmin * var(--ui-scale, 1)); text-align: center; }
 #unit .field .pw { display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #8d8065; padding: 8px 4px; }
-#unit .field .pw .text { flex-grow: 1; font-size: calc(3.9vmin * var(--ui-scale, 1)); letter-spacing: 0.06em; min-height: 1.3em; overflow-wrap: anywhere; }
+#unit .field .pw .text { flex-grow: 1; font-size: calc(2.6vmin * var(--ui-scale, 1)); letter-spacing: 0.06em; min-height: 1.3em; overflow-wrap: anywhere; }
 #unit .field .pw .text.hidden { letter-spacing: 0.22em; }
 #unit .keys { position: absolute; left: 0; right: 0; top: 36.4vh; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 #unit .krow { display: flex; gap: 10px; }
 #unit .key { display: flex; align-items: center; justify-content: center; width: 7.8vw; height: 7.5vh; min-height: 44px;
-  border: 1px solid #8d8065; font-size: calc(3.05vmin * var(--ui-scale, 1)); background: rgba(255,252,240,0.35); cursor: pointer; }
+  border: 1px solid #8d8065; font-size: calc(2.04vmin * var(--ui-scale, 1)); background: rgba(255,252,240,0.35); cursor: pointer; }
 #unit .key:active { background: #4a3f2e; color: #f4edda; }
-#unit .key.wide, #unit .key.wider, #unit .key.primary { font-size: calc(2.08vmin * var(--ui-scale, 1)); font-variant: small-caps; letter-spacing: 0.08em; }
+#unit .key.wide, #unit .key.wider, #unit .key.primary { font-size: calc(1.39vmin * var(--ui-scale, 1)); font-variant: small-caps; letter-spacing: 0.08em; }
 #unit .key.wide { width: 10.2vw; }
 #unit .key.wider { width: 12.5vw; }
 #unit .key.space { width: 40.6vw; }
@@ -203,7 +207,8 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
         status(`could not save: ${friendly(e.message)}`);
         try { await load(); } catch { /* the screen keeps what it has */ }
       }
-      if (state.screen === "settings") renderSettings();
+      // A newer tap is already pending: its own PUT will re-render.
+      if (state.screen === "settings" && !state.pending.size) renderSettings();
     }, PUT_DEBOUNCE_MS);
   }
 
@@ -239,7 +244,9 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
     const net = u.connectivity || {};
     const online = net.state === "full";
     const armed = state.armed === "restart";
-    $(".grid").innerHTML = `
+    const grid = $(".grid");
+    const scrolled = grid.scrollTop;
+    grid.innerHTML = `
       <div class="group"><div class="group-title">display</div>
         ${knobRow("CAPTION", s.CAPTION)}
         ${knobRow("UI", s.UI)}
@@ -261,6 +268,7 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
         <div class="row"><div><div class="label">ears</div><div class="value">${esc(u.about?.ears || "")}</div></div></div>
         <div class="row"><div><div class="label">wall</div><div class="value">${esc(u.about?.wall || "")}</div></div><button class="btn ${armed ? "armed" : ""}" data-act="restart">${armed ? "tap again to restart" : "restart"}</button></div>
       </div>`;
+    grid.scrollTop = scrolled;
   }
   function renderNetworks() {
     const list = $(".list");
@@ -436,31 +444,50 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
   // finger's release would produce is swallowed: the plate under the corner
   // must not start its song because the owner opened settings.
   let hold = null;
-  const inCorner = (ev) => ev.clientX <= CORNER_PX && ev.clientY >= window.innerHeight - CORNER_PX;
+  let swallowing = null;
+  const swallow = (c) => { c.stopPropagation(); c.preventDefault(); };
+  const stopSwallowing = () => {
+    if (!swallowing) return;
+    clearTimeout(swallowing);
+    swallowing = null;
+    document.removeEventListener("click", swallow, { capture: true });
+  };
   document.addEventListener("pointerdown", (ev) => {
-    if (state.open || ev.target.closest("#archive, #unit") || !inCorner(ev)) return;
+    if (state.open || ev.target.closest("#archive, #unit")) return;
+    if (!inCorner(ev.clientX, ev.clientY, window.innerHeight)) return;
     hold = setTimeout(() => {
       hold = null;
-      document.addEventListener("click", (c) => { c.stopPropagation(); c.preventDefault(); }, { capture: true, once: true });
+      // Only the click this release produces, if any: a cancelled hold
+      // (palm, scroll takeover) must not eat the owner's next tap.
+      document.addEventListener("click", swallow, { capture: true });
+      swallowing = setTimeout(stopSwallowing, SWALLOW_MS);
       open();
     }, OPEN_HOLD_MS);
   });
-  const release = () => { if (hold) { clearTimeout(hold); hold = null; } };
+  const release = () => {
+    if (hold) { clearTimeout(hold); hold = null; }
+    if (swallowing) setTimeout(stopSwallowing, 0); // after this release's click
+  };
   document.addEventListener("pointerup", release);
-  document.addEventListener("pointercancel", release);
-  document.addEventListener("pointermove", (ev) => { if (hold && !inCorner(ev)) release(); });
+  document.addEventListener("pointercancel", () => { release(); stopSwallowing(); });
+  document.addEventListener("pointermove", (ev) => {
+    if (hold && !inCorner(ev.clientX, ev.clientY, window.innerHeight)) release();
+  });
 
-  // First boot in a new house: with no internet after twenty seconds, the
+  // First boot in a new house: with NO connection after twenty seconds, the
   // network list opens by itself — nobody has to know about the corner.
+  // "No connection" is NetworkManager's `none`, not `unknown` (a machine
+  // without nmcli) and not `limited` (joined, no internet: the owner did
+  // their part) — see noConnection().
   // Afterwards the connectivity is re-read once a minute for the wall's
   // offline line (the poll only exists on the unit, where this mounted).
   function watch() {
-    const offline = () => state.unit?.connectivity && state.unit.connectivity.state !== "full";
+    const unconnected = () => noConnection(state.unit?.connectivity);
     if (initial) onConnectivity?.(initial.connectivity);
-    if (offline()) {
+    if (unconnected()) {
       setTimeout(async () => {
         try { await load(); } catch { return; }
-        if (offline() && !state.open) open("network");
+        if (unconnected() && !state.open) open("network");
       }, FIRST_BOOT_OPEN_MS);
     }
     setInterval(async () => {
@@ -501,6 +528,25 @@ export function nextValue({ min, max, step }, current, dir, wrap = false) {
     next = Math.min(max, Math.max(min, next));
   }
   return next;
+}
+
+// The long-press target: within CORNER_PX of the bottom-left corner.
+export function inCorner(x, y, innerHeight, corner = CORNER_PX) {
+  return x <= corner && y >= innerHeight - corner;
+}
+
+// NetworkManager's word for "nothing joined": the one state that opens the
+// network list by itself. `unknown` is a machine without nmcli; `limited`
+// and `portal` are joined networks without internet — the owner's part is
+// done, the router's isn't.
+export function noConnection(connectivity) {
+  return !!connectivity && connectivity.state === "none";
+}
+
+// The wall's offline line: any state that is not full — except unknown,
+// which is no nmcli at all (a dev box), not an outage.
+export function isOffline(connectivity) {
+  return !!connectivity && connectivity.state !== "full" && connectivity.state !== "unknown";
 }
 
 // A message the owner can act on: the server's detail is kept when it is

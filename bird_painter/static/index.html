@@ -381,7 +381,7 @@
   /* The unit's offline line (#123): italic, dim, low on the sheet, only in
      panel mode and only while the network is not fully up. */
   #offline {
-    position: fixed; left: 0; right: 0; bottom: 3.6vh; z-index: 12; text-align: center;
+    position: fixed; left: 0; right: 0; bottom: 3.6vh; z-index: 9; text-align: center;
     font-style: italic; letter-spacing: 0.12em; color: var(--ink-dim, #8d8065);
     font-size: calc(2.6vmin * var(--ui-scale, 1)); pointer-events: none;
   }
@@ -467,9 +467,10 @@ function applyUnitSettings(settings) {
 }
 // "offline — still listening…": the unit's own line, shown while the
 // network is not fully up (#123). The screen module keeps it current.
+let isOffline = () => false; // the settings module's rule, once it is loaded
 function showConnectivity(c) {
   const line = document.getElementById("offline");
-  if (line) line.hidden = !c || c.state === "full" || c.state === "unknown";
+  if (line) line.hidden = !isOffline(c);
 }
 if (panelStyle) {
   fetch("/unit", { cache: "no-store" })
@@ -477,7 +478,7 @@ if (panelStyle) {
     .then(state => {
       if (!state) return; // not the unit: no screen, the URL's values stand
       applyUnitSettings(state.settings);
-      return import("/unit-screen.js").then(m => m.mountUnitScreen({
+      return import("/unit-screen.js").then(m => (isOffline = m.isOffline) && m.mountUnitScreen({
         initial: state,
         onSettings: s => applyUnitSettings(s.settings),
         onConnectivity: showConnectivity,

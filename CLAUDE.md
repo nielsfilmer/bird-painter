@@ -472,7 +472,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 - `PLAN.md` — product/architecture source of truth (concept, pipeline, stack,
   v0 config, scope, risks, decision log).
 - `Makefile` — `make review-checks` (= lint via ruff + test via pytest +
-  test-js via `node --test` for the wall layout); the deterministic-check
+  test-js via `node --test` for the wall layout and the settings screen's
+  helpers); the deterministic-check
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
 - `tests/fixtures/plates/` — five real plates (downscaled) pinning thresholds
