@@ -94,10 +94,13 @@
     mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 72%, transparent 96%);
   }
   body.panel .plate .cell img {
-    /* The image is /images/<file>?bare=1 — already the bird's own ink with
-       the plate's ground keyed to alpha, exactly what the frame pastes. Its
-       aspect IS the cell's (the plan shaped the cell from the same ink
-       bounds), so contain fills it edge to edge with no client-side crop. */
+    /* The image is /images/<file>?bare=1 — the bird's own ink with the
+       plate's ground keyed to alpha, what the frame pastes. Its aspect is
+       the cell's to within ~1.7% (the plan measures ink on a 256px
+       thumbnail, the crop is full-size), so `contain` letterboxes a sliver —
+       and so does the frame's _fit_to_cell, identically, centred the same
+       way (review of #139 measured both). Not exact by construction;
+       faithful because the two sides share the mismatch. */
     position: static;
     width: 100%;
     height: 100%;
@@ -128,16 +131,27 @@
     overflow-wrap: normal;
   }
   body.panel .plate .species {
-    /* The frame sets the species line in caps with tracking. */
+    /* The frame sets the species line in caps with tracking, and places the
+       "heard at" line species_size * 1.3 below it — so that is this line's
+       box. The plan reserved exactly that; inheriting the wall's 1.15 made
+       this the one number the browser still decided for itself (review of
+       #139, N10). */
     text-transform: uppercase;
     font-variant: normal;
     font-size: var(--panel-species, 12px);
+    line-height: 1.3;
     letter-spacing: var(--panel-tracking, 0.05em);
   }
   body.panel .plate .heard {
-    /* Deliberately the larger of the two on the panel (owner, 2026-08-07). */
+    /* Deliberately the larger of the two on the panel (owner, 2026-08-07).
+       The plan reserves heard_size * 1.25 for it. */
     font-size: var(--panel-heard, 14px);
+    line-height: 1.25;
+    margin-top: 0;
   }
+  /* A plate's first placement must not animate: it would glide 500px in
+     from the un-transformed origin while fading in (QA on #139, N5). */
+  body.panel .plate.placing { transition: none; }
 
   /* Per-bird label, added programmatically (never baked into the image). */
   .plate figcaption {
@@ -437,9 +451,16 @@ async function layoutPanel() {
     el.style.transform =
       `translate(-50%, 0) translate(${p.x.toFixed(1)}px, ${(p.y - h / 2).toFixed(1)}px)`;
     el.style.zIndex = String(p.z);
-    // A new plate is only shown once it has a place — before that it would
-    // paint as a bare caption at dead centre until the plan landed.
-    el.classList.add("shown");
+    if (!el.classList.contains("shown")) {
+      // A new plate is only shown once it has a place — and its FIRST place
+      // must land without the 1.6s glide, or it fades in while travelling
+      // from the un-transformed origin. The reflow between adding and
+      // removing `placing` is what commits the transform untransitioned.
+      el.classList.add("placing");
+      void el.offsetWidth;
+      el.classList.remove("placing");
+      el.classList.add("shown");
+    }
   }
   lastPlanKey = key; // committed only once the plan has actually been applied
 }

@@ -362,6 +362,12 @@ def _bare_bird_png(path_str: str, mtime_ns: int) -> bytes | None:
         if not mask.any():
             return None
         top, left, bottom, right = _ink_bounds(mask)
+        if right - left < 4 or bottom - top < 4:
+            # The same floor _ink_metrics applies: a box this small is a
+            # speck, not a bird, and the plan called it "nothing to crop"
+            # (ink: null). Serving a magnified speck here would contradict
+            # that contract (QA on #139, N2).
+            return None
         cropped = bird.crop((left, top, right, bottom))
         out = cropped.convert("RGBA")
         out.putalpha(_drop_ground(cropped))

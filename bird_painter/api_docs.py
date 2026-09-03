@@ -149,8 +149,9 @@ ENDPOINTS: list[dict] = [
             "`?bare=1` returns the bird as the e-paper frame pastes it: "
             "cropped to its own ink with the plate's ground keyed out to "
             "alpha, as a PNG — what the browser wall's panel mode shows, so "
-            "it matches the frame pixel for pixel. Plates with nothing to "
-            "crop (an SVG placeholder) come back plain."
+            "screen and frame show the same bird in the same cell. Plates "
+            "with nothing to crop (an SVG placeholder, a speck) come back "
+            "plain."
         ),
         "params": [
             {
