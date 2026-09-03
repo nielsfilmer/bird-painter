@@ -356,24 +356,26 @@ def test_documented_wall_params_match_layout_js_clamps():
     documented = {p["name"]: p for p in entry.get("params", [])}
     assert set(documented) == {"spread", "caption"}
 
-    # spread: 0 .. CLUSTER_W_FRAC, default DEFAULT_SPREAD
-    spread_max = constant("CLUSTER_W_FRAC")
-    assert str(spread_max) in documented["spread"]["note"], (
-        f"spread's upper bound is {spread_max} in layout.js but the docs "
-        f"don't mention it: {documented['spread']['note']}"
-    )
-    assert float(documented["spread"]["default"]) == constant("DEFAULT_SPREAD")
+    # Round-2 review, N10: substring-matching each bound against prose passed
+    # even when a bound changed (4 -> 2 still "matched" a note containing a
+    # "2" elsewhere). Assert the exact "lo to hi" phrase the notes are written
+    # with, so a moved bound fails loudly.
+    def rendered(x: float) -> str:
+        return f"{x:g}"
 
-    # caption: CAPTION_SCALE_MIN .. CAPTION_SCALE_MAX, default
-    # DEFAULT_CAPTION_SCALE
-    caption_note = documented["caption"]["note"]
-    for bound in ("CAPTION_SCALE_MIN", "CAPTION_SCALE_MAX"):
-        value = constant(bound)
-        rendered = f"{value:g}"
-        assert rendered in caption_note, (
-            f"caption's {bound} is {rendered} in layout.js but the docs "
-            f"don't mention it: {caption_note}"
+    expected = {
+        "spread": f"({rendered(0)} to {rendered(constant('CLUSTER_W_FRAC'))})",
+        "caption": (
+            f"({rendered(constant('CAPTION_SCALE_MIN'))} to "
+            f"{rendered(constant('CAPTION_SCALE_MAX'))})"
+        ),
+    }
+    for name, phrase in expected.items():
+        assert phrase in documented[name]["note"], (
+            f"{name}'s documented range is stale: layout.js says {phrase}, "
+            f"the note says {documented[name]['note']!r}"
         )
+    assert float(documented["spread"]["default"]) == constant("DEFAULT_SPREAD")
     assert float(documented["caption"]["default"]) == constant(
         "DEFAULT_CAPTION_SCALE"
     )

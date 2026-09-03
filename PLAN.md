@@ -595,7 +595,10 @@ whole magic; ship it first.
   - The kiosk URL is already where a unit is configured (#120), so this adds
     no new configuration surface and needs no restart to try a value — which
     is the whole point during the 7"-vs-10" comparison (#127).
-  - It keeps `/api` unchanged, avoiding the docs-vs-routes drift guards.
+  - It adds no new *route* and no new service configuration. (It does not, as
+    an earlier draft of this entry claimed, leave `/api` untouched: `GET /`
+    grew a documented `params` list like `/wall.png`'s, and a guard pins those
+    bounds to the constants in `layout.js`. Review round 1 caught the claim.)
   The cost: the values are untrusted input. `normalizePanelOpts` in
   `layout.js` is the single sanitising chokepoint, shared by the module and
   the page so the CSS custom property and the layout's caption reserve can

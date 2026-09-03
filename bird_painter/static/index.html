@@ -298,56 +298,11 @@ function heardText(bornAt) {
 // The maths — spiral placement, no-overlap, crowding scale — lives in that
 // module so `node --test` can guard it (layout.test.js).
 let liveOrder = []; // files, newest first — set by refresh()
-// The real height of each caption — the gap between the image's bottom edge and
-// the plate's. The layout's own estimate assumes one or two lines of clamped
-// type; enlarge the type with ?caption= and a long species name wraps onto more
-// lines inside a plate whose width didn't change, so the drawn caption outgrows
-// the reserve and labels land on the birds below. Only the DOM knows how many
-// lines it actually took, so measure it and hand it back.
-function measureCaptions(files) {
-  const heights = {};
-  for (const file of files) {
-    const el = plates.get(file);
-    const img = el && el.querySelector("img");
-    const caption = el && el.querySelector("figcaption");
-    if (!img || !caption) continue;
-    const h = caption.getBoundingClientRect().bottom - img.getBoundingClientRect().bottom;
-    if (h > 0) heights[file] = h;
-  }
-  return heights;
-}
-
 function layoutAll() {
   const header = document.getElementById("header");
   const bandTop = header ? header.getBoundingClientRect().bottom + 8 : 0;
   const files = liveOrder.filter(f => plates.has(f));
-  const [W, H] = [wall.clientWidth, wall.clientHeight];
-
-  // Widths and caption wrapping depend on each other: the layout sizes the
-  // plate, the plate's width decides how the caption wraps, and the wrap
-  // decides how much room the layout must reserve. Settle it by iterating —
-  // lay out, apply the widths, measure what the captions did, lay out again —
-  // and stop as soon as the widths stop moving. Two passes is the normal case;
-  // three is the cap, because a wall of twelve plates is not worth more.
-  let placements = computeCollage(files, W, H, bandTop, panelOpts);
-  // Measuring runs unconditionally, and at the default scale it provably
-  // changes nothing: captionPx only lets a measurement RAISE the reserve, and
-  // at scale 1 the drawn caption is well under the estimate's floor (measured
-  // on the 7" panel with the longest names in the set: 14.7px drawn against
-  // 26px reserved). So an untouched `/` still places birds exactly where
-  // wall_layout.py — and therefore /wall.png, and therefore the e-paper frame
-  // — places them.
-  for (let pass = 0; pass < 2; pass++) {
-    const before = placements.map(p => p.sizeVmin).join();
-    for (const p of placements) {
-      const el = plates.get(p.file);
-      if (el) el.style.width = `${p.sizeVmin.toFixed(1)}vmin`;
-    }
-    placements = computeCollage(files, W, H, bandTop,
-      { ...panelOpts, captionHeights: measureCaptions(files) });
-    if (placements.map(p => p.sizeVmin).join() === before) break;
-  }
-
+  const placements = computeCollage(files, wall.clientWidth, wall.clientHeight, bandTop, panelOpts);
   for (const p of placements) {
     const el = plates.get(p.file);
     if (!el) continue;

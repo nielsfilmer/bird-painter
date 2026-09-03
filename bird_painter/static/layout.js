@@ -30,33 +30,23 @@ const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrai
 const CAPTION_ALLOWANCE = 1.1;
 const CAPTION_FLOOR_PX = 26;
 
-// The ESTIMATE. It assumes one or two lines of clamped type, which is true at
-// captionScale 1 — the size this formula was fitted to. It is NOT true once
-// the type grows: a long species name wraps onto more lines inside a plate
-// whose width didn't change, so the drawn caption grows faster than linearly
-// while this grows exactly linearly. QA measured the gap at `?caption=4` on a
-// 720x1280 panel: 104px reserved against 172px drawn, and eleven labels
-// landing on visible birds.
+// This is an ESTIMATE, and it is linear in captionScale. The drawn caption is
+// NOT: enlarge the type and a long species name wraps onto more lines inside a
+// plate whose width didn't change, so the drawing outgrows the reserve. That
+// is why CAPTION_SCALE_MAX is 2 rather than something more generous — see
+// there. Fixing it properly needs the caption's real wrapped size, which needs
+// text metrics this DOM-free module doesn't have; #133 and #136 own that, and
+// both block shipping a tuned URL to a unit (#120).
 //
-// So a caller that CAN measure should: pass `opts.captionHeights` (file ->
-// the real px between the image's bottom and the plate's, wrapping included)
-// and this estimate is bypassed per plate. `index.html` does exactly that;
-// `wall_layout.py` has no DOM and stays on the estimate, which is why the
-// estimate must remain correct at scale 1 — that's the parity baseline.
-// A measurement RAISES the reserve, it never lowers it. That matters: at scale
-// 1 the estimate's 26px floor already exceeds what the type actually draws, so
-// taking the max leaves the default layout untouched — and the default layout
-// is what wall_layout.py must keep matching. Only when the drawn caption
-// outgrows the estimate, which is exactly the wrapping case, does the
-// measurement take over.
-function captionPx(imageHeightPx, captionScale = 1, measuredPx) {
-  const estimate = Math.max(
+// Measuring it from the page was tried and reverted in review: `.plate` has a
+// 1.6s width transition, so a rect read after writing the width returns the
+// PREVIOUS layout's width, and feeding that back shrank plates, which wrapped
+// captions harder, which shrank plates — a 41px bird under a 669px caption.
+function captionPx(imageHeightPx, captionScale = 1) {
+  return Math.max(
     CAPTION_FLOOR_PX * captionScale,
     imageHeightPx * (CAPTION_ALLOWANCE - 1) * captionScale,
   );
-  return Number.isFinite(measuredPx) && measuredPx > estimate
-    ? measuredPx
-    : estimate;
 }
 
 const TOP_Z = 200;
@@ -109,7 +99,21 @@ const ROW_LIMIT = 3;         // up to this many birds: one horizontal row
 // dependency is one refactor away from a temporal-dead-zone ReferenceError.
 const DEFAULT_SPREAD = 0;        // 0 = no floor; widen-to-fit decides alone
 const DEFAULT_CAPTION_SCALE = 1; // 1 = today's clamp() sizes
-const CAPTION_SCALE_MIN = 0.5, CAPTION_SCALE_MAX = 4;
+// Capped at 2, not higher: above roughly 2x the linear reserve above stops
+// covering the wrapped caption and labels land on birds. QA measured the wall
+// clean at 1, 1.7 and 2 on both panels, and broken from 2.5 up.
+//
+// KNOWN LIMIT, and 2 does not fix it everywhere: the cap is a multiplier, but
+// what has to hold the result is the band under the title, which is 1140px on
+// the 10" panel and 285px on a landscape phone. At 812x375 `?caption=2` still
+// puts five plates off the bottom. Bounding it by the band was tried and does
+// not work either, because the band check uses this same blind estimate — it
+// computes 52px where the wrapped caption actually draws 106px. Nothing here
+// can see wrapping; that is #136, which blocks #120.
+//
+// So: this knob is for the tall portrait panels it was built for. Setting it
+// on a short viewport is not protected against.
+const CAPTION_SCALE_MIN = 0.5, CAPTION_SCALE_MAX = 2;
 
 // The ONE place these values are sanitised. index.html calls it too, so the
 // CSS `--caption-scale` it sets and the caption reserve the layout computes
@@ -206,11 +210,7 @@ export function computeCollage(files, W, H, bandTop, opts = {}) {
   // return nothing and let the next poll/resize lay out for real.
   if (W <= 0 || H <= 0) return [];
   const { spread, captionScale } = normalizePanelOpts(opts);
-  // Measured caption heights win over the estimate, per plate. Absent (the
-  // Python port, the tests, any caller without a DOM) it's the estimate —
-  // which is what keeps the parity baseline intact.
-  const measured = opts.captionHeights || {};
-  const capFor = (file, imageH) => captionPx(imageH, captionScale, measured[file]);
+  const capFor = (file, imageH) => captionPx(imageH, captionScale);
   const vmin = Math.min(W, H) / 100;
   const bandH = H - bandTop;
   const yOffset = bandTop / 2; // shift the cluster down into the band

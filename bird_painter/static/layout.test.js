@@ -270,7 +270,7 @@ test("panel opts never push a bird off screen", () => {
     const bandTop = 140;
     const vmin = Math.min(W, H) / 100;
     for (const spread of [0, 0.4, 0.8, 0.92]) {
-      for (const captionScale of [1, 1.7, 4]) {
+      for (const captionScale of [1, 1.7, 2]) {
         const placements = computeCollage(
           randomFiles(makeRng(13), 12), W, H, bandTop, { spread, captionScale });
         for (const p of placements) {
@@ -290,7 +290,7 @@ test("a bigger caption reserves more room, so labels can't land on the bird belo
   const bandTop = 140;
   const files = randomFiles(makeRng(17), 8);
   const plain = computeCollage(files, W, H, bandTop, { spread: 0.8 });
-  const big = computeCollage(files, W, H, bandTop, { spread: 0.8, captionScale: 2.5 });
+  const big = computeCollage(files, W, H, bandTop, { spread: 0.8, captionScale: 2 });
   // Same set, same spread: larger lettering must either space the birds
   // further apart vertically or shrink them — never leave the gaps unchanged.
   const spanY = ps => Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y));
@@ -322,47 +322,10 @@ test("panel opts are sanitised, not trusted (they come from a query string)", ()
   // Numeric but out of range → CLAMP, not fall back. Asking for more than we
   // allow means "as much as you allow", not "never mind".
   assert.deepEqual(normalizePanelOpts({ spread: 99, captionScale: 99 }),
-    { spread: 0.92, captionScale: 4 });
+    { spread: 0.92, captionScale: 2 });
   assert.deepEqual(normalizePanelOpts({ spread: -5, captionScale: 0 }),
     { spread: 0, captionScale: 0.5 });
   assert.deepEqual(normalizePanelOpts({}), { spread: 0, captionScale: 1 });
-});
-
-test("a measured caption raises the reserve but never lowers it", () => {
-  // QA, blocking: captionPx scaled the reserve LINEARLY with captionScale
-  // while the drawn caption grew faster — a long name wraps onto more lines
-  // inside a plate whose width didn't change. Measured at ?caption=4 on the
-  // 7": 104px reserved against 172px drawn, eleven labels on visible birds.
-  // index.html now measures the real caption box and passes it back.
-  const [W, H] = PANEL_7IN;
-  const bandTop = 140;
-  const files = randomFiles(makeRng(31), 12);
-
-  // A measurement SMALLER than the estimate must change nothing — this is what
-  // keeps the default layout, and wall_layout.py's parity with it, intact.
-  const tiny = Object.fromEntries(files.map(f => [f, 1]));
-  assert.deepEqual(
-    computeCollage(files, W, H, bandTop, { captionHeights: tiny }),
-    computeCollage(files, W, H, bandTop),
-    "a small measurement shrank the reserve",
-  );
-
-  // A measurement LARGER than the estimate must be honoured — plates space out
-  // or shrink, and nothing may leave the screen.
-  const huge = Object.fromEntries(files.map(f => [f, 260]));
-  const withHuge = computeCollage(
-    files, W, H, bandTop, { spread: 0.92, captionScale: 4, captionHeights: huge });
-  const vmin = Math.min(W, H) / 100;
-  for (const p of withHuge) {
-    const imageH = p.sizeVmin * vmin * PLATE_ASPECT;
-    assert.ok(p.y + (imageH + 260) / 2 <= H / 2 + 0.5,
-      "a measured caption still ran off the bottom");
-  }
-  assert.notDeepEqual(
-    withHuge,
-    computeCollage(files, W, H, bandTop, { spread: 0.92, captionScale: 4 }),
-    "the measurement was ignored",
-  );
 });
 
 test("the off-screen guard covers the CAPTION, not just the bird", () => {
@@ -372,10 +335,12 @@ test("the off-screen guard covers the CAPTION, not just the bird", () => {
   const CAPTION_ALLOWANCE = 1.1, CAPTION_FLOOR_PX = 26; // mirrors layout.js
   const captionPx = (imageH, s) =>
     Math.max(CAPTION_FLOOR_PX * s, imageH * (CAPTION_ALLOWANCE - 1) * s);
-  for (const [W, H] of [PANEL_7IN, PANEL_10IN]) {
+  // Round-2 review, N13: the panels are tall enough that this could not fail.
+  // The short viewports are where a grown caption actually runs out of band.
+  for (const [W, H] of [PANEL_7IN, PANEL_10IN, [812, 375], [720, 500], [1280, 800]]) {
     const bandTop = 140;
     const vmin = Math.min(W, H) / 100;
-    for (const captionScale of [1, 1.7, 4]) {
+    for (const captionScale of [1, 1.7, 2]) {
       for (const spread of [0, 0.8, 0.92]) {
         for (const p of computeCollage(
           randomFiles(makeRng(23), 12), W, H, bandTop, { spread, captionScale })) {
@@ -428,7 +393,7 @@ test("both knobs leave the LAYOUT untouched at three birds or fewer (the shelf)"
     const files = randomFiles(makeRng(29), n);
     const plain = computeCollage(files, W, H, bandTop);
     for (const opts of [
-      { spread: 0.92 }, { captionScale: 4 }, { spread: 0.92, captionScale: 4 },
+      { spread: 0.92 }, { captionScale: 4 }, { spread: 0.92, captionScale: 2 },
     ]) {
       assert.deepEqual(
         computeCollage(files, W, H, bandTop, opts), plain,

@@ -67,11 +67,13 @@ ENDPOINTS: list[dict] = [
                 "type": "number",
                 "default": "1",
                 "note": (
-                    "multiplier on the per-bird lettering (0.5 to 4). At 1 "
+                    "multiplier on the per-bird lettering (0.5 to 2). At 1 "
                     "the type sits on a clamp rail at both panel sizes — 8px "
                     "at 720 wide, 12px at 1200 — around a millimetre of "
                     "glyph. It also grows the room the layout reserves under "
-                    "each plate, so bigger type never lands on the bird below"
+                    "each plate, so bigger type never lands on the bird below. "
+                    "Capped at 2 because that reserve is linear while a "
+                    "wrapped caption is not — see issue #136"
                 ),
             },
         ],
