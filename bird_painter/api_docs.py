@@ -145,8 +145,24 @@ ENDPOINTS: list[dict] = [
         "summary": "A painting",
         "description": (
             "An archived painting by filename (as given in `file` fields). "
-            "Images only — the archive's metadata is not reachable here."
+            "Images only — the archive's metadata is not reachable here. "
+            "`?bare=1` returns the bird as the e-paper frame pastes it: "
+            "cropped to its own ink with the plate's ground keyed out to "
+            "alpha, as a PNG — what the browser wall's panel mode shows, so "
+            "it matches the frame pixel for pixel. Plates with nothing to "
+            "crop (an SVG placeholder) come back plain."
         ),
+        "params": [
+            {
+                "name": "bare",
+                "type": "flag",
+                "default": None,
+                "note": (
+                    "any value serves the ink-cropped, ground-keyed PNG, "
+                    "except an explicit no (empty, 0, false, no, off)"
+                ),
+            }
+        ],
         "returns": "image/jpeg, image/png, image/webp or image/svg+xml",
         "statuses": {
             "200": "the painting",
@@ -237,7 +253,9 @@ ENDPOINTS: list[dict] = [
             "serif), so the browser fetches the plan instead of porting the "
             "maths. Offsets are from the centre; size_vmin and height_vmin "
             "are in the plan's own vmin; ink is each bird's own bounding "
-            "box as fractions of its plate, for cropping as the frame does."
+            "box as fractions of its plate (null for a plate with nothing "
+            "to crop, such as an SVG placeholder) — informational: the "
+            "browser shows /images/{file}?bare=1, which is already that crop."
         ),
         "params": [
             {

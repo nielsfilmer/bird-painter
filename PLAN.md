@@ -616,9 +616,11 @@ whole magic; ship it first.
   the plan: `render.plan_wall` is the one function that decides placement,
   `render_wall_png` draws it, and a new `GET /api/layout` serves it as JSON
   for any viewport. The browser wall's `?style=panel` (the kiosk URL) fetches
-  that plan for its own size and applies it — bird-shaped cells, ink crops as
-  `_fit_to_cell` does them, the panel's fixed-size type — computing nothing
-  itself. `/wall.png` output is byte-identical before and after the
+  that plan for its own size and applies it — bird-shaped cells, the panel's
+  fixed-size type — computing nothing itself; each cell shows
+  `/images/<file>?bare=1`, the bird as the frame pastes it (the same ink crop
+  and ground key-out, done server-side — review found a client-side crop left
+  the plate's ground magnified under the bird as a darker oval). `/wall.png` output is byte-identical before and after the
   extraction (checked across every style × layer × four sizes). The default
   `/` keeps the spiral, so the dev wall and the e-paper installation are
   untouched; `?spread=`/`?caption=` remain the spiral's knobs and don't apply

@@ -393,3 +393,18 @@ def test_documented_layout_example_matches_the_live_response(client):
     assert set(live) == set(example)
     assert set(live["placements"][0]) == set(example["placements"][0])
     assert list(live["ink"]) == [live["placements"][0]["file"]]
+
+
+def test_documented_layout_bounds_are_the_ones_the_endpoint_enforces():
+    """Third time this repo writes this guard, each time after a review found
+    the prose had drifted from the code (#139, B2). The range is typed into
+    the param notes and the 422 text; pin all of them to the constants."""
+    from bird_painter.web import LAYOUT_MAX_SIDE, LAYOUT_MIN_SIDE
+
+    entry = next(e for e in ENDPOINTS if e["path"] == "/api/layout")
+    phrase = f"{LAYOUT_MIN_SIDE}..{LAYOUT_MAX_SIDE}"
+    documented = {p["name"]: p for p in entry["params"]}
+    assert phrase in documented["width"]["note"]
+    assert phrase in documented["height"]["note"]
+    assert phrase in entry["statuses"]["422"]
+    assert documented["style"]["default"] == "panel"

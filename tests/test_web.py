@@ -595,3 +595,106 @@ def test_api_layout_refuses_bad_style_and_sizes(config):
             "width=0&height=0",
         ):
             assert client.get(f"/api/layout?{query}").status_code == 422, query
+
+
+def test_wall_png_and_api_layout_share_one_plan(config, monkeypatch):
+    """The PR's central invariant — the picture and the plan come from ONE
+    function — was first tested by calling that function on both sides,
+    which proved nothing (review of #139, B1). This spies on plan_wall: the
+    PNG endpoint must go through it, exactly once, and /api/layout must serve
+    the plan the PNG was drawn from."""
+    import json
+
+    from bird_painter import render
+
+    drawn = []
+    real = render.plan_wall
+
+    def spy(*args, **kwargs):
+        plan = real(*args, **kwargs)
+        drawn.append(plan)
+        return plan
+
+    monkeypatch.setattr(render, "plan_wall", spy)
+    small = dataclasses.replace(config, wall_png_width=320, wall_png_height=240)
+    with TestClient(create_app(small), client=LOCAL) as client:
+        for species in ("robin", "wren", "junco"):
+            client.post(f"/dev/paint/{species}")
+        assert client.get("/wall.png?style=panel").status_code == 200
+        assert len(drawn) == 1, "the PNG did not go through plan_wall once"
+        served = client.get("/api/layout").json()
+        assert served == json.loads(json.dumps(drawn[0].as_json()))
+        assert drawn[0].style == "panel"
+        assert (drawn[0].width, drawn[0].height) == (320, 240)
+
+
+def test_api_layout_accepts_its_own_boundaries(config):
+    """The documented range is 64..8192; both ends are inside it."""
+    with TestClient(create_app(config), client=LOCAL) as client:
+        for w, h in ((64, 64), (8192, 8192), (64, 8192)):
+            response = client.get(f"/api/layout?width={w}&height={h}")
+            assert response.status_code == 200, (w, h)
+            assert (response.json()["width"], response.json()["height"]) == (w, h)
+
+
+def test_images_bare_serves_the_birds_ink_with_the_ground_keyed_out(config):
+    """Panel mode shows the bird as the frame pastes it — the same crop and
+    the same key-out, done by the server, because a browser cropping a padded
+    plate leaves the plate's ground magnified under the bird (QA on #139)."""
+    import io
+
+    from PIL import Image, ImageDraw
+
+    from bird_painter.store import Store
+
+    plate = Image.new("RGB", (200, 250), (255, 255, 255))
+    ImageDraw.Draw(plate).rectangle((40, 50, 119, 199), fill=(60, 40, 20))
+    buf = io.BytesIO()
+    plate.save(buf, "PNG")
+    store = Store(config.archive_dir, ttl_seconds=100)
+    painting = store.add(
+        image_bytes=buf.getvalue(), extension="png", species_common="Test Bird",
+        species_scientific="Testus birdus", confidence=0.9, source="detection",
+    )
+    with TestClient(create_app(config), client=LOCAL) as client:
+        plain = client.get(f"/images/{painting.file}")
+        assert plain.status_code == 200 and plain.content == buf.getvalue()
+        # An explicit no is the plain file too, like /audio?download.
+        assert client.get(f"/images/{painting.file}?bare=0").content == buf.getvalue()
+
+        bare = client.get(f"/images/{painting.file}?bare=1")
+        assert bare.status_code == 200
+        assert bare.headers["content-type"] == "image/png"
+        image = Image.open(io.BytesIO(bare.content))
+        assert image.mode == "RGBA"
+        assert image.size == (80, 150), "cropped to the ink's own bounds"
+        # The bird is opaque; the crop has no white left to key, so the
+        # corners — bird pixels here — are solid too. Key-out is exercised on
+        # a plate with a ground margin below.
+        assert image.getpixel((40, 75))[3] == 255
+
+        # A plate whose crop still contains ground (a pale margin inside the
+        # bounding box) has that ground keyed to alpha.
+        soft = Image.new("RGB", (200, 250), (255, 255, 255))
+        d = ImageDraw.Draw(soft)
+        d.rectangle((40, 50, 119, 60), fill=(60, 40, 20))   # a bar at the top
+        d.rectangle((40, 190, 119, 199), fill=(60, 40, 20))  # and the bottom
+        buf2 = io.BytesIO()
+        soft.save(buf2, "PNG")
+        p2 = store.add(
+            image_bytes=buf2.getvalue(), extension="png", species_common="Bar Bird",
+            species_scientific="Barrus", confidence=0.9, source="detection",
+        )
+        keyed = Image.open(io.BytesIO(client.get(f"/images/{p2.file}?bare=1").content))
+        assert keyed.size == (80, 150)
+        assert keyed.getpixel((40, 75))[3] == 0, "white between the bars is keyed out"
+        assert keyed.getpixel((40, 5))[3] == 255, "the bar is not"
+
+        # Nothing to crop (an SVG placeholder): the plain file, plain type.
+        client.post("/dev/paint/robin")
+        svg = next(p for p in client.get("/api/live").json()["paintings"]
+                   if p["file"].endswith(".svg"))
+        fallback = client.get(f"/images/{svg['file']}?bare=1")
+        assert fallback.status_code == 200
+        assert fallback.headers["content-type"].startswith("image/svg")
+        assert client.get("/images/nope.png?bare=1").status_code == 404
