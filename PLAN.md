@@ -629,6 +629,19 @@ whole magic; ship it first.
   multiply-blend onto paper where e-paper can't, so the two shapes share a
   placement and keep their own grounds. Not a follow-on; decided. For the table model this also retires the spiral's caption-metrics
   gap (#133/#136): the panel plan measures captions server-side.
+- **2026-09-03** — **The table model boots without showing a Pi.** Owner:
+  "boot without showing any Pi interfaces". From power-on to the wall the
+  unit showed the rainbow square, the Pi's plymouth theme, the greeter's
+  wallpaper, then a desktop with a taskbar until Chromium came up. Each is
+  now the wall's own paper: `disable_splash=1`; a `birdpainter` plymouth
+  theme of the same shape as Pi OS's `pix` (one image, no messages),
+  pre-rotated to the panel's native portrait because plymouth paints before
+  the compositor rotates; the greeter and the desktop wallpaper set to the
+  landscape splash; the taskbar and its `lwrespawn` killed from the labwc
+  autostart. All of it fails safe — a wrong theme or wallpaper never stops a
+  boot, and the kernel line is not touched. The splash is generated on the
+  unit from a fixture plate (`scripts/make_splash.py`) so no archive image
+  is committed.
 - **2026-09-03** — **Night mode: the wall goes dark on a schedule** (#122).
   A backlit panel showing a cream wall is a lamp; the table model lives in
   living rooms. Between `BP_NIGHT_FROM` and `BP_NIGHT_TO` (local hours,

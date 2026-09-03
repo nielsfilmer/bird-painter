@@ -256,6 +256,57 @@ touch "$ENVFILE"
 sed -i '/^XCURSOR_THEME=/d' "$ENVFILE"
 append_line "$ENVFILE" "XCURSOR_THEME=invisible"
 
+log "boot: no Pi chrome from power-on to the wall"
+# From power-on to the wall the unit used to show: the rainbow splash, the
+# Pi's own plymouth theme, the greeter's wallpaper, then the desktop with
+# its panel and icons until Chromium came up. Each is replaced with the
+# wall's paper so the panel reads as one object waking up (owner: "boot
+# without showing any Pi interfaces"). All of it is safe to fail — a wrong
+# plymouth theme or wallpaper never stops a boot; the kernel line is NOT
+# touched (it already carries "quiet splash").
+SPLASH_DIR="$HOME/.config/bird-painter/splash"
+"$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/make_splash.py" "$SPLASH_DIR" \
+  "$APP_DIR/tests/fixtures/plates/good-hummingbird.jpg"
+# 1. The rainbow square at power-on.
+if ! grep -q '^disable_splash=1' /boot/firmware/config.txt; then
+  echo 'disable_splash=1' | sudo tee -a /boot/firmware/config.txt >/dev/null
+fi
+# 2. plymouth: the same shape as the Pi's own "pix" theme (one image,
+#    nothing else), with the wall's paper. The image is pre-rotated to the
+#    panel's native orientation — plymouth paints before any compositor.
+sudo mkdir -p /usr/share/plymouth/themes/birdpainter
+sudo cp "$APP_DIR/scripts/plymouth/birdpainter.plymouth" \
+        "$APP_DIR/scripts/plymouth/birdpainter.script" /usr/share/plymouth/themes/birdpainter/
+sudo cp "$SPLASH_DIR/splash-native.png" /usr/share/plymouth/themes/birdpainter/splash.png
+if [ "$(sudo /usr/sbin/plymouth-set-default-theme 2>/dev/null)" != "birdpainter" ]; then
+  sudo /usr/sbin/plymouth-set-default-theme -R birdpainter || echo "plymouth theme not set (boot is unaffected)"
+fi
+# 3. The greeter's wallpaper, for the moment before autologin.
+if [ -f /etc/lightdm/pi-greeter.conf ]; then
+  sudo sed -i "s#^wallpaper=.*#wallpaper=${SPLASH_DIR}/splash-landscape.png#; s#^wallpaper_mode=.*#wallpaper_mode=fit#" /etc/lightdm/pi-greeter.conf
+fi
+# 4. The desktop behind Chromium: the same paper, no icons.
+mkdir -p "$HOME/.config/pcmanfm/LXDE-pi"
+cat > "$HOME/.config/pcmanfm/LXDE-pi/desktop-items-0.conf" <<DESK
+[*]
+wallpaper_mode=fit
+wallpaper_common=1
+wallpaper=${SPLASH_DIR}/splash-landscape.png
+desktop_bg=#ece1c6
+desktop_fg=#4a3f2e
+desktop_shadow=#ece1c6
+show_wm_menu=0
+show_documents=0
+show_trash=0
+show_mounts=0
+DESK
+# 5. No taskbar: the kiosk covers it, but it flashes before Chromium and
+#    peeks out if Chromium ever restarts. Pi OS starts it under `lwrespawn`
+#    (/etc/xdg/labwc/autostart), which brings it straight back — so the
+#    respawner goes first, then the panel, from our autostart after theirs.
+sed -i '/pkill -x wf-panel-pi/d' "$AUTOSTART"
+append_line "$AUTOSTART" 'sleep 2; pkill -f "lwrespawn /usr/bin/wf-panel-pi"; pkill -x wf-panel-pi'
+
 log "console: autologin to the desktop, no screen blanking"
 if command -v raspi-config >/dev/null; then
   sudo raspi-config nonint do_boot_behaviour B4 || true   # desktop, autologin
@@ -266,6 +317,7 @@ log "done"
 echo "unit:    caption ${CAPTION}, ui ${UI}, birds ${MAX_LIVE}, rotate ${ROTATE} on ${OUTPUT} (remembered in ${UNIT_CONF})"
 echo "service: $(systemctl is-active bird-painter) (restarted)"
 echo "kiosk:   the URL and flags take effect on the next login — reboot (a relaunched Chromium keeps the flags its loop started with)"
+echo "boot:    splash, greeter wallpaper and desktop take effect on the next boot"
 echo "cursor/rotation/autologin/blanking: session settings — take effect on the next login (reboot)"
 echo "wall:    http://$(hostname -I | awk '{print $1}'):${PORT}/?style=panel"
 echo "backend: $("$APP_DIR/.venv/bin/python" -c 'import importlib.util as u; print("tflite-runtime" if u.find_spec("tflite_runtime") else ("tensorflow" if u.find_spec("tensorflow") else "NONE"))')"

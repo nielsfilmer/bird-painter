@@ -478,7 +478,21 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   re-run to update. The per-unit values it was run with (`OUTPUT`,
   `ROTATE`, `CAPTION`, `UI`, `MAX_LIVE`) persist on the unit in
   `~/.config/bird-painter/unit.conf` — not a repo file — so a bare re-run
-  keeps them. First run on the first unit: 2026-09-03.
+  keeps them. Boot chrome removal (plymouth theme, wallpapers, no
+  taskbar) verified by reboot on the first unit 2026-09-03. First run on
+  the first unit: 2026-09-03.
+- `scripts/make_splash.py` — the table model's boot splash + wallpaper:
+  the wall's paper, its serif, one bird (a fixture plate), "waking up…" —
+  `splash-landscape.png` (1280×720, the desktop/greeter wallpaper) and
+  `splash-native.png` (720×1280: the same rotated to the panel's native
+  portrait, because plymouth paints before any compositor rotates). The
+  install script runs it on the unit with the repo's venv.
+- `scripts/plymouth/` — the `birdpainter` plymouth theme (`.plymouth` +
+  `.script`): the same shape as Pi OS's own `pix` theme — one full-screen
+  image, no messages — installed by the install script, which also turns
+  the rainbow square off (`disable_splash=1`), points the greeter and the
+  desktop at the wallpaper, and kills the taskbar (and its `lwrespawn`) at
+  login, so nothing but the wall's paper shows from power-on to the wall.
 - `scripts/memcheck.py` — peak-RSS measurement of the Python side on a
   unit (#121's number). On the first unit with LiteRT: 261 MB with the
   Analyzer loaded, 331 MB after a clip cleanup; the whole running service

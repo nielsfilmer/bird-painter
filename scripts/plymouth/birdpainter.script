@@ -1,0 +1,26 @@
+// bird-painter boot splash. Same shape as Raspberry Pi OS's own "pix" theme:
+// one full-screen image, nothing else — no progress bar, no messages, and
+// the password/question prompts are left to plymouth's defaults (they never
+// occur on the unit). The image is pre-rotated to the panel's native
+// orientation (see make_splash.py), so it is painted as-is.
+Window.SetBackgroundTopColor(0.925, 0.882, 0.776);    // the paper's mid tone
+Window.SetBackgroundBottomColor(0.925, 0.882, 0.776);
+
+splash = Image("splash.png");
+sw = Window.GetWidth();
+sh = Window.GetHeight();
+iw = splash.GetWidth();
+ih = splash.GetHeight();
+// Fit, never stretch: scale so the whole image shows, centred.
+scale = Math.Min(sw / iw, sh / ih);
+scaled = splash.Scale(iw * scale, ih * scale);
+sprite = Sprite(scaled);
+sprite.SetX((sw - scaled.GetWidth()) / 2);
+sprite.SetY((sh - scaled.GetHeight()) / 2);
+sprite.SetZ(-10);
+
+// Hide boot messages entirely: the panel is a picture, not a console.
+fun message_callback(text) {}
+Plymouth.SetMessageFunction(message_callback);
+fun display_normal_callback() {}
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
