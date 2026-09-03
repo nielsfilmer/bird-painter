@@ -1,12 +1,11 @@
 """The table model's boot splash — the wall's paper, the wall's serif, one
 bird, "waking up…" — as a PNG for plymouth and for the desktop wallpaper.
 
-Drawn as the landscape composition the owner sees, then rotated to the
+Drawn as the landscape composition the owner sees, then turned to the
 panel's NATIVE portrait orientation for plymouth, which paints the raw
-framebuffer before any compositor rotates anything. `wlr-randr --transform
-90` is wlroots' "rotate 90° counter-clockwise" of the logical image into the
-native buffer, so the native splash is the landscape one rotated CCW. The
-wallpaper is shown by the (already rotated) compositor and stays landscape.
+framebuffer before any compositor rotates anything — which way is decided
+by ROTATE below. The wallpaper is shown by the (already rotated) compositor
+and stays landscape.
 
 Usage: make_splash.py OUT_DIR [BIRD_IMAGE] [ROTATE]
 Writes OUT_DIR/splash-landscape.png (1280x720) and OUT_DIR/splash-native.png

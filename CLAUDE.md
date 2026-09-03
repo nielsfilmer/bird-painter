@@ -447,6 +447,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
 - `tests/fixtures/plates/` — five real plates (downscaled) pinning thresholds
+  (one of them, the hummingbird, is also the boot splash's bird — the
+  install script draws the splash from it)
   calibrated over the whole archive: three for the plate check (one good, one
   desk photo, one grey block) and two for the panel's ground detection (one
   painted on a grey field inside a white border, one pale bird on true white —

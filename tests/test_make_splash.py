@@ -26,8 +26,10 @@ def test_writes_both_images_turned_by_the_units_rotate(tmp_path: Path):
     assert landscape.size == (1280, 720) and native.size == (720, 1280)
     assert run(str(tmp_path / "b"), str(BIRD), "270").returncode == 0
     other = Image.open(tmp_path / "b" / "splash-native.png")
-    # 90 and 270 are each other's 180° turn — the same pixels, the other way up.
-    assert list(other.getdata()) == list(native.rotate(180).getdata())
+    # The contract: 90 turns the landscape counter-clockwise, 270 clockwise
+    # (the one direction no test can see is whether the panel agrees).
+    assert native.tobytes() == landscape.rotate(90, expand=True).tobytes()
+    assert other.tobytes() == landscape.rotate(-90, expand=True).tobytes()
     # The bird is on the paper: the middle is not bare cream.
     assert landscape.getpixel((640, 420)) != landscape.getpixel((40, 40))
 
