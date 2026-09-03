@@ -5,7 +5,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi import WebSocket
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from bird_painter.events import painted_event
 from bird_painter.web import create_app
@@ -466,6 +468,102 @@ def test_dev_routes_do_not_leak_their_shape_to_the_network(config):
         # …while the machine itself still gets the real answers.
         assert local.get("/dev/paint/robin").status_code == 405
         assert local.post("/dev/paint/robin").status_code == 201
+
+
+def test_local_only_guard_sees_through_a_root_path_mount(config):
+    """#95: the guard matched the RAW path, so a wall served under
+    `--root-path /wall` let `/wall/dev/paint/x` past it — the handler still
+    refused, but with the 405/307 answers the guard exists to hide."""
+    app = create_app(config)
+    with TestClient(app, client=REMOTE, root_path="/wall") as remote:
+        assert remote.get("/wall/dev/paint/robin").status_code == 404  # not 405
+        slash = remote.post("/wall/dev/paint/robin/", follow_redirects=False)
+        assert slash.status_code == 404  # not 307
+    with TestClient(app, client=LOCAL, root_path="/wall") as local:
+        assert local.get("/wall/dev/paint/robin").status_code == 405
+        assert local.post("/wall/dev/paint/robin").status_code == 201
+
+
+def test_local_only_guard_strips_root_path_only_on_a_boundary(config):
+    """Round-1 review of #148: Starlette strips `root_path` only where a `/`
+    follows it — a mount at `/d` does not own `/dev/...`. A guard that
+    stripped any string prefix saw `ev/paint/robin`, missed, and the 405
+    was back."""
+    app = create_app(config)
+    with TestClient(app, client=REMOTE, root_path="/d") as remote:
+        assert remote.get("/dev/paint/robin").status_code == 404  # not 405
+
+
+def test_local_only_guard_reserves_unit_on_a_boundary(config):
+    """`/unit` is the table model's settings API (#123), refused off-machine
+    before it exists — but only `/unit` and `/unit/...`, not `/unittest`."""
+    app = create_app(config)
+
+    @app.get("/unit")
+    def unit_root():
+        return {"ok": True}
+
+    @app.get("/unit/state")
+    def unit_state():
+        return {"ok": True}
+
+    @app.get("/unittest")
+    def unittest_():
+        return {"ok": True}
+
+    with TestClient(app, client=REMOTE) as remote:
+        assert remote.get("/unit/state").status_code == 404
+        assert remote.get("/unit").status_code == 404
+        assert remote.get("/unittest").status_code == 200
+    with TestClient(app, client=LOCAL) as local:
+        assert local.get("/unit").status_code == 200
+        assert local.get("/unit/state").status_code == 200
+        assert local.get("/unittest").status_code == 200
+
+
+def test_local_only_guard_takes_its_prefixes_as_an_argument():
+    from fastapi import FastAPI
+
+    from bird_painter.web import LocalOnly
+
+    app = FastAPI()
+    app.add_middleware(LocalOnly, prefixes=("/secret",))
+
+    @app.get("/secret/x")
+    def secret():
+        return {"ok": True}
+
+    @app.get("/dev/open")
+    def open_():
+        return {"ok": True}
+
+    with TestClient(app, client=REMOTE) as remote:
+        assert remote.get("/secret/x").status_code == 404
+        assert remote.get("/dev/open").status_code == 200  # not in THIS guard's list
+
+
+def test_local_only_guard_covers_websockets_too(config):
+    """#95: an `@app.middleware("http")` never sees a websocket scope. A
+    throwaway /dev socket stands in for any future one."""
+    app = create_app(config)
+
+    @app.websocket("/dev/echo")
+    async def dev_echo(ws: WebSocket):
+        await ws.accept()
+        await ws.send_text("hello")
+        await ws.close()
+
+    with TestClient(app, client=LOCAL) as local:
+        with local.websocket_connect("/dev/echo") as ws:
+            assert ws.receive_text() == "hello"
+    with TestClient(app, client=REMOTE) as remote:
+        with pytest.raises(WebSocketDisconnect) as refused:
+            with remote.websocket_connect("/dev/echo"):
+                pass
+        # In-process only: uvicorn turns a close-before-accept into a 403 on
+        # the handshake and drops the code. 1008 is what distinguishes
+        # "refused" from Starlette's 1000 for a socket path that doesn't exist.
+        assert refused.value.code == 1008
 
 
 def test_dev_paint_refuses_a_peer_it_cannot_place(config):

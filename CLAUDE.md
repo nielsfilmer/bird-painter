@@ -347,7 +347,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     ground keyed to alpha — which is what panel mode shows), `/audio/*`
     (`?download=1` for an
     attachment), `/ws/detections` (live event stream), `/api` + `/api/docs`
-    (the API's own documentation), `/dev/paint/*` (loopback only — 404 from
+    (the API's own documentation), `/dev/paint/*` (loopback only, via the
+    `LocalOnly` ASGI guard on `LOCAL_ONLY_PREFIXES` — `/dev`, and `/unit`
+    for #123 — 404 from
     off-machine; it skips the cap and spends money).
   - `wall_layout.py` — Python port of `static/layout.js`'s `computeCollage`
     (the collage placement maths), so `/wall.png` places birds identically to
