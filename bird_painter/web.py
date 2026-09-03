@@ -22,6 +22,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import brush
 from .api_docs import describe, openapi_websocket_path
@@ -80,42 +81,57 @@ def _is_loopback(client: tuple[str, int] | None) -> bool:
 
 # Prefixes only this machine may reach. /dev spends money past the cap;
 # /unit (the table model's own settings screen, #123) changes the unit.
-LOCAL_ONLY_PREFIXES = ("/dev/", "/unit")
+# Matched on a path boundary: `/unit` and `/unit/...`, never `/unittest`.
+LOCAL_ONLY_PREFIXES = ("/dev", "/unit")
 
 
-def _route_path(scope: dict) -> str:
-    """The path Starlette routes on: `path` minus the mount's `root_path`
-    (what starlette's get_route_path does). The old guard compared the raw
-    path, so a wall served under `--root-path /wall` let `/wall/dev/...`
-    through to the handler's own check — refused there, but with the 405/307
-    answers that map the routes for the network (#95)."""
-    path = scope.get("path", "")
+def _route_path(scope: Scope) -> str:
+    """The path Starlette routes on — a mirror of starlette's
+    `get_route_path`: `root_path` is stripped only when it ends on a `/`
+    boundary (a mount at `/d` does not own `/dev/...`). The old guard
+    compared the raw path, so a wall served under `--root-path /wall` let
+    `/wall/dev/...` through to the handler's own check — refused there, but
+    with the 405/307 answers that map the routes for the network (#95)."""
+    path: str = scope.get("path", "")
     root = scope.get("root_path", "")
-    if root and path.startswith(root):
-        return path[len(root):] or "/"
+    if not root or not path.startswith(root):
+        return path
+    if path == root:
+        return ""
+    if path[len(root)] == "/":
+        return path[len(root):]
     return path
+
+
+def _under(path: str, prefixes: tuple[str, ...]) -> bool:
+    return any(path == p or path.startswith(p + "/") for p in prefixes)
 
 
 class LocalOnly:
     """Pure-ASGI guard: refuse the loopback-only prefixes at the door, for
     HTTP and WebSocket alike — an `@app.middleware("http")` never sees a
-    websocket scope, so a future `/dev` socket would have bypassed it (#95).
+    websocket scope, so a future /dev socket would have bypassed it (#95).
 
     Refusing before routing means an off-machine caller sees the same 404
     for /dev/paint as for /dev/anything-else; a handler-level check answers
     405 to a GET and 307 to a trailing slash, and only a real path does. The
     handlers keep their own checks: these endpoints spend money or change
     the unit, and one misordered middleware shouldn't be all that stands
-    between the network and them."""
+    between the network and them.
 
-    def __init__(self, app, prefixes: tuple[str, ...] = LOCAL_ONLY_PREFIXES):
+    A refused websocket is closed before accept. uvicorn turns that into a
+    403 on the handshake and drops the code; the 1008 is what an in-process
+    client (the test suite) sees, and distinguishes "refused" from
+    Starlette's own 1000 for a socket path that doesn't exist."""
+
+    def __init__(self, app: ASGIApp, prefixes: tuple[str, ...] = LOCAL_ONLY_PREFIXES):
         self.app = app
         self.prefixes = tuple(prefixes)
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if (
             scope["type"] in ("http", "websocket")
-            and _route_path(scope).startswith(self.prefixes)
+            and _under(_route_path(scope), self.prefixes)
             and not _is_loopback(scope.get("client"))
         ):
             # Debug, not info: an unauthenticated remote caller would otherwise
@@ -584,7 +600,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         gate's hourly cap, and with FAL_KEY set every call spends real money,
         so it must not be one curl away for anyone on the network (issue #66).
 
-        Off-machine callers get 404 — the middleware above turns away
+        Off-machine callers get 404 — `LocalOnly` turns away
         everything under /dev/ before routing, so the path's shape doesn't
         leak either. That isn't concealment: /api and /api/docs describe this
         endpoint and its 404 to anyone who asks.
