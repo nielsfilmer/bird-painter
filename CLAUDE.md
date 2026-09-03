@@ -448,6 +448,27 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
   milestones/issues (backs the `/status` skill).
+- `scripts/setup-table-model.sh` — installs the table model ON the unit
+  (Pi 5 + Touch Display 2): apt deps, checkout, venv, the ears' backend
+  (`tflite-runtime`, else `ai-edge-litert` behind a two-file
+  `tflite_runtime` shim — Python 3.13 has no tflite-runtime wheel — else
+  full `tensorflow`), the two undeclared deps birdnetlib needs on 3.13
+  (`audioop-lts`, `audioread`), `.env` with the mic pinned by name and NO
+  key, the `bird-painter` systemd unit, the Chromium kiosk wrapper
+  (`~/.local/bin/bird-kiosk`, cache in RAM, `--password-store=basic`) in the
+  labwc autostart behind an output rotation (`BP_ROTATE`, default 90 =
+  landscape), an invisible cursor theme set through labwc's session
+  environment (Wayland has no `unclutter`; this hides the compositor's
+  pointer and Chromium's alike), autologin and no blanking. Idempotent;
+  re-run to update. The per-unit values it was run with (`OUTPUT`,
+  `ROTATE`, `CAPTION`, `UI`, `MAX_LIVE`) persist on the unit in
+  `~/.config/bird-painter/unit.conf` — not a repo file — so a bare re-run
+  keeps them. First run on the first unit: 2026-09-03.
+- `scripts/memcheck.py` — peak-RSS measurement of the Python side on a
+  unit (#121's number). On the first unit with LiteRT: 261 MB with the
+  Analyzer loaded, 331 MB after a clip cleanup; the whole running service
+  sits at ~290 MB (its RSS per `systemctl status bird-painter` on that
+  unit, 2026-09-03). Full TensorFlow measured 641 MB on the dev machine.
 - `.claude/settings.json` — project permission allowlist.
 - `.claude/skills/review-prompts/SKILL.md` — review + QA prompt templates for
   workflow step 3.
