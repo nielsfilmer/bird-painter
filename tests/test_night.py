@@ -150,6 +150,24 @@ def test_a_failed_write_keeps_the_transition_pending(tmp_path, caplog):
     assert raw(bl) == "6\n"
 
 
+def test_a_daytime_start_survives_an_unreadable_backlight(tmp_path, caplog):
+    """Round 2 of #149: a failed READ at a daytime start used to be reported
+    as a failed restore, every minute, with the state never settling."""
+    bl = Backlight(fake_backlight(tmp_path, current=15))
+    watch, now = watch_at(bl, 12)
+    (bl.device / "brightness").chmod(0o000)
+    try:
+        with caplog.at_level(logging.WARNING, logger="bird_painter.night"):
+            assert watch.tick() is False
+        assert watch.is_night is False and watch.day_percent == 100
+        assert "could not read" in caplog.text and "restore" not in caplog.text
+        assert watch.tick() is None  # settled: no warning per minute
+    finally:
+        (bl.device / "brightness").chmod(0o644)
+    now["t"] = at(23)
+    assert watch.tick() is True and watch.day_percent == 48  # dusk read it
+
+
 def test_log_reports_only_what_was_written(tmp_path, caplog):
     bl = Backlight(fake_backlight(tmp_path, current=15))
     watch, now = watch_at(bl, 12)

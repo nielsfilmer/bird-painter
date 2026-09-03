@@ -155,17 +155,28 @@ class NightWatch:
             self.is_night = night
             logger.info("night: %s (no backlight; the page dims itself)", _word(night))
             return night
+        if not night and previous is None:
+            # A daytime start: nothing to restore, only a level to learn — and
+            # a failed read must not hold the state hostage (round 2 of #149):
+            # dusk reads it again.
+            try:
+                self._learn_day_level()
+            except (OSError, ValueError) as exc:
+                logger.warning("night: could not read the backlight (%s)", exc)
+            self.is_night = False
+            logger.info(
+                "night: off (daytime start; backlight left at %d%%)", self.day_percent
+            )
+            return False
         try:
             if night:
                 if previous is False:
                     self._learn_day_level()
-                elif previous is None:
-                    self._learn_day_level(only_if_brighter_than=self.schedule.night_percent)
+                else:
+                    floor = self.schedule.night_percent
+                    self._learn_day_level(only_if_brighter_than=floor)
                 self.backlight.write_percent(self.schedule.night_percent)
-                written: int | None = self.schedule.night_percent
-            elif previous is None:
-                self._learn_day_level()  # a daytime start: nothing to restore
-                written = None
+                written = self.schedule.night_percent
             else:
                 written = self.day_percent
                 self.backlight.write_percent(written)
@@ -177,12 +188,7 @@ class NightWatch:
             )
             return None
         self.is_night = night
-        if written is None:
-            logger.info(
-                "night: off (daytime start; backlight left at %d%%)", self.day_percent
-            )
-        else:
-            logger.info("night: %s — backlight %d%%", _word(night), written)
+        logger.info("night: %s — backlight %d%%", _word(night), written)
         return night
 
     def reschedule(self, schedule: NightSchedule) -> None:
@@ -233,6 +239,13 @@ def watch_from_config(config) -> NightWatch:
     keeps the state the wall reads."""
     device = find_backlight(name=config.night_backlight)
     backlight = None
+    if device is None and config.night_backlight:
+        logger.warning(
+            "night: BP_NIGHT_BACKLIGHT=%r is not a writable backlight under %s; "
+            "state only",
+            config.night_backlight,
+            BACKLIGHT_ROOT,
+        )
     if device is not None:
         try:
             backlight = Backlight(device)
