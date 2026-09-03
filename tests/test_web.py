@@ -27,6 +27,15 @@ def test_wall_page_serves(client):
     assert "<title>bird-painter</title>" in response.text
 
 
+def test_wall_page_and_its_module_revalidate(client):
+    """#151: the kiosk's Chromium served a cached layout.js against a fresh
+    index.html after a deploy and the import died silently. Both — and the
+    docs page — say revalidate; the API's JSON was never cached."""
+    for path in ("/", "/layout.js", "/api/docs"):
+        assert client.get(path).headers["cache-control"] == "no-cache", path
+    assert client.get("/layout.js").headers.get("etag")
+
+
 def test_live_reports_night_from_the_watch(config):
     """#122: the page dims itself on `night`; the flag is the watch's state,
     which the schedule sets on its own thread. Off (the fixture) it is False
