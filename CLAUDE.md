@@ -379,9 +379,17 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `static/api-docs.html` — the documentation page: renders `/api` and
     carries a live console wired to `/ws/detections`.
   - `static/index.html` — the wall (polling, fade in/out); imports the layout
-    module and applies it to the plate DOM.
+    module and applies it to the plate DOM. Reads the table model's panel
+    tuning from the query string (`?spread=`, `?caption=`) and sets the CSS
+    `--caption-scale` from the SAME normalised value the layout uses, so the
+    type and the room reserved for it can't disagree.
   - `static/layout.js` — pure collage-layout maths (`computeCollage`): spiral
-    placement, no-overlap, crowding scale. No DOM — unit-tested.
+    placement, no-overlap, crowding scale. No DOM — unit-tested. Also
+    `normalizePanelOpts`: the single sanitising chokepoint for the panel
+    tuning (`spread` — a floor on the cluster width; `captionScale` — a
+    multiplier on the lettering AND on the caption reserve). Both default to
+    the wall's long-standing look, so the dev wall and the e-paper
+    installation are unaffected.
   - `static/layout.test.js` — `node --test` guard for the layout (overlap-free
     across random sets/viewports, determinism, on-screen); run by
     `make test-js` inside `make review-checks`.

@@ -321,3 +321,87 @@ test("panel opts are sanitised, not trusted (they come from a query string)", ()
     { spread: 0.92, captionScale: 4 });
   assert.deepEqual(normalizePanelOpts({}), { spread: 0, captionScale: 1 });
 });
+
+test("the off-screen guard covers the CAPTION, not just the bird", () => {
+  // Round-1 review, N3: the earlier version of this used footprint(), which is
+  // image-only — so it never guarded the one thing captionScale grows. The
+  // caption hangs BELOW the image, so the bottom edge is what can escape.
+  const CAPTION_ALLOWANCE = 1.1, CAPTION_FLOOR_PX = 26; // mirrors layout.js
+  const captionPx = (imageH, s) =>
+    Math.max(CAPTION_FLOOR_PX * s, imageH * (CAPTION_ALLOWANCE - 1) * s);
+  for (const [W, H] of [PANEL_7IN, PANEL_10IN]) {
+    const bandTop = 140;
+    const vmin = Math.min(W, H) / 100;
+    for (const captionScale of [1, 1.7, 4]) {
+      for (const spread of [0, 0.8, 0.92]) {
+        for (const p of computeCollage(
+          randomFiles(makeRng(23), 12), W, H, bandTop, { spread, captionScale })) {
+          const imageH = p.sizeVmin * vmin * PLATE_ASPECT;
+          const boxBottom = p.y + (imageH + captionPx(imageH, captionScale)) / 2;
+          assert.ok(
+            boxBottom <= H / 2 + 0.5,
+            `caption off the bottom at ${W}x${H} spread=${spread} caption=${captionScale}`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test("normalizePanelOpts is idempotent (index.html normalises, then computeCollage does again)", () => {
+  // Round-1 review, N6: index.html hands ALREADY-normalised opts to
+  // computeCollage, which normalises them a second time. If that second pass
+  // moved the value, the CSS --caption-scale and the layout's reserve would
+  // silently disagree — the exact failure the shared chokepoint exists to stop.
+  for (const raw of [
+    {}, { spread: 0.8, captionScale: 1.7 }, { spread: 99, captionScale: 99 },
+    { spread: -1, captionScale: 0.1 }, { spread: "0.5", captionScale: "2" },
+  ]) {
+    const once = normalizePanelOpts(raw);
+    assert.deepEqual(normalizePanelOpts(once), once,
+      `not idempotent for ${JSON.stringify(raw)}`);
+  }
+});
+
+test("both knobs leave the LAYOUT untouched at three birds or fewer (the shelf)", () => {
+  // Round-1 review, N4, corrected by this test. The review said spread is
+  // inert below ROW_LIMIT+1 birds and captionScale still applies; in fact
+  // BOTH are inert in the layout there, and that is correct:
+  //   - spread: every plate is in placeRow(), which packs a centred block and
+  //     ignores halfW entirely.
+  //   - captionScale: it grows each plate's reserved box, but the reserve
+  //     exists to stop a label landing on the bird BELOW, and a shelf has
+  //     nothing below it. The box only moves a plate once it forces an
+  //     overlap, which a 1-3 bird shelf never does.
+  // The lettering itself DOES grow at these counts — that is CSS
+  // (--caption-scale), not layout. What the layout can't yet protect is
+  // sideways crowding between shelf neighbours, which is #133.
+  // Pinned rather than fixed: the shelf is deliberately a fixed block
+  // (PLAN.md — its members must never move or swap sides as the wall grows),
+  // so widening or re-spacing it is a design change, not a bug fix.
+  const [W, H] = PANEL_7IN;
+  const bandTop = 140;
+  for (const n of [1, 2, 3]) {
+    const files = randomFiles(makeRng(29), n);
+    const plain = computeCollage(files, W, H, bandTop);
+    for (const opts of [
+      { spread: 0.92 }, { captionScale: 4 }, { spread: 0.92, captionScale: 4 },
+    ]) {
+      assert.deepEqual(
+        computeCollage(files, W, H, bandTop, opts), plain,
+        `${JSON.stringify(opts)} moved a ${n}-bird shelf`,
+      );
+    }
+  }
+  // spread bites once the set is big enough to actually WANT width. That is
+  // the widen-to-fit design, not a bug: "full height first, expand
+  // horizontally". A handful of birds fit in a narrow column, so a wider oval
+  // changes nothing; a full wall does. Pinned at the live cap, which is the
+  // case the table model spends its day in.
+  const full = randomFiles(makeRng(29), 12);
+  assert.notDeepEqual(
+    computeCollage(full, W, H, bandTop, { spread: 0.92 }),
+    computeCollage(full, W, H, bandTop),
+    "spread inert even on a full wall",
+  );
+});

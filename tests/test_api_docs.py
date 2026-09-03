@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from bird_painter.api_docs import ENDPOINTS, WEBSOCKET, describe
 from bird_painter.events import EVENT_TYPES, PING_SECONDS, detected_event, painted_event
 from bird_painter.store import Painting
-from bird_painter.web import create_app
+from bird_painter.web import STATIC_DIR, create_app
 from tests.conftest import LOCAL, REMOTE
 
 
@@ -330,3 +330,50 @@ def test_the_http_layer_and_the_renderer_accept_the_same_values():
 
     assert set(WALL_LAYERS) == set(LAYERS)
     assert set(WALL_STYLES) == set(STYLES)
+
+
+def test_documented_wall_params_match_layout_js_clamps():
+    """Same failure mode as the /wall.png guard above, one endpoint along: `/`
+    grew `spread` and `caption` in PR #132 while the PR body claimed "no
+    server surface, no API-docs drift".
+
+    The ranges are enforced in JavaScript (`normalizePanelOpts` in
+    static/layout.js), so there is no Python constant to compare against —
+    parse them out of the module and pin the documented bounds to the real
+    ones. Ugly, but the alternative is a doc that drifts from the only place
+    the clamp actually lives.
+    """
+    import re
+
+    source = (STATIC_DIR / "layout.js").read_text()
+
+    def constant(name: str) -> float:
+        match = re.search(rf"\b{name}\s*=\s*([0-9.]+)", source)
+        assert match, f"{name} not found in layout.js — did it get renamed?"
+        return float(match.group(1))
+
+    entry = next(e for e in ENDPOINTS if e["path"] == "/")
+    documented = {p["name"]: p for p in entry.get("params", [])}
+    assert set(documented) == {"spread", "caption"}
+
+    # spread: 0 .. CLUSTER_W_FRAC, default DEFAULT_SPREAD
+    spread_max = constant("CLUSTER_W_FRAC")
+    assert str(spread_max) in documented["spread"]["note"], (
+        f"spread's upper bound is {spread_max} in layout.js but the docs "
+        f"don't mention it: {documented['spread']['note']}"
+    )
+    assert float(documented["spread"]["default"]) == constant("DEFAULT_SPREAD")
+
+    # caption: CAPTION_SCALE_MIN .. CAPTION_SCALE_MAX, default
+    # DEFAULT_CAPTION_SCALE
+    caption_note = documented["caption"]["note"]
+    for bound in ("CAPTION_SCALE_MIN", "CAPTION_SCALE_MAX"):
+        value = constant(bound)
+        rendered = f"{value:g}"
+        assert rendered in caption_note, (
+            f"caption's {bound} is {rendered} in layout.js but the docs "
+            f"don't mention it: {caption_note}"
+        )
+    assert float(documented["caption"]["default"]) == constant(
+        "DEFAULT_CAPTION_SCALE"
+    )

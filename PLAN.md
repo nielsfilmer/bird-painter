@@ -515,6 +515,13 @@ whole magic; ship it first.
   that bird's footprint — otherwise two small neighbours overlap each other's
   lettering. The browser wall keeps its own smaller type: it is read at a
   desk, and its layout reserves room for those sizes.
+  *(Partly superseded 2026-09-03: the diagnosis stands, but "the browser wall
+  is read at a desk" no longer holds. The table model runs the browser wall on
+  a portrait panel read from across a room — the same distance that forced
+  this decision for the e-paper panel — so the wall gained a `?caption=`
+  multiplier that grows the layout's reserve alongside the type. It does NOT
+  yet have this entry's other half, the measured-width floor; that gap is
+  tracked as #133 and blocks #120. See the table-model entry below.)*
 - **2026-08-20** — **A plate's ground is its most common light level.** FLUX
   sometimes paints on a light-grey field inside a white border; keying against
   the border's median then removed nothing and the plate landed on the white
@@ -558,3 +565,39 @@ whole magic; ship it first.
     reads the right way up on a panel hung portrait.
   - `BP_FRAME_SEARCH_SECONDS=0` disables the notice; the frame still looks, it
     just never says so.
+- **2026-09-03** — **The table model is a second deployment shape, not a
+  replacement.** Alongside the dev/laptop wall and the Phase 4 two-box
+  installation (recorder Pi + e-paper frame fetching `/wall.png`), there is now
+  a self-contained unit: one Pi 5 driving an official Touch Display 2, running
+  the REAL browser wall in a Chromium kiosk, with a USB microphone in the unit,
+  sitting in an open window. It drops `/wall.png` entirely — the frame loads
+  the wall page itself. Hardware is bought for **two units**, plus both a 7"
+  (720×1280) and a 10" portrait (1200×1920) panel, to be built and compared
+  side by side rather than chosen on a spec sheet (#127). Both units leave the
+  house to live with friends and family, unattended.
+  - All three shapes must keep working. `wall_layout.py` and `/wall.png`
+    (`style=wall|panel`, `layer=picture|text`) are the e-paper installation's
+    and stay untouched by table-model work; the JS↔Python layout parity test
+    is the guard.
+  - Storage is a high-endurance microSD, not NVMe, because the DRAM/NAND
+    shortage of 2026 put a 500 GB NVMe at ~€119 against ~€38 for a 128 GB
+    high-endurance card. The robustness that mattered — surviving a power cut
+    in someone else's house — comes from a read-only overlayfs root and an
+    archive on its own writable partition (#124), which is medium-independent.
+- **2026-09-03** — **The table model's panel tuning is configured by QUERY
+  STRING, not `BP_*` env vars.** `?spread=` (a floor on the collage's cluster
+  width) and `?caption=` (a multiplier on the lettering) are read by
+  `index.html` from `location.search`, against this repo's otherwise-universal
+  env-var convention. Reasons, in order of weight:
+  - These are properties of the DISPLAY, not of the service. One recorder can
+    serve several viewers at once — a phone, a laptop, the panel — and an env
+    var would force one panel's tuning onto all of them.
+  - The kiosk URL is already where a unit is configured (#120), so this adds
+    no new configuration surface and needs no restart to try a value — which
+    is the whole point during the 7"-vs-10" comparison (#127).
+  - It keeps `/api` unchanged, avoiding the docs-vs-routes drift guards.
+  The cost: the values are untrusted input. `normalizePanelOpts` in
+  `layout.js` is the single sanitising chokepoint, shared by the module and
+  the page so the CSS custom property and the layout's caption reserve can
+  never receive different numbers. A `BP_*` default remains available later if
+  a unit ever needs one baked in.
