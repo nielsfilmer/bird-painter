@@ -4,7 +4,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeCollage, hash, overlapArea } from "./layout.js";
+import { computeCollage, hash, normalizePanelOpts, overlapArea } from "./layout.js";
 
 const PLATE_ASPECT = 5 / 4;
 const SLUGS = [
@@ -37,9 +37,16 @@ function footprint(p, vmin) {
   return { x: p.x, y: p.y, w, h: w * PLATE_ASPECT };
 }
 
+// The last two are the table model's panels — Raspberry Pi Touch Display 2 at
+// 7" and 10", both natively portrait. They are pinned here (not just swept
+// randomly) because the table model is read from across a room and a
+// regression on either one is a regression on a physical object in somebody
+// else's living room.
+const PANEL_7IN = [720, 1280];
+const PANEL_10IN = [1200, 1920];
 const VIEWPORTS = [
   [1920, 1080], [1280, 800], [375, 812], [812, 375], [2560, 1440],
-  [1345, 1245], [716, 801], [100, 100],
+  [1345, 1245], [716, 801], [100, 100], PANEL_7IN, PANEL_10IN,
 ];
 
 test("no two birds ever visibly overlap, across random sets and viewports", () => {
@@ -218,4 +225,99 @@ test("a zero-size viewport yields no placements (no 0-size plates)", () => {
 test("hash is stable and unsigned", () => {
   assert.equal(hash("european-robin"), hash("european-robin"));
   assert.ok(hash("x") >= 0 && hash("x") <= 0xffffffff);
+});
+
+// --- Table-model panel tuning (spread / captionScale) -----------------------
+
+// Horizontal extent of the placed birds, as a fraction of the viewport.
+function widthUsed(placements, W, vmin) {
+  const left = Math.min(...placements.map(p => p.x - (p.sizeVmin * vmin) / 2));
+  const right = Math.max(...placements.map(p => p.x + (p.sizeVmin * vmin) / 2));
+  return (right - left) / W;
+}
+
+test("panel opts default to today's layout, exactly", () => {
+  for (const [W, H] of [PANEL_7IN, PANEL_10IN, [1280, 800]]) {
+    const files = randomFiles(makeRng(7), 12);
+    const bandTop = 140;
+    const bare = computeCollage(files, W, H, bandTop);
+    // Omitted, empty, and explicitly-default opts must all be identical: the
+    // desktop wall and the e-paper /wall.png render must not shift because a
+    // knob exists.
+    assert.deepEqual(computeCollage(files, W, H, bandTop, {}), bare);
+    assert.deepEqual(
+      computeCollage(files, W, H, bandTop, { spread: 0, captionScale: 1 }), bare);
+  }
+});
+
+test("spread widens the collage on a portrait panel", () => {
+  for (const [W, H] of [PANEL_7IN, PANEL_10IN]) {
+    const files = randomFiles(makeRng(11), 12);
+    const bandTop = 140;
+    const vmin = Math.min(W, H) / 100;
+    const narrow = widthUsed(computeCollage(files, W, H, bandTop), W, vmin);
+    const wide = widthUsed(
+      computeCollage(files, W, H, bandTop, { spread: 0.8 }), W, vmin);
+    // The default leaves a lot of the panel's width unused — that is the
+    // finding this knob exists for. Assert the direction, not a magic number.
+    assert.ok(narrow < 0.7, `default already wide on ${W}x${H} (${narrow})`);
+    assert.ok(wide > narrow + 0.15, `spread did not widen ${W}x${H}`);
+  }
+});
+
+test("panel opts never push a bird off screen", () => {
+  for (const [W, H] of [PANEL_7IN, PANEL_10IN]) {
+    const bandTop = 140;
+    const vmin = Math.min(W, H) / 100;
+    for (const spread of [0, 0.4, 0.8, 0.92]) {
+      for (const captionScale of [1, 1.7, 4]) {
+        const placements = computeCollage(
+          randomFiles(makeRng(13), 12), W, H, bandTop, { spread, captionScale });
+        for (const p of placements) {
+          const f = footprint(p, vmin);
+          assert.ok(f.x - f.w / 2 >= -W / 2 - 0.5, `off left @${spread}/${captionScale}`);
+          assert.ok(f.x + f.w / 2 <= W / 2 + 0.5, `off right @${spread}/${captionScale}`);
+          assert.ok(f.y + f.h / 2 <= H / 2 + 0.5, `off bottom @${spread}/${captionScale}`);
+          assert.ok(f.y - f.h / 2 >= bandTop - H / 2 - 0.5, `over the title @${spread}/${captionScale}`);
+        }
+      }
+    }
+  }
+});
+
+test("a bigger caption reserves more room, so labels can't land on the bird below", () => {
+  const [W, H] = PANEL_7IN;
+  const bandTop = 140;
+  const files = randomFiles(makeRng(17), 8);
+  const plain = computeCollage(files, W, H, bandTop, { spread: 0.8 });
+  const big = computeCollage(files, W, H, bandTop, { spread: 0.8, captionScale: 2.5 });
+  // Same set, same spread: larger lettering must either space the birds
+  // further apart vertically or shrink them — never leave the gaps unchanged.
+  const spanY = ps => Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y));
+  const size = ps => Math.max(...ps.map(p => p.sizeVmin));
+  assert.ok(
+    spanY(big) > spanY(plain) + 0.5 || size(big) < size(plain) - 0.01,
+    "caption scale changed neither spacing nor plate size",
+  );
+  assert.equal(plain.length, big.length);
+});
+
+test("panel opts are sanitised, not trusted (they come from a query string)", () => {
+  const [W, H] = PANEL_7IN;
+  const bandTop = 140;
+  const files = randomFiles(makeRng(19), 6);
+  const bare = computeCollage(files, W, H, bandTop);
+  for (const junk of [
+    { spread: "nonsense", captionScale: "nonsense" },
+    { spread: null, captionScale: null },
+    { spread: NaN, captionScale: NaN },
+    { spread: -5, captionScale: 0 },
+  ]) {
+    assert.deepEqual(computeCollage(files, W, H, bandTop, junk), bare,
+      `junk opts ${JSON.stringify(junk)} did not fall back to defaults`);
+  }
+  // Out-of-range values clamp rather than run away.
+  assert.deepEqual(normalizePanelOpts({ spread: 99, captionScale: 99 }),
+    { spread: 0.92, captionScale: 4 });
+  assert.deepEqual(normalizePanelOpts({}), { spread: 0, captionScale: 1 });
 });
