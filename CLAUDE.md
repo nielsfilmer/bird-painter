@@ -392,9 +392,10 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     carries a live console wired to `/ws/detections`.
   - `static/index.html` — the wall (polling, fade in/out); imports the layout
     module and applies it to the plate DOM. Reads the table model's panel
-    tuning from the query string (`?spread=`, `?caption=`) and sets the CSS
-    `--caption-scale` from the SAME normalised value the layout uses, so the
-    type and the room reserved for it can't disagree. `?style=panel` (the
+    tuning from the query string (`?spread=`, `?caption=`, `?ui=`) and sets
+    the CSS `--caption-scale` from the SAME normalised value the layout uses,
+    so the type and the room reserved for it can't disagree; `?ui=` sizes the
+    archive chrome on its own (`--ui-scale`), in both modes. `?style=panel` (the
     table model's kiosk URL) computes nothing locally: it fetches the frame's
     plan from `/api/layout` for its own viewport and applies it — positions,
     bird-shaped cells, ink crops, the panel's fixed-size type — so the screen

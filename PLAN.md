@@ -638,4 +638,10 @@ whole magic; ship it first.
   CSS-only scale is how #132 put labels on birds), and `BP_WALL_MAX_LIVE=3`.
   The e-paper frame and the 10" keep their own values. Bounds for the
   caption scale (0.5–2) are the same as the spiral's `?caption=`, pinned by
-  a test, so one number in a URL means one thing on every wall.
+  a test, so one number in a URL means one thing on every wall. The archive
+  chrome — corner button, overlay heading and close, "more", card lettering
+  — has its own knob, `?ui=` (same bounds; the 7" runs 1.5), because it is
+  the page's business rather than the plan's, and a frame may want its
+  controls and its captions sized differently (owner, same day: "make this a
+  configurable attribute so we can quickly switch per frame size"). Both
+  ride the kiosk URL the install script writes (`BP_CAPTION`, `BP_UI`).
