@@ -78,6 +78,58 @@ def _is_loopback(client: tuple[str, int] | None) -> bool:
     return (unmapped or address).is_loopback
 
 
+# Prefixes only this machine may reach. /dev spends money past the cap;
+# /unit (the table model's own settings screen, #123) changes the unit.
+LOCAL_ONLY_PREFIXES = ("/dev/", "/unit")
+
+
+def _route_path(scope: dict) -> str:
+    """The path Starlette routes on: `path` minus the mount's `root_path`
+    (what starlette's get_route_path does). The old guard compared the raw
+    path, so a wall served under `--root-path /wall` let `/wall/dev/...`
+    through to the handler's own check — refused there, but with the 405/307
+    answers that map the routes for the network (#95)."""
+    path = scope.get("path", "")
+    root = scope.get("root_path", "")
+    if root and path.startswith(root):
+        return path[len(root):] or "/"
+    return path
+
+
+class LocalOnly:
+    """Pure-ASGI guard: refuse the loopback-only prefixes at the door, for
+    HTTP and WebSocket alike — an `@app.middleware("http")` never sees a
+    websocket scope, so a future `/dev` socket would have bypassed it (#95).
+
+    Refusing before routing means an off-machine caller sees the same 404
+    for /dev/paint as for /dev/anything-else; a handler-level check answers
+    405 to a GET and 307 to a trailing slash, and only a real path does. The
+    handlers keep their own checks: these endpoints spend money or change
+    the unit, and one misordered middleware shouldn't be all that stands
+    between the network and them."""
+
+    def __init__(self, app, prefixes: tuple[str, ...] = LOCAL_ONLY_PREFIXES):
+        self.app = app
+        self.prefixes = tuple(prefixes)
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] in ("http", "websocket")
+            and _route_path(scope).startswith(self.prefixes)
+            and not _is_loopback(scope.get("client"))
+        ):
+            # Debug, not info: an unauthenticated remote caller would otherwise
+            # choose how fast this wall's disk fills up.
+            logger.debug("local-only route refused for %s", scope.get("client"))
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+            else:
+                response = JSONResponse({"detail": "Not Found"}, status_code=404)
+                await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def _base_url(websocket: WebSocket) -> str:
     """The http origin matching how this client reached us ('ws' → 'http'), so
     the urls in the stream are fetchable by whoever is listening — a phone on
@@ -234,23 +286,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     app.openapi = openapi
 
-    @app.middleware("http")
-    async def dev_routes_are_local_only(request: Request, call_next):
-        """Refuse /dev/* at the door, before routing.
-
-        Checking inside the handler still leaks the route's shape to the
-        network: a GET answers 405 and a trailing slash answers 307, and only
-        a real path answers either. Refusing here means an off-machine caller
-        sees the same 404 for /dev/paint as for /dev/anything-else. The
-        handler keeps its own check — this endpoint spends money, and one
-        misordered middleware shouldn't be all that stands between the LAN and
-        the brush."""
-        if request.url.path.startswith("/dev/") and not _is_loopback(request.client):
-            # Debug, not info: an unauthenticated remote caller would otherwise
-            # choose how fast this wall's disk fills up.
-            logger.debug("dev route refused for %s (loopback only)", request.client)
-            return JSONResponse({"detail": "Not Found"}, status_code=404)
-        return await call_next(request)
+    app.add_middleware(LocalOnly)
 
     # Exposed for tests and debugging; not part of any API contract.
     app.state.config = config
