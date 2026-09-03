@@ -91,6 +91,34 @@ def test_location_filter_range_checked(monkeypatch, tmp_path, lat, lon, bad):
         load_config()
 
 
+@pytest.mark.parametrize(
+    ("var", "value", "bad"),
+    [
+        ("BP_NIGHT_FROM", "24", "BP_NIGHT_FROM is an hour"),
+        ("BP_NIGHT_TO", "-1", "BP_NIGHT_TO is an hour"),
+        ("BP_NIGHT_BRIGHTNESS", "0", "BP_NIGHT_BRIGHTNESS is a percentage"),
+        ("BP_NIGHT_BRIGHTNESS", "101", "BP_NIGHT_BRIGHTNESS is a percentage"),
+        ("BP_NIGHT_DAY_BRIGHTNESS", "0", "BP_NIGHT_DAY_BRIGHTNESS is a percentage"),
+        ("BP_NIGHT_DAY_BRIGHTNESS", "dim", "BP_NIGHT_DAY_BRIGHTNESS must be a whole"),
+    ],
+)
+def test_night_knobs_range_checked(monkeypatch, tmp_path, var, value, bad):
+    monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
+    monkeypatch.setenv(var, value)
+    with pytest.raises(ConfigError, match=bad):
+        load_config()
+
+
+def test_night_knobs_defaults_and_optional_ones(monkeypatch, tmp_path):
+    monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
+    monkeypatch.delenv("BP_NIGHT_DAY_BRIGHTNESS", raising=False)
+    monkeypatch.setenv("BP_NIGHT_BACKLIGHT", "")
+    c = load_config()
+    assert (c.night_from_hour, c.night_to_hour, c.night_brightness) == (22, 7, 20)
+    assert c.night_enabled
+    assert c.night_day_brightness is None and c.night_backlight is None
+
+
 def test_location_filter_rejects_non_numeric(monkeypatch, tmp_path):
     monkeypatch.setenv("BP_ARCHIVE_DIR", str(tmp_path))
     monkeypatch.setenv("BP_LATITUDE", "north")

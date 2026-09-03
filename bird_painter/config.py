@@ -51,6 +51,17 @@ def _env_float_opt(name: str) -> float | None:
         raise ConfigError(f"{name} must be a number, got: {raw!r}") from None
 
 
+def _env_int_opt(name: str) -> int | None:
+    """An int env var that is genuinely optional: unset/empty → None."""
+    raw = os.environ.get(name)
+    if not raw or not raw.strip():
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        raise ConfigError(f"{name} must be a whole number, got: {raw!r}") from None
+
+
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if not raw:
@@ -241,8 +252,43 @@ class Config:
     enhance_clips: bool = field(
         default_factory=lambda: _env_bool("BP_ENHANCE_CLIPS", True)
     )
+    # Night mode (#122): between these local hours the backlight is dimmed
+    # to BP_NIGHT_BRIGHTNESS percent (on a panel that exposes one) and the
+    # wall dims itself (everywhere). A lit cream wall in a dark room is a
+    # lamp; the table model lives in living rooms. Same hour twice = never.
+    night_enabled: bool = field(
+        default_factory=lambda: _env_bool("BP_NIGHT_ENABLED", True)
+    )
+    night_from_hour: int = field(default_factory=lambda: _env_int("BP_NIGHT_FROM", 22))
+    night_to_hour: int = field(default_factory=lambda: _env_int("BP_NIGHT_TO", 7))
+    night_brightness: int = field(
+        default_factory=lambda: _env_int("BP_NIGHT_BRIGHTNESS", 20)
+    )
+    # The level to restore in the morning. Unset = the panel's own level as
+    # seen by day (a restart at night can't tell day from dim, so a unit
+    # that restarts inside the window comes back to full at dawn — set this
+    # to pin it).
+    night_day_brightness: int | None = field(
+        default_factory=lambda: _env_int_opt("BP_NIGHT_DAY_BRIGHTNESS")
+    )
+    # Which /sys/class/backlight/<name> to drive; unset = the first found.
+    night_backlight: str | None = field(
+        default_factory=lambda: os.environ.get("BP_NIGHT_BACKLIGHT") or None
+    )
 
     def __post_init__(self) -> None:
+        for env, value in (
+            ("BP_NIGHT_FROM", self.night_from_hour),
+            ("BP_NIGHT_TO", self.night_to_hour),
+        ):
+            if not 0 <= value <= 23:
+                raise ConfigError(f"{env} is an hour, 0..23; got {value}")
+        for env, value in (
+            ("BP_NIGHT_BRIGHTNESS", self.night_brightness),
+            ("BP_NIGHT_DAY_BRIGHTNESS", self.night_day_brightness),
+        ):
+            if value is not None and not 1 <= value <= 100:
+                raise ConfigError(f"{env} is a percentage, 1..100; got {value}")
         # The location filter keys on a lat/lon pair — one without the other is
         # a misconfiguration, not a partial filter. Fail loudly rather than
         # silently ignoring the half that was set.
