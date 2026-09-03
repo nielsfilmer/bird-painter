@@ -698,3 +698,17 @@ def test_images_bare_serves_the_birds_ink_with_the_ground_keyed_out(config):
         assert fallback.status_code == 200
         assert fallback.headers["content-type"].startswith("image/svg")
         assert client.get("/images/nope.png?bare=1").status_code == 404
+
+
+def test_api_layout_caption_scales_the_panels_type(config):
+    with TestClient(create_app(config), client=LOCAL) as client:
+        client.post("/dev/paint/robin")
+        one = client.get("/api/layout?width=1280&height=720").json()
+        big = client.get("/api/layout?width=1280&height=720&caption=1.5").json()
+        assert big["species_size"] == round(one["species_size"] * 1.5)
+        assert big["heard_size"] == round(one["heard_size"] * 1.5)
+        for query in ("caption=0.1", "caption=3", "caption=abc", "caption=-1"):
+            assert client.get(f"/api/layout?{query}").status_code == 422, query
+        # Both rails accepted.
+        for rail in ("0.5", "2"):
+            assert client.get(f"/api/layout?caption={rail}").status_code == 200

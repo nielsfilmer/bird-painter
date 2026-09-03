@@ -383,9 +383,11 @@ const panelOpts = normalizePanelOpts({
 // ?style=panel — place the birds exactly as the e-paper frame does (#138).
 // The layout is fetched from /api/layout rather than computed here, because
 // the frame's placement depends on measurements only the server can make;
-// see layoutPanel(). ?spread= and ?caption= are the spiral's knobs: in this
-// mode the plan carries its own fixed-size type, and --caption-scale is left
-// at 1 so the archive overlay doesn't scale either (QA on #139: it did).
+// see layoutPanel(). ?spread= is the spiral's knob and does nothing here.
+// ?caption= is FORWARDED to /api/layout rather than applied in CSS: the plan
+// owns the panel's type and reserves room for it, so scaling must happen
+// where the reserve is computed (the 7" unit runs 1.5). --caption-scale is
+// left at 1 so the archive overlay doesn't scale either (QA on #139).
 const panelStyle = params.get("style") === "panel";
 if (panelStyle) document.body.classList.add("panel");
 else document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));
@@ -419,7 +421,8 @@ async function layoutPanel() {
   planInFlight = true;
   let plan;
   try {
-    const res = await fetch(`/api/layout?style=panel&width=${W}&height=${H}`);
+    const res = await fetch(
+      `/api/layout?style=panel&width=${W}&height=${H}&caption=${panelOpts.captionScale}`);
     if (!res.ok) return;
     plan = await res.json();
   } catch { return; } // recorder briefly away; keep the current wall

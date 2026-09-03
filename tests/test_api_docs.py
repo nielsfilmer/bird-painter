@@ -435,3 +435,23 @@ def test_documented_layout_bounds_are_the_ones_the_endpoint_enforces():
     assert phrase in documented["height"]["note"]
     assert phrase in entry["statuses"]["422"]
     assert documented["style"]["default"] == "panel"
+
+
+def test_documented_layout_caption_bounds_match_the_endpoint_and_the_spiral_knob():
+    """One number in a kiosk URL means one thing: the panel's caption scale on
+    /api/layout has the same bounds as the spiral's ?caption= in layout.js.
+    Pinned both ways — docs to constants, and web constants to JS constants."""
+    import re
+
+    from bird_painter.web import LAYOUT_CAPTION_MAX, LAYOUT_CAPTION_MIN
+
+    entry = next(e for e in ENDPOINTS if e["path"] == "/api/layout")
+    caption = next(p for p in entry["params"] if p["name"] == "caption")
+    phrase = f"{LAYOUT_CAPTION_MIN:g}..{LAYOUT_CAPTION_MAX:g}"
+    assert phrase in caption["note"]
+    assert phrase in entry["statuses"]["422"]
+
+    source = (STATIC_DIR / "layout.js").read_text()
+    js_min = float(re.search(r"CAPTION_SCALE_MIN\s*=\s*([0-9.]+)", source).group(1))
+    js_max = float(re.search(r"CAPTION_SCALE_MAX\s*=\s*([0-9.]+)", source).group(1))
+    assert (js_min, js_max) == (LAYOUT_CAPTION_MIN, LAYOUT_CAPTION_MAX)

@@ -340,7 +340,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
     `/api/archive`, `/wall.png`, `/api/layout` (the placement `/wall.png`
     draws, as JSON, for any viewport — what the table model's browser wall
-    fetches with `?style=panel` so it places birds exactly as the frame does),
+    fetches with `?style=panel` so it places birds exactly as the frame does;
+    `?caption=` scales the panel's fixed-size type THROUGH the plan, so the
+    reserve grows with it — the 7" runs 1.5),
     `/images/*` (`?bare=1` for the bird as the frame pastes it — ink crop,
     ground keyed to alpha — which is what panel mode shows), `/audio/*`
     (`?download=1` for an

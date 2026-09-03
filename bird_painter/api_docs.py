@@ -75,7 +75,9 @@ ENDPOINTS: list[dict] = [
                     "caption is not, so it holds on the panels this is built "
                     "for (vmin 7.2 and 12) and not on a small-vmin viewport, "
                     "where labels can still reach the bird below from about "
-                    "1.3 up. Capped at 2; see issue #136"
+                    "1.3 up. Capped at 2; see issue #136. With ?style=panel "
+                    "the same value is forwarded to /api/layout instead, "
+                    "where the plan scales type and reserve together"
                 ),
             },
         ],
@@ -277,11 +279,26 @@ ENDPOINTS: list[dict] = [
                 "default": "BP_WALL_PNG_HEIGHT",
                 "note": "64..8192",
             },
+            {
+                "name": "caption",
+                "type": "number",
+                "default": "1",
+                "note": (
+                    "0.5..2; scales the panel's fixed-size type, and with it "
+                    "the room the plan reserves under each bird and the "
+                    "measured caption widths — so bigger lettering never "
+                    "lands on a bird. The 7\" table model runs 1.5. Ignored "
+                    "for style=wall, whose type is the browser's own"
+                ),
+            },
         ],
         "returns": "application/json",
         "statuses": {
             "200": "the plan",
-            "422": "unknown style, or a size outside 64..8192",
+            "422": (
+                "unknown style, a size outside 64..8192, or a caption "
+                "outside 0.5..2"
+            ),
         },
         "example": {
             "style": "panel",
