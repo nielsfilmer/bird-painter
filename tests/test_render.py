@@ -219,8 +219,8 @@ def test_plan_wall_caption_scale_grows_type_and_reserve_together(tmp_path):
     ]
     one = plan_wall(paintings, tmp_path, 1280, 720, style="panel")
     big = plan_wall(paintings, tmp_path, 1280, 720, style="panel", caption_scale=1.5)
-    assert big.species_size == round(one.species_size * 1.5)
-    assert big.heard_size == round(one.heard_size * 1.5)
+    assert big.species_size == int(one.species_size * 1.5 + 0.5)
+    assert big.heard_size == int(one.heard_size * 1.5 + 0.5)
     assert big.caption_gap == one.caption_gap  # air above the name is not type
     # Bigger type, same sheet: the birds must give up room for it.
     assert max(p["size_vmin"] for p in big.placements) < max(
@@ -231,4 +231,4 @@ def test_plan_wall_caption_scale_grows_type_and_reserve_together(tmp_path):
     assert _caption_sizes(7.0, panel=False, scale=1.5) == wall_default
     # Scaling AFTER the clamp: "50% bigger" is exactly that at the rails too.
     at_floor = _caption_sizes(3.0, panel=True, scale=1.5)
-    assert at_floor == (round(9 * 1.5), round(11 * 1.5))
+    assert at_floor == (14, 17), "9 × 1.5 = 13.5 → 14; 11 × 1.5 = 16.5 → 17, half up"

@@ -705,8 +705,8 @@ def test_api_layout_caption_scales_the_panels_type(config):
         client.post("/dev/paint/robin")
         one = client.get("/api/layout?width=1280&height=720").json()
         big = client.get("/api/layout?width=1280&height=720&caption=1.5").json()
-        assert big["species_size"] == round(one["species_size"] * 1.5)
-        assert big["heard_size"] == round(one["heard_size"] * 1.5)
+        assert big["species_size"] == int(one["species_size"] * 1.5 + 0.5)
+        assert big["heard_size"] == int(one["heard_size"] * 1.5 + 0.5)
         for query in ("caption=0.1", "caption=3", "caption=abc", "caption=-1"):
             assert client.get(f"/api/layout?{query}").status_code == 422, query
         # Both rails accepted.

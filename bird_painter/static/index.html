@@ -307,7 +307,7 @@
       calc(30px * var(--ui-scale, 1))
     );
     /* A bigger × needs a bigger touch target, not just a bigger glyph. */
-    padding: calc(0.4em) calc(0.6em);
+    padding: 0.4em 0.6em;
     color: var(--ink-dim);
     cursor: pointer;
   }
@@ -384,7 +384,7 @@
   <button id="archive-more">more</button>
 </div>
 <script type="module">
-import { computeCollage, normalizePanelOpts } from "/layout.js";
+import { computeCollage, createDragScroller, normalizePanelOpts } from "/layout.js";
 
 const wall = document.getElementById("wall");
 const empty = document.getElementById("empty");
@@ -442,51 +442,30 @@ function heardText(bornAt) {
 let liveOrder = []; // files, newest first — set by refresh()
 
 // ---- panel mode: the archive scrolls by drag -----------------------------
-// On the first unit a real touchscreen (Goodix, libinput "touch") tapped
-// fine but would not pan the overlay: whatever the compositor hands Chromium
-// for a drag, its gesture recogniser never turned it into a scroll — and a
-// hold selected text instead, i.e. it saw a mouse. Rather than guess at
-// Chromium/Wayland flags from across the house, the page scrolls the overlay
-// itself from Pointer Events, which arrive whether the drag is touch or an
-// emulated mouse. A small movement is still a tap (the card's click fires);
-// past a few px it becomes a drag and the click that would follow is
-// swallowed, so a swipe never replays a bird.
+// The decisions live in layout.js (createDragScroller) where `node --test`
+// can walk them; this is only the wiring from Pointer Events to the DOM. Why
+// the page scrolls its own overlay at all, and the tap/drag/capture rules,
+// are documented on the controller.
 if (panelStyle) {
   const overlay = document.getElementById("archive");
-  const DRAG_PX = 6;
-  let drag = null;
+  const scroller = createDragScroller();
   overlay.addEventListener("pointerdown", e => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    // A new gesture starts clean: the swallow flag is only for the click the
-    // PREVIOUS drag's own pointerup produces, never for the next tap.
-    delete overlay.dataset.swallowClick;
-    drag = { id: e.pointerId, y: e.clientY, top: overlay.scrollTop, moved: false };
-    // No pointer capture yet: capturing here retargets the pointerup — and
-    // with it the click — to the overlay, so a TAP on the close button, a
-    // card or "more" never reaches it (owner, first unit: "I'm not able
-    // anymore to tap the close button"). Capture only once this is a drag.
+    scroller.down({
+      id: e.pointerId, y: e.clientY, scrollTop: overlay.scrollTop,
+      pointerType: e.pointerType, button: e.button,
+    });
   });
   overlay.addEventListener("pointermove", e => {
-    if (!drag || e.pointerId !== drag.id) return;
-    const dy = e.clientY - drag.y;
-    if (!drag.moved && Math.abs(dy) < DRAG_PX) return;
-    if (!drag.moved) {
-      drag.moved = true;
-      overlay.setPointerCapture(e.pointerId); // keep the drag if it leaves a card
-    }
-    overlay.scrollTop = drag.top - dy;
+    const r = scroller.move({ id: e.pointerId, y: e.clientY, buttons: e.buttons });
+    if (!r) return;
+    if (r.capture) overlay.setPointerCapture(e.pointerId);
+    overlay.scrollTop = r.scrollTop;
     e.preventDefault();
   });
-  const endDrag = e => {
-    if (!drag || e.pointerId !== drag.id) return;
-    if (drag.moved) overlay.dataset.swallowClick = "1";
-    drag = null;
-  };
-  overlay.addEventListener("pointerup", endDrag);
-  overlay.addEventListener("pointercancel", endDrag);
+  overlay.addEventListener("pointerup", e => scroller.up({ id: e.pointerId }));
+  overlay.addEventListener("pointercancel", e => scroller.cancel({ id: e.pointerId }));
   overlay.addEventListener("click", e => {
-    if (overlay.dataset.swallowClick) {
-      delete overlay.dataset.swallowClick;
+    if (scroller.click()) {
       e.stopPropagation();
       e.preventDefault();
     }

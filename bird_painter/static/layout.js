@@ -332,3 +332,72 @@ export function computeCollage(files, W, H, bandTop, opts = {}) {
     z: TOP_Z - index,
   }));
 }
+
+// --- Drag-to-scroll for the archive overlay (panel mode) --------------------
+//
+// A pure state machine, no DOM: index.html feeds it pointer events and
+// applies what it returns. Extracted from the page for the same reason
+// computeCollage was — so `node --test` can walk it. Three of the five
+// commits on PR #146 were same-evening fixes to this logic found by a finger
+// on the real panel (pointer capture stole taps from the close button; the
+// swallow flag ate the tap after a swipe), which is exactly the kind of bug a
+// table of cases catches and a reader doesn't.
+//
+// Why the page scrolls its own overlay at all: on the first unit a genuine
+// touchscreen (Goodix, libinput "touch") tapped fine but Chromium never turned
+// a drag into a scroll — and a hold selected text, i.e. it saw a mouse.
+// Pointer Events arrive either way, so the overlay is scrolled from them,
+// with `touch-action: none` on it so the browser's own pan can't compete.
+//
+// Contract, per gesture:
+//   down()  — accepts the gesture (false for a non-primary mouse button);
+//             a new gesture always clears the swallow flag.
+//   move()  — null until movement passes the threshold; then the scrollTop to
+//             apply, with `capture: true` on the first such move so the page
+//             takes pointer capture ONLY once this is a drag (capturing on
+//             down retargets the release, and the click, away from whatever
+//             was tapped).
+//   up()    — ends the gesture; if it moved, the click the release produces
+//             is the drag's own and must be swallowed.
+//   cancel()— ends the gesture; no click will follow, so nothing to swallow.
+//   click() — true exactly once for the drag's own click; a tap never sets it.
+export const DRAG_THRESHOLD_PX = 6;
+
+export function createDragScroller(threshold = DRAG_THRESHOLD_PX) {
+  let drag = null;     // { id, y, top, moved }
+  let swallow = false; // the click the last drag's own release will produce
+  return {
+    down({ id, y, scrollTop, pointerType = "touch", button = 0 }) {
+      if (pointerType === "mouse" && button !== 0) return false;
+      swallow = false;
+      drag = { id, y, top: scrollTop, moved: false };
+      return true;
+    },
+    move({ id, y, buttons = 1 }) {
+      if (!drag || id !== drag.id) return null;
+      // A mouse released outside the window sends no pointerup; it comes
+      // back with no buttons held. Without this, a bare hover would capture
+      // and scroll-follow the cursor (review of #146, N1).
+      if (buttons === 0) { drag = null; return null; }
+      const dy = y - drag.y;
+      if (!drag.moved && Math.abs(dy) < threshold) return null;
+      const capture = !drag.moved;
+      drag.moved = true;
+      return { scrollTop: drag.top - dy, capture };
+    },
+    up({ id }) {
+      if (!drag || id !== drag.id) return;
+      swallow = drag.moved;
+      drag = null;
+    },
+    cancel({ id }) {
+      if (drag && id === drag.id) drag = null;
+    },
+    click() {
+      const s = swallow;
+      swallow = false;
+      return s;
+    },
+    get dragging() { return drag !== null; },
+  };
+}

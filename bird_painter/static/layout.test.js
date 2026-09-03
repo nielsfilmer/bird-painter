@@ -4,7 +4,9 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computeCollage, hash, normalizePanelOpts, overlapArea } from "./layout.js";
+import {
+  computeCollage, createDragScroller, hash, normalizePanelOpts, overlapArea,
+} from "./layout.js";
 
 const PLATE_ASPECT = 5 / 4;
 const SLUGS = [
@@ -430,4 +432,82 @@ test("both knobs leave the LAYOUT untouched at three birds or fewer (the shelf)"
     computeCollage(full, W, H, bandTop),
     "spread inert even on a full wall",
   );
+});
+
+// --- Drag-to-scroll controller (panel-mode archive) -------------------------
+// Every case below is a path a finger took on the first unit, or one the
+// review of #146 walked by hand. They live here so the next one is caught by
+// `make review-checks`, not by the owner at the panel.
+
+test("a tap is a tap: no capture, no scroll, the click reaches its target", () => {
+  const s = createDragScroller();
+  assert.equal(s.down({ id: 1, y: 300, scrollTop: 0 }), true);
+  assert.equal(s.move({ id: 1, y: 302 }), null); // under the threshold
+  s.up({ id: 1 });
+  assert.equal(s.click(), false, "a tap's click must not be swallowed");
+  assert.equal(s.dragging, false);
+});
+
+test("a drag scrolls, captures exactly once, and swallows only its own click", () => {
+  const s = createDragScroller();
+  s.down({ id: 1, y: 600, scrollTop: 100 });
+  const first = s.move({ id: 1, y: 560 });
+  assert.deepEqual(first, { scrollTop: 140, capture: true });
+  const second = s.move({ id: 1, y: 400 });
+  assert.deepEqual(second, { scrollTop: 300, capture: false }, "capture is taken once");
+  s.up({ id: 1 });
+  assert.equal(s.click(), true, "the drag's own click is swallowed");
+  assert.equal(s.click(), false, "…and only once");
+});
+
+test("a tap right after a swipe is a tap (the flag clears on the next gesture)", () => {
+  const s = createDragScroller();
+  s.down({ id: 1, y: 600, scrollTop: 0 });
+  s.move({ id: 1, y: 300 });
+  s.up({ id: 1 });
+  // No click arrived for the drag (some paths don't produce one); the next
+  // gesture must not inherit the swallow.
+  s.down({ id: 2, y: 100, scrollTop: 300 });
+  s.up({ id: 2 });
+  assert.equal(s.click(), false);
+});
+
+test("pointercancel ends the gesture and swallows nothing", () => {
+  const s = createDragScroller();
+  s.down({ id: 1, y: 600, scrollTop: 0 });
+  s.move({ id: 1, y: 400 });
+  s.cancel({ id: 1 });
+  assert.equal(s.dragging, false);
+  assert.equal(s.click(), false, "no click follows a cancel, so none is owed");
+});
+
+test("a mouse released off-window does not leave a drag armed (review N1)", () => {
+  const s = createDragScroller();
+  s.down({ id: 1, y: 300, scrollTop: 0, pointerType: "mouse", button: 0 });
+  s.move({ id: 1, y: 302, buttons: 1 }); // under threshold, then the window loses the release
+  assert.equal(s.move({ id: 1, y: 100, buttons: 0 }), null, "a bare hover must not scroll");
+  assert.equal(s.dragging, false);
+});
+
+test("a non-primary mouse button is not a gesture", () => {
+  const s = createDragScroller();
+  assert.equal(s.down({ id: 1, y: 300, scrollTop: 0, pointerType: "mouse", button: 2 }), false);
+  assert.equal(s.move({ id: 1, y: 100 }), null);
+  assert.equal(s.dragging, false);
+});
+
+test("a second pointer is ignored while the first drags", () => {
+  const s = createDragScroller();
+  s.down({ id: 1, y: 600, scrollTop: 0 });
+  assert.equal(s.move({ id: 2, y: 100 }), null);
+  s.up({ id: 2 });
+  assert.equal(s.dragging, true, "the stray pointer did not end the real gesture");
+  assert.deepEqual(s.move({ id: 1, y: 500 }), { scrollTop: 100, capture: true });
+});
+
+test("the threshold is the threshold", () => {
+  const s = createDragScroller(10);
+  s.down({ id: 1, y: 100, scrollTop: 0 });
+  assert.equal(s.move({ id: 1, y: 109 }), null);
+  assert.deepEqual(s.move({ id: 1, y: 110 }), { scrollTop: -10, capture: true });
 });

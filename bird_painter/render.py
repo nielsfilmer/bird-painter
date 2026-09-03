@@ -156,8 +156,8 @@ def _caption_sizes(
     """Species and "heard at" type sizes, in pixels.
 
     `scale` multiplies the panel's sizes AFTER the clamp — a unit read from
-    further away asks for bigger type, and "50% bigger" should mean that as
-    nearly as whole pixels allow (11 × 1.5 rounds to 16), not "a different
+    further away asks for bigger type, and "50% bigger" should mean exactly
+    that at whole pixels (11 × 1.5 → 17, half rounding up), not "a different
     clamp". It only exists for the plan: the layout
     reserves room for these sizes and measures each caption's width in them,
     so the type and the room it needs cannot drift apart (the #132 lesson).
@@ -174,7 +174,10 @@ def _caption_sizes(
     passing whatever the code happens to do."""
     if panel:
         species, heard = _clamp(9, 1.15 * vmin, 14), _clamp(11, 1.3 * vmin, 16)
-        return round(species * scale), round(heard * scale)
+        # Half rounds UP, so 11 × 1.5 is 17 — Python's round() is banker's
+        # and gave 16, which is 45% bigger, not 50%. At scale 1 both are the
+        # identity, so the frame's own type is untouched.
+        return int(species * scale + 0.5), int(heard * scale + 0.5)
     return _clamp(8, 1.05 * vmin, 12), _clamp(7, 0.85 * vmin, 10)
 
 
