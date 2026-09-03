@@ -2,7 +2,10 @@
 itself — import, Analyzer load, one detection, one clip cleanup.
 
 ru_maxrss is in KB on Linux and in BYTES on macOS; a dev machine's figure
-would otherwise come out 1024x high (review of #145)."""
+would otherwise come out 1024x high (review of #145).
+
+Usage, on the unit:  .venv/bin/python scripts/memcheck.py
+Prints RSS after each stage; the last line is the figure #121 wants."""
 import resource
 import sys
 import time

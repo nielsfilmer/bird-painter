@@ -460,11 +460,15 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   landscape), an invisible cursor theme set through labwc's session
   environment (Wayland has no `unclutter`; this hides the compositor's
   pointer and Chromium's alike), autologin and no blanking. Idempotent;
-  re-run to update. First run on the first unit: 2026-09-03.
+  re-run to update. The per-unit values it was run with (`OUTPUT`,
+  `ROTATE`, `CAPTION`, `UI`, `MAX_LIVE`) persist on the unit in
+  `~/.config/bird-painter/unit.conf` — not a repo file — so a bare re-run
+  keeps them. First run on the first unit: 2026-09-03.
 - `scripts/memcheck.py` — peak-RSS measurement of the Python side on a
   unit (#121's number). On the first unit with LiteRT: 261 MB with the
   Analyzer loaded, 331 MB after a clip cleanup; the whole running service
-  sits at ~290 MB. Full TensorFlow measured 641 MB on the dev machine.
+  sits at ~290 MB (its RSS per `systemctl status bird-painter` on that
+  unit, 2026-09-03). Full TensorFlow measured 641 MB on the dev machine.
 - `.claude/settings.json` — project permission allowlist.
 - `.claude/skills/review-prompts/SKILL.md` — review + QA prompt templates for
   workflow step 3.

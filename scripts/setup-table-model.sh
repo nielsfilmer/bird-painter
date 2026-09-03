@@ -12,7 +12,8 @@ if [ "$(id -u)" -eq 0 ]; then
   echo "run this as the unit's user, not root: everything lands in that user's home and session" >&2
   exit 1
 fi
-USER="${USER:-$(id -un)}"
+# Not $USER: under a bare `su` it still names the previous user.
+USER="$(id -un)"
 
 # Every file this script appends to is also hand-edited (the owner adds
 # FAL_KEY to .env by hand). An editor that leaves no trailing newline would
@@ -25,7 +26,9 @@ append_line() {  # append_line FILE LINE
 
 APP_DIR="$HOME/bird-painter"
 REPO="https://github.com/nielsfilmer/bird-painter"
-PORT="${BP_PORT:-$(grep -sE '^BP_PORT=' "$HOME/bird-painter/.env" | cut -d= -f2)}"
+# `|| true`: under pipefail a missing .env (a fresh unit) or one without an
+# active BP_PORT= line would otherwise abort the whole script here, silently.
+PORT="${BP_PORT:-$( { grep -sE '^BP_PORT=' "$HOME/bird-painter/.env" || true; } | cut -d= -f2)}"
 PORT="${PORT:-8537}"
 # The Touch Display 2 is natively portrait (720x1280). The table model stands
 # in landscape (owner, 2026-09-03), so the output is rotated: 90 = rotate
@@ -189,13 +192,14 @@ mkdir -p "$HOME/.config/labwc" "$HOME/.local/bin"
 # one line and the flags live in one place.
 cat > "$HOME/.local/bin/bird-kiosk" <<KIOSK
 #!/usr/bin/env bash
-# Wait for the wall to answer before opening the browser on it, so the first
-# thing on the panel is birds rather than a connection error.
-for _ in \$(seq 1 60); do
-  curl -sf -o /dev/null "http://127.0.0.1:${PORT}/api/live" && break
-  sleep 2
-done
+# Each (re)launch waits for the wall to answer before opening the browser on
+# it, so the first thing on the panel is birds rather than a connection error
+# — also after a crash while the service happens to be down.
 while true; do
+  for _ in \$(seq 1 60); do
+    curl -sf -o /dev/null "http://127.0.0.1:${PORT}/api/live" && break
+    sleep 2
+  done
   chromium --kiosk --noerrdialogs --disable-infobars --no-first-run \\
     --disable-session-crashed-bubble --disable-features=TranslateUI \\
     --disk-cache-dir=/dev/shm/chromium-cache --disk-cache-size=50000000 \\
@@ -209,7 +213,8 @@ chmod +x "$HOME/.local/bin/bird-kiosk"
 AUTOSTART="$HOME/.config/labwc/autostart"
 touch "$AUTOSTART"
 # Rotation first, kiosk second: Chromium sizes itself to the output it finds.
-sed -i '/^wlr-randr --output /d' "$AUTOSTART"
+# Only this script's own rotation line: a hand-added `--mode` line stays.
+sed -i '/^wlr-randr --output [^ ]* --transform [0-9]*$/d' "$AUTOSTART"
 sed -i "\#^$HOME/.local/bin/bird-kiosk &\$#d" "$AUTOSTART"
 append_line "$AUTOSTART" "wlr-randr --output ${OUTPUT} --transform ${ROTATE}"
 append_line "$AUTOSTART" "$HOME/.local/bin/bird-kiosk &"
@@ -260,7 +265,7 @@ fi
 log "done"
 echo "unit:    caption ${CAPTION}, ui ${UI}, birds ${MAX_LIVE}, rotate ${ROTATE} on ${OUTPUT} (remembered in ${UNIT_CONF})"
 echo "service: $(systemctl is-active bird-painter) (restarted)"
-echo "kiosk:   the URL and flags take effect when Chromium next starts — reboot, or: systemctl --user restart bird-kiosk / pkill -x chromium (the loop relaunches it)"
+echo "kiosk:   the URL and flags take effect on the next login — reboot (a relaunched Chromium keeps the flags its loop started with)"
 echo "cursor/rotation/autologin/blanking: session settings — take effect on the next login (reboot)"
 echo "wall:    http://$(hostname -I | awk '{print $1}'):${PORT}/?style=panel"
 echo "backend: $("$APP_DIR/.venv/bin/python" -c 'import importlib.util as u; print("tflite-runtime" if u.find_spec("tflite_runtime") else ("tensorflow" if u.find_spec("tensorflow") else "NONE"))')"
