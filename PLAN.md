@@ -624,7 +624,8 @@ whole magic; ship it first.
   extraction (checked across every style × layer × four sizes). The default
   `/` keeps the spiral, so the dev wall and the e-paper installation are
   untouched; `?spread=`/`?caption=` remain the spiral's knobs and don't apply
-  in panel mode. The ground stays the cream paper the browser can blend on —
-  placement was the instruction; the white sheet is a one-line follow-on if
-  wanted. For the table model this also retires the spiral's caption-metrics
+  in panel mode. **The ground stays the cream paper in the browser** (owner,
+  2026-09-03: "the ground stays cream for the webview") — the screen can
+  multiply-blend onto paper where e-paper can't, so the two shapes share a
+  placement and keep their own grounds. Not a follow-on; decided. For the table model this also retires the spiral's caption-metrics
   gap (#133/#136): the panel plan measures captions server-side.
