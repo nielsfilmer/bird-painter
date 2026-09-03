@@ -103,16 +103,22 @@ const DEFAULT_CAPTION_SCALE = 1; // 1 = today's clamp() sizes
 // covering the wrapped caption and labels land on birds. QA measured the wall
 // clean at 1, 1.7 and 2 on both panels, and broken from 2.5 up.
 //
-// KNOWN LIMIT, and 2 does not fix it everywhere: the cap is a multiplier, but
-// what has to hold the result is the band under the title, which is 1140px on
-// the 10" panel and 285px on a landscape phone. At 812x375 `?caption=2` still
-// puts five plates off the bottom. Bounding it by the band was tried and does
-// not work either, because the band check uses this same blind estimate — it
-// computes 52px where the wrapped caption actually draws 106px. Nothing here
-// can see wrapping; that is #136, which blocks #120.
+// KNOWN LIMIT, and 2 does not fix it everywhere. The driver is SMALL VMIN,
+// not a short viewport — an earlier version of this note said "short" and QA
+// disproved it: 375x812 is TALLER in aspect than the 7" panel and still
+// breaks from about caption 1.3 (at 2: eighteen labels on ink, one plate
+// 829px down a 812px page). Plates are sized in vmin, so a small vmin gives a
+// small plate; the type is clamped in px and does not shrink with it; a long
+// name therefore wraps onto more lines in a narrower plate. The panels are
+// safe because their vmin is 7.2 and 12; a 375-wide window's is 3.75.
 //
-// So: this knob is for the tall portrait panels it was built for. Setting it
-// on a short viewport is not protected against.
+// Bounding the scale by the band was tried and does not work either, because
+// the band check calls this same blind estimate — it computes 52px where the
+// wrapped caption draws 106px. Nothing here can see wrapping; that is #136,
+// which blocks #120.
+//
+// So: this knob is for the tall portrait panels it was built for, and it is
+// not protected against being set on a small-vmin viewport.
 const CAPTION_SCALE_MIN = 0.5, CAPTION_SCALE_MAX = 2;
 
 // The ONE place these values are sanitised. index.html calls it too, so the

@@ -179,7 +179,11 @@
     font-variant: small-caps;
     letter-spacing: 0.18em;
     font-weight: normal;
-    font-size: clamp(18px, 3vmin, 34px);
+    font-size: clamp(
+      calc(18px * var(--caption-scale, 1)),
+      calc(3vmin * var(--caption-scale, 1)),
+      calc(34px * var(--caption-scale, 1))
+    );
     text-align: center;
     margin-bottom: 3vmin;
   }
@@ -237,6 +241,14 @@
     font-family: inherit;
     font-style: italic;
     color: var(--ink);
+    /* No font-size rule at all until now, so it inherited 13.3px and stayed
+       there while every other archive label scaled — a "more" button a kiosk
+       viewer can't read is a dead end in the only navigation this page has. */
+    font-size: clamp(
+      calc(11px * var(--caption-scale, 1)),
+      calc(1.4vmin * var(--caption-scale, 1)),
+      calc(15px * var(--caption-scale, 1))
+    );
     padding: 0.8vmin 2.4vmin;
     cursor: pointer;
   }
@@ -276,8 +288,10 @@ const FADE_MS = 2300;
 //                  clamp rail — 8px on the 7", 12px on the 10" — around 1mm of
 //                  glyph, which a wall read from across a room cannot carry.
 //
-// computeCollage clamps both; it also grows the per-plate caption RESERVE with
-// the scale, so bigger type never lands on the bird below.
+// computeCollage clamps both. It grows the per-plate caption reserve with the
+// scale, but that reserve is linear and a wrapped caption is not, so it holds
+// on the panels this is for and not on a small-vmin viewport — see the KNOWN
+// LIMIT note in layout.js, and #136.
 const params = new URLSearchParams(location.search);
 const panelOpts = normalizePanelOpts({
   spread: params.get("spread"),

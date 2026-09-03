@@ -71,9 +71,11 @@ ENDPOINTS: list[dict] = [
                     "the type sits on a clamp rail at both panel sizes — 8px "
                     "at 720 wide, 12px at 1200 — around a millimetre of "
                     "glyph. It also grows the room the layout reserves under "
-                    "each plate, so bigger type never lands on the bird below. "
-                    "Capped at 2 because that reserve is linear while a "
-                    "wrapped caption is not — see issue #136"
+                    "each plate, though that reserve is linear while a wrapped "
+                    "caption is not, so it holds on the panels this is built "
+                    "for (vmin 7.2 and 12) and not on a small-vmin viewport, "
+                    "where labels can still reach the bird below from about "
+                    "1.3 up. Capped at 2; see issue #136"
                 ),
             },
         ],
