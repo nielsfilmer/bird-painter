@@ -35,6 +35,7 @@ def test_writes_both_images_turned_by_the_units_rotate(tmp_path: Path):
 
 
 def test_refuses_a_missing_out_dir_and_an_odd_rotate(tmp_path: Path):
-    assert run().returncode != 0 and "usage" in run().stderr
+    bare = run()
+    assert bare.returncode != 0 and "usage" in bare.stderr
     bad = run(str(tmp_path), str(BIRD), "45")
     assert bad.returncode != 0 and "90 or 270" in bad.stderr
