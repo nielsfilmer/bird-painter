@@ -30,49 +30,35 @@ const PLATE_ASPECT = 5 / 4;                      // painted image is 4:5 portrai
 const CAPTION_ALLOWANCE = 1.1;
 const CAPTION_FLOOR_PX = 26;
 
-function captionPx(imageHeightPx, captionScale = 1) {
-  return Math.max(
+// The ESTIMATE. It assumes one or two lines of clamped type, which is true at
+// captionScale 1 — the size this formula was fitted to. It is NOT true once
+// the type grows: a long species name wraps onto more lines inside a plate
+// whose width didn't change, so the drawn caption grows faster than linearly
+// while this grows exactly linearly. QA measured the gap at `?caption=4` on a
+// 720x1280 panel: 104px reserved against 172px drawn, and eleven labels
+// landing on visible birds.
+//
+// So a caller that CAN measure should: pass `opts.captionHeights` (file ->
+// the real px between the image's bottom and the plate's, wrapping included)
+// and this estimate is bypassed per plate. `index.html` does exactly that;
+// `wall_layout.py` has no DOM and stays on the estimate, which is why the
+// estimate must remain correct at scale 1 — that's the parity baseline.
+// A measurement RAISES the reserve, it never lowers it. That matters: at scale
+// 1 the estimate's 26px floor already exceeds what the type actually draws, so
+// taking the max leaves the default layout untouched — and the default layout
+// is what wall_layout.py must keep matching. Only when the drawn caption
+// outgrows the estimate, which is exactly the wrapping case, does the
+// measurement take over.
+function captionPx(imageHeightPx, captionScale = 1, measuredPx) {
+  const estimate = Math.max(
     CAPTION_FLOOR_PX * captionScale,
     imageHeightPx * (CAPTION_ALLOWANCE - 1) * captionScale,
   );
+  return Number.isFinite(measuredPx) && measuredPx > estimate
+    ? measuredPx
+    : estimate;
 }
 
-// Per-installation tuning, passed through computeCollage's `opts`. Both
-// default to exactly today's behaviour — the desktop wall and the e-paper
-// `/wall.png` render are unchanged unless a caller opts in.
-//
-// The table model is why these exist. On a tall portrait panel (720x1280 on
-// the 7", 1200x1920 on the 10") the widen-to-fit rule below stops widening as
-// soon as the set fits, and a portrait viewport has so much vertical room that
-// it fits early — so the collage settles into a central column using ~58% of
-// the width, and the birds stay smaller than the panel allows. `spread` sets a
-// FLOOR on the cluster's width so a panel can claim more of it.
-//
-// `captionScale` multiplies the lettering. It lives here, not only in CSS,
-// because the layout RESERVES room for the caption under each plate — grow the
-// type without growing the reserve and labels land on the bird below.
-const DEFAULT_SPREAD = 0;        // 0 = no floor; widen-to-fit decides alone
-const DEFAULT_CAPTION_SCALE = 1; // 1 = today's clamp() sizes
-const CAPTION_SCALE_MIN = 0.5, CAPTION_SCALE_MAX = 4;
-
-// The ONE place these values are sanitised. index.html calls it too, so the
-// CSS `--caption-scale` it sets and the caption reserve the layout computes
-// are always the same number — a page that clamped differently from the layout
-// would reserve room for type it isn't drawing, and labels would collide.
-// Values arrive from a URL query string, so treat them as untrusted: a NaN, a
-// negative, or a spread past the cluster cap all fall back to the default.
-export function normalizePanelOpts(opts = {}) {
-  const spreadRaw = Number(opts.spread);
-  const captionRaw = Number(opts.captionScale);
-  return {
-    spread: Number.isFinite(spreadRaw)
-      ? Math.min(CLUSTER_W_FRAC, Math.max(0, spreadRaw))
-      : DEFAULT_SPREAD,
-    captionScale: Number.isFinite(captionRaw) && captionRaw > 0
-      ? Math.min(CAPTION_SCALE_MAX, Math.max(CAPTION_SCALE_MIN, captionRaw))
-      : DEFAULT_CAPTION_SCALE,
-  };
-}
 const TOP_Z = 200;
 const GAP_VMIN = 0.2;        // tight spacing between plates
 const SPIRAL_STEP = 0.22;    // how far along the spiral each retry walks
@@ -95,6 +81,62 @@ const CLUSTER_H_FRAC = 0.88; // oval height: this fraction of the sub-title band
 // reads as a neat shelf); once a fourth arrives the oval opens to the full
 // band height and the usual full-height-first rule takes over.
 const ROW_LIMIT = 3;         // up to this many birds: one horizontal row
+
+// --- Panel tuning ----------------------------------------------------------
+//
+// Per-installation knobs, passed through computeCollage's `opts`. Both default
+// to exactly today's behaviour, so the desktop wall and the e-paper
+// `/wall.png` render are unchanged unless a caller opts in.
+//
+// The table model is why these exist. On a tall portrait panel (720x1280 on
+// the 7", 1200x1920 on the 10") widen-to-fit stops as soon as the set fits,
+// and a portrait viewport has so much vertical room that it fits early — so
+// the collage settles into a central column using ~58% of the width and the
+// birds stay smaller than the panel allows. `spread` sets a FLOOR on the
+// cluster's width. Two consequences worth knowing before turning it:
+//   - Below about 0.58 it does nothing on either panel, because widen-to-fit
+//     already reaches that far unaided. The useful band is ~0.7 to the cap.
+//   - It is inert entirely at ROW_LIMIT birds or fewer: those are a packed,
+//     deliberately immovable shelf that ignores the cluster width.
+//
+// `captionScale` multiplies the lettering. It lives here and not only in CSS
+// because the layout reserves room for the caption under each plate — grow the
+// type without growing the reserve and labels land on the bird below.
+//
+// Declared AFTER CLUSTER_W_FRAC on purpose: normalizePanelOpts closes over it,
+// and while a module-scope call would today still resolve (layout.js finishes
+// evaluating before any importer's body runs), sitting above its own
+// dependency is one refactor away from a temporal-dead-zone ReferenceError.
+const DEFAULT_SPREAD = 0;        // 0 = no floor; widen-to-fit decides alone
+const DEFAULT_CAPTION_SCALE = 1; // 1 = today's clamp() sizes
+const CAPTION_SCALE_MIN = 0.5, CAPTION_SCALE_MAX = 4;
+
+// The ONE place these values are sanitised. index.html calls it too, so the
+// CSS `--caption-scale` it sets and the caption reserve the layout computes
+// are always the same number — a page that clamped differently from the layout
+// would reserve room for type it isn't drawing, and labels would collide.
+//
+// Values arrive from a URL query string, so treat them as untrusted. Anything
+// non-numeric falls back to the default; anything numeric but out of range
+// CLAMPS (99 becomes the cap, not the default) — a caller who asked for more
+// than we allow wants as much as we allow, not the baseline. Absent params are
+// handled explicitly rather than leaning on `Number(null) === 0`, which
+// happens to land on DEFAULT_SPREAD by coincidence and would stop doing so the
+// day that default changes.
+export function normalizePanelOpts(opts = {}) {
+  const clamp = (raw, lo, hi, fallback) => {
+    if (raw === undefined || raw === null || raw === "") return fallback;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
+  };
+  return {
+    spread: clamp(opts.spread, 0, CLUSTER_W_FRAC, DEFAULT_SPREAD),
+    captionScale: clamp(
+      opts.captionScale, CAPTION_SCALE_MIN, CAPTION_SCALE_MAX,
+      DEFAULT_CAPTION_SCALE,
+    ),
+  };
+}
 
 export function hash(str) {
   let h = 2166136261;
@@ -119,7 +161,7 @@ export function overlapArea(a, b) {
 // central oval (halfW x halfH), clamped to stay on screen (boundW/boundH are
 // the viewport half-extents), avoiding everything already in `placed`
 // (appended to). Returns how many plates had to settle for an overlap.
-function computeLayout(entries, scale, vmin, halfW, halfH, boundW, boundH, placed, clearHalfH = 0, captionScale = 1) {
+function computeLayout(entries, scale, vmin, halfW, halfH, boundW, boundH, placed, clearHalfH = 0, capFor = (file, imageH) => captionPx(imageH)) {
   let fallbacks = 0;
   entries.forEach(({ file, index }, local) => {
     const h = hash(file);
@@ -127,12 +169,12 @@ function computeLayout(entries, scale, vmin, halfW, halfH, boundW, boundH, place
     const sizePx = sizeVmin * vmin;
     const imageH = sizePx * PLATE_ASPECT;
     const boxW = sizePx + GAP_VMIN * vmin;
-    const boxH = imageH + captionPx(imageH, captionScale) + GAP_VMIN * vmin;
+    const boxH = imageH + capFor(file, imageH) + GAP_VMIN * vmin;
     const jitterA = (((h >>> 8) % 100) / 100 - 0.5) * 0.5; // ±0.25 rad
     // Clamp plate centres to the oval extents (the spiral's reach can exceed
     // 1, and an unbounded x lets birds leak sideways into a row) AND on screen.
     const clampX = Math.min(halfW, Math.max(0, boundW - sizePx / 2));
-    const clampY = Math.min(halfH, Math.max(0, boundH - (imageH + captionPx(imageH, captionScale)) / 2));
+    const clampY = Math.min(halfH, Math.max(0, boundH - (imageH + capFor(file, imageH)) / 2));
     let best = null, bestOverlap = Infinity;
     for (let t = local, tries = 0; tries < MAX_TRIES; tries++, t += SPIRAL_STEP) {
       const angle = t * GOLDEN_ANGLE + jitterA;
@@ -164,13 +206,18 @@ export function computeCollage(files, W, H, bandTop, opts = {}) {
   // return nothing and let the next poll/resize lay out for real.
   if (W <= 0 || H <= 0) return [];
   const { spread, captionScale } = normalizePanelOpts(opts);
+  // Measured caption heights win over the estimate, per plate. Absent (the
+  // Python port, the tests, any caller without a DOM) it's the estimate —
+  // which is what keeps the parity baseline intact.
+  const measured = opts.captionHeights || {};
+  const capFor = (file, imageH) => captionPx(imageH, captionScale, measured[file]);
   const vmin = Math.min(W, H) / 100;
   const bandH = H - bandTop;
   const yOffset = bandTop / 2; // shift the cluster down into the band
   const naturalArea = files.reduce((sum, file) => {
     const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
     const imageH = s * PLATE_ASPECT;
-    return sum + (s + GAP_VMIN * vmin) * (imageH + captionPx(imageH, captionScale) + GAP_VMIN * vmin);
+    return sum + (s + GAP_VMIN * vmin) * (imageH + capFor(file, imageH) + GAP_VMIN * vmin);
   }, 0);
   const maxHalfW = (CLUSTER_W_FRAC * W) / 2;
   // The width floor. At spread 0 this is 0 and the widen-to-fit loop below is
@@ -184,7 +231,7 @@ export function computeCollage(files, W, H, bandTop, opts = {}) {
   const maxBoxH = files.reduce((m, file) => {
     const s = (SIZE_MIN_VMIN + (hash(file) % SIZE_SPAN_VMIN)) * vmin;
     const imageH = s * PLATE_ASPECT;
-    return Math.max(m, imageH + captionPx(imageH, captionScale) + GAP_VMIN * vmin);
+    return Math.max(m, imageH + capFor(file, imageH) + GAP_VMIN * vmin);
   }, 1);
   // The rule: the up-to-ROW_LIMIT OLDEST birds keep a single horizontal row
   // across the band centre for good; every newer bird stacks vertically
@@ -206,7 +253,7 @@ export function computeCollage(files, W, H, bandTop, opts = {}) {
       return {
         file, index, sizePx,
         boxW: sizePx + GAP_VMIN * vmin,
-        boxH: imageH + captionPx(imageH, captionScale) + GAP_VMIN * vmin,
+        boxH: imageH + capFor(file, imageH) + GAP_VMIN * vmin,
       };
     });
     // entries is a slice of the newest-first list; oldest-last. Reverse so the
@@ -234,7 +281,7 @@ export function computeCollage(files, W, H, bandTop, opts = {}) {
     const placed = [];
     let fallbacks = placeRow(rowEntries, scale, placed);
     const rowClearHalf = placed.reduce((m, p) => Math.max(m, p.box.h / 2), 0);
-    fallbacks += computeLayout(tallEntries, scale, vmin, halfW, fullHalfH, boundW, boundH, placed, rowClearHalf, captionScale);
+    fallbacks += computeLayout(tallEntries, scale, vmin, halfW, fullHalfH, boundW, boundH, placed, rowClearHalf, capFor);
     return { placed, fallbacks };
   }
 

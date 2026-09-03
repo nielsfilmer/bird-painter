@@ -307,19 +307,62 @@ test("panel opts are sanitised, not trusted (they come from a query string)", ()
   const bandTop = 140;
   const files = randomFiles(makeRng(19), 6);
   const bare = computeCollage(files, W, H, bandTop);
+  // Non-numeric and absent → the default.
   for (const junk of [
     { spread: "nonsense", captionScale: "nonsense" },
     { spread: null, captionScale: null },
+    { spread: undefined, captionScale: undefined },
+    { spread: "", captionScale: "" },
     { spread: NaN, captionScale: NaN },
-    { spread: -5, captionScale: 0 },
   ]) {
     assert.deepEqual(computeCollage(files, W, H, bandTop, junk), bare,
       `junk opts ${JSON.stringify(junk)} did not fall back to defaults`);
+    assert.deepEqual(normalizePanelOpts(junk), { spread: 0, captionScale: 1 });
   }
-  // Out-of-range values clamp rather than run away.
+  // Numeric but out of range → CLAMP, not fall back. Asking for more than we
+  // allow means "as much as you allow", not "never mind".
   assert.deepEqual(normalizePanelOpts({ spread: 99, captionScale: 99 }),
     { spread: 0.92, captionScale: 4 });
+  assert.deepEqual(normalizePanelOpts({ spread: -5, captionScale: 0 }),
+    { spread: 0, captionScale: 0.5 });
   assert.deepEqual(normalizePanelOpts({}), { spread: 0, captionScale: 1 });
+});
+
+test("a measured caption raises the reserve but never lowers it", () => {
+  // QA, blocking: captionPx scaled the reserve LINEARLY with captionScale
+  // while the drawn caption grew faster — a long name wraps onto more lines
+  // inside a plate whose width didn't change. Measured at ?caption=4 on the
+  // 7": 104px reserved against 172px drawn, eleven labels on visible birds.
+  // index.html now measures the real caption box and passes it back.
+  const [W, H] = PANEL_7IN;
+  const bandTop = 140;
+  const files = randomFiles(makeRng(31), 12);
+
+  // A measurement SMALLER than the estimate must change nothing — this is what
+  // keeps the default layout, and wall_layout.py's parity with it, intact.
+  const tiny = Object.fromEntries(files.map(f => [f, 1]));
+  assert.deepEqual(
+    computeCollage(files, W, H, bandTop, { captionHeights: tiny }),
+    computeCollage(files, W, H, bandTop),
+    "a small measurement shrank the reserve",
+  );
+
+  // A measurement LARGER than the estimate must be honoured — plates space out
+  // or shrink, and nothing may leave the screen.
+  const huge = Object.fromEntries(files.map(f => [f, 260]));
+  const withHuge = computeCollage(
+    files, W, H, bandTop, { spread: 0.92, captionScale: 4, captionHeights: huge });
+  const vmin = Math.min(W, H) / 100;
+  for (const p of withHuge) {
+    const imageH = p.sizeVmin * vmin * PLATE_ASPECT;
+    assert.ok(p.y + (imageH + 260) / 2 <= H / 2 + 0.5,
+      "a measured caption still ran off the bottom");
+  }
+  assert.notDeepEqual(
+    withHuge,
+    computeCollage(files, W, H, bandTop, { spread: 0.92, captionScale: 4 }),
+    "the measurement was ignored",
+  );
 });
 
 test("the off-screen guard covers the CAPTION, not just the bird", () => {
