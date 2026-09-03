@@ -88,8 +88,15 @@
     -webkit-user-select: none;
     touch-action: manipulation;
   }
-  body.panel #archive { scrollbar-width: none; }
-  body.panel #archive::-webkit-scrollbar { display: none; }
+  /* The overlay scrolls by DRAG (see the pointer handlers below), so the
+     browser's own pan must not compete — and a thin bar stays as the cue
+     that there is more below the fold (owner: "I also don't see the
+     scrollbar, even though the names of the second row are underneath"). */
+  body.panel #archive {
+    touch-action: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ink-dim) transparent;
+  }
   body.panel .plate .cell {
     position: relative;
     overflow: hidden;
@@ -433,6 +440,51 @@ function heardText(bornAt) {
 // The maths — spiral placement, no-overlap, crowding scale — lives in that
 // module so `node --test` can guard it (layout.test.js).
 let liveOrder = []; // files, newest first — set by refresh()
+
+// ---- panel mode: the archive scrolls by drag -----------------------------
+// On the first unit a real touchscreen (Goodix, libinput "touch") tapped
+// fine but would not pan the overlay: whatever the compositor hands Chromium
+// for a drag, its gesture recogniser never turned it into a scroll — and a
+// hold selected text instead, i.e. it saw a mouse. Rather than guess at
+// Chromium/Wayland flags from across the house, the page scrolls the overlay
+// itself from Pointer Events, which arrive whether the drag is touch or an
+// emulated mouse. A small movement is still a tap (the card's click fires);
+// past a few px it becomes a drag and the click that would follow is
+// swallowed, so a swipe never replays a bird.
+if (panelStyle) {
+  const overlay = document.getElementById("archive");
+  const DRAG_PX = 6;
+  let drag = null;
+  overlay.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    drag = { id: e.pointerId, y: e.clientY, top: overlay.scrollTop, moved: false };
+    overlay.setPointerCapture(e.pointerId);
+  });
+  overlay.addEventListener("pointermove", e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = e.clientY - drag.y;
+    if (!drag.moved && Math.abs(dy) < DRAG_PX) return;
+    drag.moved = true;
+    overlay.scrollTop = drag.top - dy;
+    e.preventDefault();
+  });
+  const endDrag = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (drag.moved) overlay.dataset.swallowClick = "1";
+    drag = null;
+  };
+  overlay.addEventListener("pointerup", endDrag);
+  overlay.addEventListener("pointercancel", endDrag);
+  overlay.addEventListener("click", e => {
+    if (overlay.dataset.swallowClick) {
+      delete overlay.dataset.swallowClick;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+  // An emulated-mouse drag on an <img> starts a drag-and-drop ghost otherwise.
+  overlay.addEventListener("dragstart", e => e.preventDefault());
+}
 
 // ---- panel mode: apply the frame's plan ----------------------------------
 let lastPlanKey = null;  // viewport + live set the current plates were placed for
