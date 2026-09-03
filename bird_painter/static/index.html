@@ -372,8 +372,11 @@
      and pointer-transparent, so a touch still reaches what is under it. */
   #night {
     position: fixed; inset: 0; z-index: 40; pointer-events: none;
-    background: #1a1610; opacity: 0; transition: opacity 4s ease;
+    background: #1a1610; opacity: 0;
   }
+  /* The fade only once the first poll has said where we are: a kiosk
+     relaunched at 03:00 must not show four seconds of bright cream. */
+  body.polled #night { transition: opacity 4s ease; }
   body.night #night { opacity: 0.55; }
 </style>
 </head>
@@ -639,6 +642,10 @@ async function refresh() {
   // Night: the server says when; the page dims itself (the only dimming a
   // screen without a backlight knob gets — a slow fade, never a snap).
   document.body.classList.toggle("night", data.night === true);
+  if (!document.body.classList.contains("polled")) {
+    // Two frames on: the first state lands without a transition.
+    requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("polled")));
+  }
   const liveFiles = new Set(data.paintings.map(p => p.file));
 
   for (const [file, el] of plates) {

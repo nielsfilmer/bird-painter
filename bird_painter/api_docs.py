@@ -104,7 +104,8 @@ ENDPOINTS: list[dict] = [
             "capped at BP_WALL_MAX_LIVE. `audio` is the detection clip's "
             "filename, or null for birds painted without one. `night` is "
             "true between BP_NIGHT_FROM and BP_NIGHT_TO (local hours; "
-            "BP_NIGHT_ENABLED=false makes it always false): the wall dims "
+            "BP_NIGHT_ENABLED=false, or the same hour twice, makes it always "
+            "false): the wall dims "
             "itself on it, and a panel with a backlight is dimmed to "
             "BP_NIGHT_BRIGHTNESS percent by the service."
         ),

@@ -640,10 +640,14 @@ whole magic; ship it first.
   they cover different screens: the wash is all a display without a
   backlight knob (an HDMI panel, a laptop) gets, and on the table model the
   two stack. The backlight is written only on transitions, never on every
-  tick, so a hand adjustment during the day is not fought. On by default
-  everywhere — the recorder and the e-paper frame have no backlight and no
-  page in front of anyone, so it costs them a boolean. The schedule is per
-  unit (env), and the settings screen (#123) will edit it in place.
+  tick, so a hand adjustment during the day is not fought (the day level is
+  re-read at each dusk; `BP_NIGHT_DAY_BRIGHTNESS` pins it instead). The same
+  hour twice means never. The flag rides `/api/live` rather than the
+  `/api/unit` the issue sketched: the page polls `/api/live` already, and one
+  poll is the budget. On by default everywhere — the recorder and the
+  e-paper frame have no backlight and no page in front of anyone, so it
+  costs them a boolean. The schedule is per unit (env), and the settings
+  screen (#123) will edit it in place.
 - **2026-09-03** — **The 7" table model runs bigger type and fewer birds**
   (owner, on seeing the first unit: "increase the font size by 50% and limit
   the amount of birds in the frame to 3"). Two per-unit settings, on the
