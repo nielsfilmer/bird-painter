@@ -70,6 +70,66 @@
     -webkit-mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
     mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
   }
+  /* ---- ?style=panel: the e-paper frame's layout, on a screen ------------
+     The table model is read from across a room, like the frame, and the
+     owner wants the birds placed exactly as the frame places them (#138).
+     The plan comes from /api/layout — the same function that draws
+     /wall.png?style=panel — so nothing here decides WHERE anything goes; it
+     only draws what it is told. Sizes below are set from the plan in px,
+     which is why the vmin-based rules above are overridden rather than
+     reused: the plan's vmin is the frame's (layout height, not viewport
+     height), and the type is fixed-size by decision (PLAN.md 2026-08-13). */
+  body.panel #header { display: none; } /* the sheet is the header */
+  body.panel .plate .cell {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    transition: height 1.6s cubic-bezier(0.22, 1, 0.36, 1);
+    /* The feather moves from the image to the cell: the image is now larger
+       than the cell (cropped to its ink), so a mask on it would feather the
+       wrong edges. */
+    -webkit-mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
+    mask-image: radial-gradient(ellipse 58% 58% at 50% 50%, black 72%, transparent 96%);
+  }
+  body.panel .plate .cell img {
+    /* Positioned by fitInk() so the bird's OWN ink fills the cell, as the
+       frame's _fit_to_cell does — a heron and an owl at the same rank come
+       out the same size, whatever the plate's padding. */
+    position: absolute;
+    width: auto;
+    aspect-ratio: auto;
+    object-fit: unset;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  body.panel .plate figcaption {
+    /* The frame draws each caption as ONE line centred under the bird and
+       reserves its measured width in the plan's footprint, so neighbours
+       can't collide. Wrapping here would put the lettering somewhere the
+       plan didn't account for — so: never wrap, centre a max-content box on
+       the cell, and let it overhang the cell on both sides as the frame's
+       does. (The plate is exactly the cell's width, so a plain centred
+       block would overflow to the right only.) */
+    margin: var(--panel-gap, 0px) 0 0;
+    position: relative;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+  body.panel .plate .species {
+    /* The frame sets the species line in caps with tracking. */
+    text-transform: uppercase;
+    font-variant: normal;
+    font-size: var(--panel-species, 12px);
+    letter-spacing: var(--panel-tracking, 0.05em);
+  }
+  body.panel .plate .heard {
+    /* Deliberately the larger of the two on the panel (owner, 2026-08-07). */
+    font-size: var(--panel-heard, 14px);
+  }
+
   /* Per-bird label, added programmatically (never baked into the image). */
   .plate figcaption {
     text-align: center;
@@ -299,6 +359,14 @@ const panelOpts = normalizePanelOpts({
 });
 document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));
 
+// ?style=panel — place the birds exactly as the e-paper frame does (#138).
+// The layout is fetched from /api/layout rather than computed here, because
+// the frame's placement depends on measurements only the server can make;
+// see layoutPanel(). ?spread= and ?caption= are the spiral's knobs and are
+// ignored in this mode — the frame's plan carries its own fixed-size type.
+const panelStyle = params.get("style") === "panel";
+if (panelStyle) document.body.classList.add("panel");
+
 function heardText(bornAt) {
   // A fixed clock time, not "x min ago": the e-ink frame only refreshes every
   // few minutes, so a relative label would be stale between draws. The
@@ -312,7 +380,77 @@ function heardText(bornAt) {
 // The maths — spiral placement, no-overlap, crowding scale — lives in that
 // module so `node --test` can guard it (layout.test.js).
 let liveOrder = []; // files, newest first — set by refresh()
+
+// ---- panel mode: apply the frame's plan ----------------------------------
+// Scale and position a plate's image so its OWN ink fills the cell, exactly
+// as the frame's _fit_to_cell does: crop to the ink box, fit preserving
+// aspect, centre. Uses the plan's cell size (data-cw/ch), never the DOM's —
+// the plate's width is mid-transition for 1.6s after every layout, and a
+// rect read then is the previous layout's (PR #132, round 2).
+function fitInk(fig) {
+  const img = fig.querySelector(".cell img");
+  const cw = Number(fig.dataset.cw), ch = Number(fig.dataset.ch);
+  if (!img || !(cw > 0 && ch > 0)) return;
+  // Height/width of the plate as stored; 4:5 until the image has loaded (and
+  // for an SVG placeholder, which reports no natural size).
+  const ratio = img.naturalWidth > 0 ? img.naturalHeight / img.naturalWidth : 1.25;
+  const ink = fig.dataset.ink ? JSON.parse(fig.dataset.ink) : null;
+  const [left, top, w, h] = ink || [0, 0, 1, 1]; // no ink box: the whole plate
+  const imgW = Math.min(cw / w, ch / (h * ratio));
+  img.style.width = `${imgW.toFixed(2)}px`;
+  img.style.height = `${(imgW * ratio).toFixed(2)}px`;
+  img.style.left = `${((cw - w * imgW) / 2 - left * imgW).toFixed(2)}px`;
+  img.style.top = `${((ch - h * ratio * imgW) / 2 - top * ratio * imgW).toFixed(2)}px`;
+}
+
+let lastPlanKey = null; // viewport + live set the current plates were placed for
+async function layoutPanel() {
+  const files = liveOrder.filter(f => plates.has(f));
+  const [W, H] = [wall.clientWidth, wall.clientHeight];
+  if (W <= 0 || H <= 0) return;
+  // The plan is deterministic per live set and viewport, so only ask when
+  // one of them changed — the wall polls every few seconds, and the recorder
+  // measures every live plate to answer.
+  const key = `${W}x${H}|${files.join("|")}`;
+  if (key === lastPlanKey) return;
+  let plan;
+  try {
+    const res = await fetch(`/api/layout?style=panel&width=${W}&height=${H}`);
+    if (!res.ok) return;
+    plan = await res.json();
+  } catch { return; } // recorder briefly away; keep the current wall
+  // A bird may have arrived or left while we waited: a plan for the old set
+  // would miss one or place a ghost. Let the next poll ask again.
+  if (liveOrder.filter(f => plates.has(f)).join("|") !== files.join("|")) return;
+  lastPlanKey = key;
+
+  const root = document.documentElement.style;
+  root.setProperty("--panel-species", `${plan.species_size}px`);
+  root.setProperty("--panel-heard", `${plan.heard_size}px`);
+  root.setProperty("--panel-gap", `${plan.caption_gap.toFixed(1)}px`);
+  root.setProperty("--panel-tracking", `${plan.tracking.toFixed(2)}px`);
+  for (const p of plan.placements) {
+    const el = plates.get(p.file);
+    if (!el) continue;
+    // Plan sizes are in the plan's vmin, in px here — the frame draws them
+    // the same way. x/y are the IMAGE's centre relative to the wall's centre
+    // (the caption hangs below it), so the figure's top-left is the centre
+    // less half the cell.
+    const w = p.size_vmin * plan.vmin, h = p.height_vmin * plan.vmin;
+    el.style.width = `${w.toFixed(1)}px`;
+    el.querySelector(".cell").style.height = `${h.toFixed(1)}px`;
+    el.style.transform =
+      `translate(-50%, 0) translate(${p.x.toFixed(1)}px, ${(p.y - h / 2).toFixed(1)}px)`;
+    el.style.zIndex = String(p.z);
+    el.dataset.cw = w.toFixed(2);
+    el.dataset.ch = h.toFixed(2);
+    el.dataset.ink = JSON.stringify(plan.ink[p.file] || null);
+    fitInk(el);
+  }
+}
+
 function layoutAll() {
+  if (panelStyle) { layoutPanel(); return; }
   const header = document.getElementById("header");
   const bandTop = header ? header.getBoundingClientRect().bottom + 8 : 0;
   const files = liveOrder.filter(f => plates.has(f));
@@ -369,6 +507,16 @@ function makePlate(p) {
   const img = document.createElement("img");
   img.src = `/images/${encodeURIComponent(p.file)}`;
   img.alt = `Painting of ${p.species_common}`;
+  // Panel mode crops the image to its ink inside a fixed-size cell (see
+  // fitInk); the spiral shows the whole plate and needs no wrapper. The
+  // natural size arrives with the image, so the fit runs again on load.
+  let picture = img;
+  if (panelStyle) {
+    picture = document.createElement("div");
+    picture.className = "cell";
+    picture.append(img);
+    img.addEventListener("load", () => fitInk(fig));
+  }
   const caption = document.createElement("figcaption");
   const species = document.createElement("div");
   species.className = "species";
@@ -377,7 +525,7 @@ function makePlate(p) {
   heard.className = "heard";
   heard.textContent = heardText(p.born_at);
   caption.append(species, heard);
-  fig.append(img, caption);
+  fig.append(picture, caption);
   requestAnimationFrame(() => requestAnimationFrame(() => fig.classList.add("shown")));
   return fig;
 }

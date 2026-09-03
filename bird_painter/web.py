@@ -40,6 +40,11 @@ STATIC_DIR = Path(__file__).parent / "static"
 # documentation all read the same sets — api_docs.py imports them.
 WALL_LAYERS = ("all", "picture", "text")
 WALL_STYLES = ("wall", "panel")
+# /api/layout sizes a plan for any viewport a caller names. Bounded, because
+# the panel plan measures every live plate and a 10^9-pixel request would be
+# a cheap way to peg the recorder's CPU from the LAN.
+LAYOUT_MIN_SIDE = 64
+LAYOUT_MAX_SIDE = 8192
 
 
 def _is_loopback(client: tuple[str, int] | None) -> bool:
@@ -398,6 +403,59 @@ def create_app(config: Config | None = None) -> FastAPI:
             style=style,
         )
         return Response(content=png, media_type="image/png")
+
+    @app.get("/api/layout")
+    def layout(
+        style: str = "panel",
+        width: int | None = None,
+        height: int | None = None,
+    ) -> JSONResponse:
+        """Where the birds go, as data — the same plan `/wall.png` draws.
+
+        The table model runs the browser wall on a panel read from across a
+        room, and the owner wants it placed exactly as the e-paper frame is
+        (#138). The frame's layout depends on things a browser cannot
+        reproduce — each bird's ink measured with scipy, each caption with the
+        house serif's own metrics — so instead of porting the layout, the
+        browser asks for it. `style=panel` is the frame's focal scatter;
+        `style=wall` the spiral, for completeness. Size defaults to the
+        configured `/wall.png` size, so a bare call IS the frame's placement;
+        the browser passes its own viewport."""
+        from .render import plan_wall
+
+        if style not in WALL_STYLES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"style must be {', '.join(sorted(WALL_STYLES))}",
+            )
+        width = config.wall_png_width if width is None else width
+        height = config.wall_png_height if height is None else height
+        for name, value in (("width", width), ("height", height)):
+            if not LAYOUT_MIN_SIDE <= value <= LAYOUT_MAX_SIDE:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"{name} must be {LAYOUT_MIN_SIDE}..{LAYOUT_MAX_SIDE}"
+                    ),
+                )
+        paintings = [
+            {
+                "file": p.file,
+                "species_common": p.species_common,
+                "born_at": p.born_at,
+            }
+            for p in store.live()[: config.wall_max_live]
+        ]
+        plan = plan_wall(
+            paintings,
+            config.archive_dir,
+            width,
+            height,
+            style=style,
+            font=config.wall_font,
+            italic_font=config.wall_font_italic,
+        )
+        return JSONResponse(plan.as_json())
 
     @app.get("/api/archive")
     def archive(offset: int = 0, limit: int = 60) -> JSONResponse:

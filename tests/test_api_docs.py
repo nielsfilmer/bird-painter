@@ -379,3 +379,17 @@ def test_documented_wall_params_match_layout_js_clamps():
     assert float(documented["caption"]["default"]) == constant(
         "DEFAULT_CAPTION_SCALE"
     )
+
+
+def test_documented_layout_example_matches_the_live_response(client):
+    """Same rule as the other endpoint examples: the shape shown on /api/docs
+    is the shape /api/layout actually returns, down to a placement's keys."""
+    client.post("/dev/paint/robin")
+    live = client.get("/api/layout").json()
+    example = next(
+        e["example"] for e in ENDPOINTS
+        if e["method"] == "GET" and e["path"] == "/api/layout"
+    )
+    assert set(live) == set(example)
+    assert set(live["placements"][0]) == set(example["placements"][0])
+    assert list(live["ink"]) == [live["placements"][0]["file"]]

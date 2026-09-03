@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import io
 import logging
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -305,23 +307,47 @@ def _paste_bird(
     img.paste(region, (x0, y0))
 
 
-def _ink_aspect(path: Path) -> float:
-    """The bird's own ink aspect (height/width), measured against the plate's
-    own ground — same rule as _fit_to_cell, so the cell the layout shapes is
-    the cell the paste will fill."""
+@lru_cache(maxsize=512)
+def _ink_metrics(path_str: str, mtime_ns: int) -> tuple[float, tuple | None]:
+    """(aspect, box) of the bird's own ink, measured against the plate's own
+    ground — same rule as _fit_to_cell, so the cell the layout shapes is the
+    cell the paste will fill. The box is (left, top, width, height) as
+    fractions of the plate, so a browser can crop to the same ink the panel
+    fits; None when there is nothing to crop to.
+
+    Cached by path and mtime: the browser wall asks for the panel plan on
+    every poll, and the live set is a dozen files that don't change between
+    polls. The archive is bounded by the retention purge, so the cache is
+    too; a file rewritten in place gets a new mtime and a fresh measurement."""
     try:
-        image = Image.open(path).convert("L")
+        image = Image.open(path_str).convert("L")
         image.thumbnail((256, 256))
         pixels = np.asarray(image)
         mask = pixels < _ink_key(pixels)
         if not mask.any():
-            return PLATE_ASPECT
+            return PLATE_ASPECT, None
         top, left, bottom, right = _ink_bounds(mask)
         if right - left < 4 or bottom - top < 4:
-            return PLATE_ASPECT
-        return (bottom - top) / (right - left)
+            return PLATE_ASPECT, None
+        h, w = pixels.shape
+        return (bottom - top) / (right - left), (
+            left / w, top / h, (right - left) / w, (bottom - top) / h,
+        )
     except Exception:  # noqa: BLE001 — unreadable file: the 4:5 default
-        return PLATE_ASPECT
+        return PLATE_ASPECT, None
+
+
+def _ink_for(path: Path) -> tuple[float, tuple | None]:
+    try:
+        mtime_ns = path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = -1
+    return _ink_metrics(str(path), mtime_ns)
+
+
+def _ink_aspect(path: Path) -> float:
+    """The bird's own ink aspect (height/width) — see _ink_metrics."""
+    return _ink_for(path)[0]
 
 
 def _caption_width(draw, meta, species_font, heard_font, tracking) -> float:
@@ -363,6 +389,151 @@ def _draw_header(
             tracking=title_size * 0.22,
         )
     return title_y + title_size * 1.2 + 8
+
+
+@dataclass(frozen=True)
+class WallPlan:
+    """Everything that decides WHERE things go on a wall of a given size —
+    computed once, drawn by whoever asks.
+
+    `render_wall_png` draws it into a PNG for the e-paper frame; `/api/layout`
+    serves it as JSON so the browser wall can place its plates on the very
+    same spots. One function produces it (`plan_wall`), which is what makes
+    "the table model places birds exactly as the panel does" true by
+    construction rather than by a second implementation kept in step by hand —
+    the panel's placement depends on inputs a browser cannot reproduce (each
+    bird's ink measured with scipy, each caption measured with the house
+    serif's PIL metrics, Mersenne-Twister jitter), so a port could match the
+    arithmetic and still not match the picture.
+
+    Sizes are in px at this width/height, except `size_vmin`/`height_vmin` in
+    the placements, which are in this plan's own `vmin` — the browser applies
+    them as `* vmin` px, exactly as the renderer does.
+    """
+
+    style: str
+    width: int
+    height: int
+    band_top: float
+    layout_h: int
+    vmin: float
+    species_size: int
+    heard_size: int
+    caption_gap: float  # px between a bird's feet and its name
+    tracking: float  # px of letter-spacing on the species line
+    placements: list[dict]  # file, x, y, size_vmin, height_vmin, z
+    # file -> (left, top, width, height) of the bird's own ink, as fractions
+    # of the plate. Panel only; the spiral draws whole plates.
+    ink: dict[str, tuple[float, float, float, float] | None]
+
+    def as_json(self) -> dict:
+        return asdict(self)
+
+
+def plan_wall(
+    paintings: list[dict],
+    image_dir: Path,
+    width: int,
+    height: int,
+    *,
+    style: str = "wall",
+    font: str | None = None,
+    italic_font: str | None = None,
+) -> WallPlan:
+    """Lay the wall out without drawing it. See WallPlan."""
+    if style not in STYLES:
+        raise ValueError(f"style must be one of {STYLES}, got {style!r}")
+    panel = style == "panel"
+    fonts = _Fonts(font, italic_font)
+    # A scratch surface: the header's geometry and the captions' widths are
+    # measured here, and drawn (if at all) by the caller onto the real one.
+    draw = ImageDraw.Draw(Image.new("L", (1, 1), 0))
+    header_vmin = min(width, height) / 100
+    if panel:
+        # No header: the sheet is the header. This is the single biggest gain
+        # in room for the birds.
+        band_top = height * PANEL_TOP_MARGIN
+    else:
+        band_top = _draw_header(draw, width, header_vmin, fonts, lettering=False)
+
+    # Lay the cluster out into a slightly shorter box than the full canvas, so
+    # the bottom row's caption clears the panel edge (the cluster's downward
+    # offset into the title band would otherwise push the last "heard at …"
+    # line a few px past the bottom). The draw uses this same reduced-height
+    # vmin, so plate sizes/positions stay consistent with the layout.
+    layout_h = height - round(2.2 * header_vmin)
+    vmin = min(width, layout_h) / 100
+
+    files = [p["file"] for p in paintings]
+    by_file = {p["file"]: p for p in paintings}
+    # Caption typography is fixed-size (owner: don't resize the text) and the
+    # panel layout needs to MEASURE it before placing anything, so it's
+    # defined before the layout rather than after. Sizes: see _caption_sizes.
+    species_size, heard_size = _caption_sizes(vmin, panel)
+    species_font = fonts.get(species_size)
+    heard_font = fonts.get(heard_size, italic=True)
+    tracking = species_size * 0.05 + 0.5
+    # The panel is a fixed sheet seen from across a room, so it gets the focal
+    # scatter that fills it (see frame_layout) rather than the browser wall's
+    # spiral, which is built to reflow in a window. `style="wall"` renders the
+    # spiral — what the README's hero image and any browser expects.
+    ink: dict[str, tuple | None] = {}
+    if panel:
+        metrics = {f: _ink_for(image_dir / f) for f in files}
+        ink = {f: metrics[f][1] for f in files}
+        placements = compute_frame_scatter(
+            files,
+            width,
+            layout_h,
+            band_top,
+            aspects=[metrics[f][0] for f in files],
+            # Two fixed-size caption lines plus the air above them.
+            caption_px=(
+                CAPTION_GAP_VMIN * vmin + species_size * 1.3 + heard_size * 1.25
+            ),
+            caption_widths=[
+                _caption_width(
+                    draw, by_file[f], species_font, heard_font, tracking
+                )
+                for f in files
+            ],
+        )
+    else:
+        placements = compute_collage(files, width, layout_h, band_top)
+
+    return WallPlan(
+        style=style,
+        width=width,
+        height=height,
+        band_top=band_top,
+        layout_h=layout_h,
+        vmin=vmin,
+        species_size=species_size,
+        heard_size=heard_size,
+        # On the panel the bird's ink is fitted to the cell, so its feet ARE
+        # the cell's bottom edge; the wall's slight overlap put the name right
+        # against the bird. Give it air there, keep the overlap on the wall
+        # where the plate has its own white margin.
+        caption_gap=CAPTION_GAP_VMIN * vmin if panel else -0.4 * vmin,
+        tracking=tracking,
+        placements=[
+            {
+                "file": pl.file,
+                "x": pl.x,
+                "y": pl.y,
+                "size_vmin": pl.size_vmin,
+                # The frame's cells carry their own height (see frame_layout);
+                # the wall's spiral plates are always 4:5.
+                "height_vmin": (
+                    (getattr(pl, "height_vmin", 0.0) or 0.0)
+                    or pl.size_vmin * PLATE_ASPECT
+                ),
+                "z": pl.z,
+            }
+            for pl in placements
+        ],
+        ink=ink,
+    )
 
 
 def render_wall_png(
@@ -410,6 +581,10 @@ def render_wall_png(
     text_only = layer == "text"
     lettering = layer != "picture"
 
+    plan = plan_wall(
+        paintings, image_dir, width, height,
+        style=style, font=font, italic_font=italic_font,
+    )
     fonts = _Fonts(font, italic_font)
     # The text layer is a mask: black ground, white glyphs, so the frame can
     # paste one colour through it.
@@ -421,57 +596,18 @@ def render_wall_png(
     ink = MASK_INK if text_only else INK
     dim_ink = MASK_INK if text_only else INK_DIM
     heard_ink = MASK_INK if text_only else HEARD_INK
-    header_vmin = min(width, height) / 100
-    if panel:
-        # No header: the sheet is the header. This is the single biggest gain
-        # in room for the birds.
-        band_top = height * PANEL_TOP_MARGIN
-    else:
-        band_top = _draw_header(
-            draw, width, header_vmin, fonts, lettering, ink, dim_ink
+    if not panel:
+        # The plan measured the header's band; this draws it. Same geometry
+        # either way — _draw_header returns band_top whether or not it draws.
+        _draw_header(
+            draw, width, min(width, height) / 100, fonts, lettering, ink, dim_ink
         )
-
-    # Lay the cluster out into a slightly shorter box than the full canvas, so
-    # the bottom row's caption clears the panel edge (the cluster's downward
-    # offset into the title band would otherwise push the last "heard at …"
-    # line a few px past the bottom). The draw uses this same reduced-height
-    # vmin, so plate sizes/positions stay consistent with the layout.
-    layout_h = height - round(2.2 * header_vmin)
-    vmin = min(width, layout_h) / 100
-
-    files = [p["file"] for p in paintings]
+    vmin = plan.vmin
     by_file = {p["file"]: p for p in paintings}
-    # Caption typography is fixed-size (owner: don't resize the text) and the
-    # panel layout needs to MEASURE it before placing anything, so it's
-    # defined before the layout rather than after. Sizes: see _caption_sizes.
-    species_size, heard_size = _caption_sizes(vmin, panel)
+    species_size, heard_size = plan.species_size, plan.heard_size
     species_font = fonts.get(species_size)
     heard_font = fonts.get(heard_size, italic=True)
-    # The panel is a fixed sheet seen from across a room, so it gets the focal
-    # scatter that fills it (see frame_layout) rather than the browser wall's
-    # spiral, which is built to reflow in a window. `style="wall"` renders the
-    # spiral — what the README's hero image and any browser expects.
-    if panel:
-        tracking = species_size * 0.05 + 0.5
-        placements = compute_frame_scatter(
-            files,
-            width,
-            layout_h,
-            band_top,
-            aspects=[_ink_aspect(image_dir / f) for f in files],
-            # Two fixed-size caption lines plus the air above them.
-            caption_px=(
-                CAPTION_GAP_VMIN * vmin + species_size * 1.3 + heard_size * 1.25
-            ),
-            caption_widths=[
-                _caption_width(
-                    draw, by_file[f], species_font, heard_font, tracking
-                )
-                for f in files
-            ],
-        )
-    else:
-        placements = compute_collage(files, width, layout_h, band_top)
+    placements = plan.placements
 
     if not placements:
         empty_font = fonts.get(_clamp(16, 2.6 * vmin, 24), italic=True)
@@ -486,25 +622,19 @@ def render_wall_png(
 
     # Oldest first so the newest bird (highest z) composites on top, as on the
     # wall (z-index).
-    for pl in sorted(placements, key=lambda p: p.z):
-        w = pl.size_vmin * vmin
-        # The frame's cells carry their own height (see frame_layout); the
-        # wall's spiral plates are always 4:5.
-        image_h = (getattr(pl, "height_vmin", 0.0) or 0.0) * vmin or w * PLATE_ASPECT
-        cx, cy = cx0 + pl.x, cy0 + pl.y
+    for pl in sorted(placements, key=lambda p: p["z"]):
+        w = pl["size_vmin"] * vmin
+        image_h = pl["height_vmin"] * vmin
+        cx, cy = cx0 + pl["x"], cy0 + pl["y"]
         if not text_only:
             _paste_bird(
-                img, image_dir / pl.file, cx, cy, round(w), round(image_h), bare=panel
+                img, image_dir / pl["file"], cx, cy, round(w), round(image_h),
+                bare=panel,
             )
         if not lettering:
             continue
-        meta = by_file[pl.file]
-        # On the panel the bird's ink is fitted to the cell, so its feet ARE
-        # the cell's bottom edge; the wall's slight overlap put the name right
-        # against the bird. Give it air there, keep the overlap on the wall
-        # where the plate has its own white margin.
-        gap = CAPTION_GAP_VMIN * vmin if panel else -0.4 * vmin
-        caption_y = cy + image_h / 2 + gap
+        meta = by_file[pl["file"]]
+        caption_y = cy + image_h / 2 + plan.caption_gap
         # The faux weight is the panel's too: e-paper renders a hairline serif
         # thinly, so each line is drawn twice a pixel apart. On a backlit screen
         # that just looks smudged, and the wall never asked for it.
@@ -512,7 +642,7 @@ def render_wall_png(
         for dx in offsets:
             _tracked(
                 draw, cx + dx, caption_y, meta["species_common"].upper(),
-                species_font, ink, tracking=species_size * 0.05 + 0.5,
+                species_font, ink, tracking=plan.tracking,
             )
         heard_y = caption_y + species_size * (1.3 if panel else 1.25)
         heard = _heard_text(meta["born_at"])

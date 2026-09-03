@@ -547,3 +547,51 @@ def test_loopback_check_understands_the_addresses_a_listener_reports():
         assert _is_loopback((remote, 5000)) is False, remote
     assert _is_loopback(None) is False
     assert _is_loopback(("testclient", 5000)) is False
+
+
+def test_api_layout_is_the_plan_the_png_draws(config):
+    """/api/layout exists so the table model's browser wall can place its
+    plates exactly where the e-paper frame does (#138). That is only true if
+    the endpoint serves the very numbers render_wall_png draws — same
+    function, same inputs — so pin it against plan_wall directly."""
+    import json
+
+    from bird_painter.render import plan_wall
+
+    small = dataclasses.replace(config, wall_png_width=320, wall_png_height=240)
+    with TestClient(create_app(small), client=LOCAL) as client:
+        for species in ("robin", "wren", "junco"):
+            client.post(f"/dev/paint/{species}")
+        body = client.get("/api/layout").json()
+        # Defaults: the frame's own style and size — a bare call IS the panel.
+        assert (body["style"], body["width"], body["height"]) == ("panel", 320, 240)
+        live = client.get("/api/live").json()["paintings"]
+        paintings = [
+            {"file": p["file"], "species_common": p["species_common"],
+             "born_at": p["born_at"]}
+            for p in live
+        ]
+        plan = plan_wall(paintings, small.archive_dir, 320, 240, style="panel")
+        assert body == json.loads(json.dumps(plan.as_json()))
+        # Newest-first, one placement per live bird, every bird has an ink entry
+        # (None for the SVG placeholders /dev/paint writes without a key).
+        assert [p["file"] for p in body["placements"]] == [p["file"] for p in live]
+        assert set(body["ink"]) == {p["file"] for p in live}
+        for p in body["placements"]:
+            assert p["height_vmin"] > 0 and p["size_vmin"] > 0
+
+        # The browser passes its own viewport; the spiral is available too and
+        # draws whole plates, so it carries no ink boxes.
+        other = client.get("/api/layout?style=wall&width=720&height=1280").json()
+        assert (other["style"], other["width"], other["height"]) == ("wall", 720, 1280)
+        assert other["ink"] == {}
+        assert other["placements"], "a live set laid out to nothing"
+
+
+def test_api_layout_refuses_bad_style_and_sizes(config):
+    with TestClient(create_app(config), client=LOCAL) as client:
+        for query in (
+            "style=bogus", "style=", "width=10", "height=99999", "width=abc",
+            "width=0&height=0",
+        ):
+            assert client.get(f"/api/layout?{query}").status_code == 422, query

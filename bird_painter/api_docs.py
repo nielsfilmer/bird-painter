@@ -225,6 +225,70 @@ ENDPOINTS: list[dict] = [
         },
     },
     {
+        "method": "GET",
+        "path": "/api/layout",
+        "summary": "Where the birds go, as data",
+        "description": (
+            "The placement /wall.png draws, as JSON, for a viewport of the "
+            "given size. The table model's browser wall asks for this with "
+            "style=panel so it places its plates exactly where the e-paper "
+            "frame does — the frame's layout depends on measurements a "
+            "browser can't make (each bird's ink, each caption in the house "
+            "serif), so the browser fetches the plan instead of porting the "
+            "maths. Offsets are from the centre; size_vmin and height_vmin "
+            "are in the plan's own vmin; ink is each bird's own bounding "
+            "box as fractions of its plate, for cropping as the frame does."
+        ),
+        "params": [
+            {
+                "name": "style",
+                "type": "enum",
+                "default": "panel",
+                "note": "panel = the frame's focal scatter; wall = the spiral",
+            },
+            {
+                "name": "width",
+                "type": "int",
+                "default": "BP_WALL_PNG_WIDTH",
+                "note": "64..8192; omit both to get the frame's own plan",
+            },
+            {
+                "name": "height",
+                "type": "int",
+                "default": "BP_WALL_PNG_HEIGHT",
+                "note": "64..8192",
+            },
+        ],
+        "returns": "application/json",
+        "statuses": {
+            "200": "the plan",
+            "422": "unknown style, or a size outside 64..8192",
+        },
+        "example": {
+            "style": "panel",
+            "width": 1200,
+            "height": 1920,
+            "band_top": 86.4,
+            "layout_h": 1894,
+            "vmin": 12.0,
+            "species_size": 14,
+            "heard_size": 16,
+            "caption_gap": 16.8,
+            "tracking": 1.2,
+            "placements": [
+                {
+                    "file": EXAMPLE_PAINTING_FILE,
+                    "x": -41.7,
+                    "y": 122.3,
+                    "size_vmin": 31.4,
+                    "height_vmin": 38.2,
+                    "z": 12,
+                }
+            ],
+            "ink": {EXAMPLE_PAINTING_FILE: [0.21, 0.12, 0.58, 0.79]},
+        },
+    },
+    {
         "method": "POST",
         "path": "/dev/paint/{species}",
         "summary": "Paint a species by hand",
