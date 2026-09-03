@@ -201,3 +201,35 @@ def test_plan_wall_carries_what_the_browser_needs(tmp_path):
     assert wall.ink == {} and wall.caption_gap < 0
     for p in wall.placements:
         assert abs(p["height_vmin"] - p["size_vmin"] * PLATE_ASPECT) < 1e-9
+
+
+def test_plan_wall_caption_scale_grows_type_and_reserve_together(tmp_path):
+    """The 7" table model asks for 1.5x lettering. It goes through the plan
+    so the room reserved under each bird — and each caption's measured width
+    — grow with the type; scaling only the CSS is how #132 put labels on
+    birds. The e-paper frame (render_wall_png) stays at 1."""
+    from bird_painter.render import _caption_sizes, plan_wall
+
+    for i in range(3):
+        _make_image(tmp_path / f"bird{i}.png")
+    paintings = [
+        {"file": f"bird{i}.png", "species_common": "Great Spotted Woodpecker",
+         "born_at": 1784570000 + i}
+        for i in range(3)
+    ]
+    one = plan_wall(paintings, tmp_path, 1280, 720, style="panel")
+    big = plan_wall(paintings, tmp_path, 1280, 720, style="panel", caption_scale=1.5)
+    assert (big.species_size, big.heard_size) == (
+        int(one.species_size * 1.5 + 0.5), int(one.heard_size * 1.5 + 0.5)
+    ), "the general case; the literal below is what pins the rounding"
+    assert big.caption_gap == one.caption_gap  # air above the name is not type
+    # Bigger type, same sheet: the birds must give up room for it.
+    assert max(p["size_vmin"] for p in big.placements) < max(
+        p["size_vmin"] for p in one.placements
+    )
+    # The spiral's type is the browser's own; the scale must not touch it.
+    wall_default = _caption_sizes(7.0, panel=False)
+    assert _caption_sizes(7.0, panel=False, scale=1.5) == wall_default
+    # Scaling AFTER the clamp: "50% bigger" is exactly that at the rails too.
+    at_floor = _caption_sizes(3.0, panel=True, scale=1.5)
+    assert at_floor == (14, 17), "9 × 1.5 = 13.5 → 14; 11 × 1.5 = 16.5 → 17, half up"

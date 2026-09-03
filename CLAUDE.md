@@ -340,7 +340,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     side effects; uvicorn uses `factory=True`): wall page, `/api/live`,
     `/api/archive`, `/wall.png`, `/api/layout` (the placement `/wall.png`
     draws, as JSON, for any viewport — what the table model's browser wall
-    fetches with `?style=panel` so it places birds exactly as the frame does),
+    fetches with `?style=panel` so it places birds exactly as the frame does;
+    `?caption=` scales the panel's fixed-size type THROUGH the plan, so the
+    reserve grows with it — the 7" runs 1.5),
     `/images/*` (`?bare=1` for the bird as the frame pastes it — ink crop,
     ground keyed to alpha — which is what panel mode shows), `/audio/*`
     (`?download=1` for an
@@ -390,9 +392,12 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     carries a live console wired to `/ws/detections`.
   - `static/index.html` — the wall (polling, fade in/out); imports the layout
     module and applies it to the plate DOM. Reads the table model's panel
-    tuning from the query string (`?spread=`, `?caption=`) and sets the CSS
-    `--caption-scale` from the SAME normalised value the layout uses, so the
-    type and the room reserved for it can't disagree. `?style=panel` (the
+    tuning from the query string (`?spread=`, `?caption=`, `?ui=`) and sets
+    the CSS `--caption-scale` from the SAME normalised value the layout uses,
+    so the type and the room reserved for it can't disagree; `?ui=` sizes the
+    archive chrome on its own (`--ui-scale`), in both modes — the desktop
+    wall's archive no longer follows `?caption=`, which it once did by
+    accident. `?style=panel` (the
     table model's kiosk URL) computes nothing locally: it fetches the frame's
     plan from `/api/layout` for its own viewport and applies it — positions,
     bird-shaped cells, ink crops, the panel's fixed-size type — so the screen

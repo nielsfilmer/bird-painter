@@ -332,6 +332,17 @@ def test_the_http_layer_and_the_renderer_accept_the_same_values():
     assert set(WALL_STYLES) == set(STYLES)
 
 
+def js_constant(name: str) -> float:
+    """A numeric constant as written in static/layout.js. The bounds the docs
+    quote live only there, in another language; this is the one reader."""
+    import re
+
+    source = (STATIC_DIR / "layout.js").read_text()
+    match = re.search(rf"\b{name}\s*=\s*([0-9.]+)", source)
+    assert match, f"{name} not found in layout.js — did it get renamed?"
+    return float(match.group(1))
+
+
 def test_documented_wall_params_match_layout_js_clamps():
     """Same failure mode as the /wall.png guard above, one endpoint along: `/`
     grew `spread` and `caption` in PR #132 while the PR body claimed "no
@@ -343,18 +354,10 @@ def test_documented_wall_params_match_layout_js_clamps():
     ones. Ugly, but the alternative is a doc that drifts from the only place
     the clamp actually lives.
     """
-    import re
-
-    source = (STATIC_DIR / "layout.js").read_text()
-
-    def constant(name: str) -> float:
-        match = re.search(rf"\b{name}\s*=\s*([0-9.]+)", source)
-        assert match, f"{name} not found in layout.js — did it get renamed?"
-        return float(match.group(1))
-
+    constant = js_constant
     entry = next(e for e in ENDPOINTS if e["path"] == "/")
     documented = {p["name"]: p for p in entry.get("params", [])}
-    assert set(documented) == {"spread", "caption"}
+    assert set(documented) == {"spread", "caption", "ui"}
 
     # Round-2 review, N10: substring-matching each bound against prose passed
     # even when a bound changed (4 -> 2 still "matched" a note containing a
@@ -363,12 +366,15 @@ def test_documented_wall_params_match_layout_js_clamps():
     def rendered(x: float) -> str:
         return f"{x:g}"
 
+    caption_range = (
+        f"({rendered(constant('CAPTION_SCALE_MIN'))} to "
+        f"{rendered(constant('CAPTION_SCALE_MAX'))})"
+    )
     expected = {
         "spread": f"({rendered(0)} to {rendered(constant('CLUSTER_W_FRAC'))})",
-        "caption": (
-            f"({rendered(constant('CAPTION_SCALE_MIN'))} to "
-            f"{rendered(constant('CAPTION_SCALE_MAX'))})"
-        ),
+        "caption": caption_range,
+        # The archive knob shares the caption knob's bounds, by design.
+        "ui": caption_range,
     }
     for name, phrase in expected.items():
         assert phrase in documented[name]["note"], (
@@ -379,6 +385,7 @@ def test_documented_wall_params_match_layout_js_clamps():
     assert float(documented["caption"]["default"]) == constant(
         "DEFAULT_CAPTION_SCALE"
     )
+    assert float(documented["ui"]["default"]) == constant("DEFAULT_UI_SCALE")
 
 
 def test_documented_layout_example_matches_the_live_response(config):
@@ -435,3 +442,24 @@ def test_documented_layout_bounds_are_the_ones_the_endpoint_enforces():
     assert phrase in documented["height"]["note"]
     assert phrase in entry["statuses"]["422"]
     assert documented["style"]["default"] == "panel"
+
+
+def test_documented_layout_caption_bounds_match_the_endpoint_and_the_spiral_knob():
+    """One number in a kiosk URL means one thing: the panel's caption scale on
+    /api/layout has the same bounds as the spiral's ?caption= in layout.js.
+    Pinned both ways — docs to constants, and web constants to JS constants."""
+    from bird_painter.web import LAYOUT_CAPTION_MAX, LAYOUT_CAPTION_MIN
+
+    entry = next(e for e in ENDPOINTS if e["path"] == "/api/layout")
+    # The param set itself is guarded, like /wall.png's and /'s — a route
+    # growing a param has slipped past the path-only guards before.
+    assert {p["name"] for p in entry["params"]} == {
+        "style", "width", "height", "caption",
+    }
+    caption = next(p for p in entry["params"] if p["name"] == "caption")
+    phrase = f"{LAYOUT_CAPTION_MIN:g}..{LAYOUT_CAPTION_MAX:g}"
+    assert phrase in caption["note"]
+    assert phrase in entry["statuses"]["422"]
+    assert (js_constant("CAPTION_SCALE_MIN"), js_constant("CAPTION_SCALE_MAX")) == (
+        LAYOUT_CAPTION_MIN, LAYOUT_CAPTION_MAX
+    )

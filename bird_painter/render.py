@@ -150,8 +150,18 @@ def _feather_mask(w: int, h: int, soft: bool = True) -> Image.Image:
     return Image.fromarray((a * 255).astype("uint8"), "L")
 
 
-def _caption_sizes(vmin: float, panel: bool) -> tuple[float, float]:
+def _caption_sizes(
+    vmin: float, panel: bool, scale: float = 1.0
+) -> tuple[int, int]:
     """Species and "heard at" type sizes, in pixels.
+
+    `scale` multiplies the panel's sizes AFTER the clamp — a unit read from
+    further away asks for bigger type, and "50% bigger" should mean that as
+    nearly as whole pixels allow (11 × 1.5 → 17, half rounding up), not "a
+    different clamp". It only exists for the plan: the layout
+    reserves room for these sizes and measures each caption's width in them,
+    so the type and the room it needs cannot drift apart (the #132 lesson).
+    The e-paper frame stays at 1.
 
     The panel's are its own: it is read from across a room, so its type is
     larger and the "heard at" line is deliberately the bigger of the two
@@ -163,7 +173,11 @@ def _caption_sizes(vmin: float, panel: bool) -> tuple[float, float]:
     One function so a test can pin both sets, rather than re-deriving them and
     passing whatever the code happens to do."""
     if panel:
-        return _clamp(9, 1.15 * vmin, 14), _clamp(11, 1.3 * vmin, 16)
+        species, heard = _clamp(9, 1.15 * vmin, 14), _clamp(11, 1.3 * vmin, 16)
+        # Half rounds UP, so 11 × 1.5 is 17 — Python's round() is banker's
+        # and gave 16, which is 45% bigger, not 50%. At scale 1 both are the
+        # identity, so the frame's own type is untouched.
+        return int(species * scale + 0.5), int(heard * scale + 0.5)
     return _clamp(8, 1.05 * vmin, 12), _clamp(7, 0.85 * vmin, 10)
 
 
@@ -504,8 +518,14 @@ def plan_wall(
     font: str | None = None,
     italic_font: str | None = None,
     fonts: _Fonts | None = None,
+    caption_scale: float = 1.0,
 ) -> WallPlan:
     """Lay the wall out without drawing it. See WallPlan.
+
+    `caption_scale` scales the PANEL's fixed-size type (and therefore the
+    room the plan reserves for it) — the 7" table model asks for 1.5 because
+    it is read from across a room at 720 px wide. The spiral's type is the
+    browser's own (`?caption=` in layout.js) and is not touched here.
 
     `fonts` lets a caller that already resolved the faces pass them in —
     render_wall_png does, so a render resolves the serif once, not twice.
@@ -539,7 +559,7 @@ def plan_wall(
     # Caption typography is fixed-size (owner: don't resize the text) and the
     # panel layout needs to MEASURE it before placing anything, so it's
     # defined before the layout rather than after. Sizes: see _caption_sizes.
-    species_size, heard_size = _caption_sizes(vmin, panel)
+    species_size, heard_size = _caption_sizes(vmin, panel, caption_scale)
     species_font = fonts.get(species_size)
     heard_font = fonts.get(heard_size, italic=True)
     tracking = species_size * 0.05 + 0.5

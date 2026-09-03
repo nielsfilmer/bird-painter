@@ -47,6 +47,11 @@ WALL_STYLES = ("wall", "panel")
 # size no screen has, which would only produce a plan nobody can draw.
 LAYOUT_MIN_SIDE = 64
 LAYOUT_MAX_SIDE = 8192
+# /api/layout?caption= scales the panel's fixed-size type through the plan.
+# Same bounds as layout.js's CAPTION_SCALE_MIN/MAX for the spiral's knob — a
+# test pins the two together — so one number in a kiosk URL means one thing.
+LAYOUT_CAPTION_MIN = 0.5
+LAYOUT_CAPTION_MAX = 2.0
 
 
 def _is_loopback(client: tuple[str, int] | None) -> bool:
@@ -424,8 +429,10 @@ def create_app(config: Config | None = None) -> FastAPI:
         style: str = "panel",
         width: int | None = None,
         height: int | None = None,
+        caption: float = 1.0,
     ) -> JSONResponse:
-        """Where the birds go, as data — the same plan `/wall.png` draws.
+        """Where the birds go, as data — at `caption=1`, the same plan
+        `/wall.png` draws; a scaled caption is the browser's own plan.
 
         The table model runs the browser wall on a panel read from across a
         room, and the owner wants it placed exactly as the e-paper frame is
@@ -435,10 +442,17 @@ def create_app(config: Config | None = None) -> FastAPI:
         browser asks for it. `style=panel` is the frame's focal scatter;
         `style=wall` the spiral, for completeness. Size defaults to the
         configured `/wall.png` size, so a bare call IS the frame's placement;
-        the browser passes its own viewport."""
+        the browser passes its own viewport. `caption` scales the panel's
+        fixed-size type — and, because it goes through the plan, the room
+        reserved for it — for a unit read from further away."""
         from .render import plan_wall
 
         _require_style(style)
+        if not LAYOUT_CAPTION_MIN <= caption <= LAYOUT_CAPTION_MAX:
+            raise HTTPException(
+                status_code=422,
+                detail=f"caption must be {LAYOUT_CAPTION_MIN}..{LAYOUT_CAPTION_MAX}",
+            )
         width = config.wall_png_width if width is None else width
         height = config.wall_png_height if height is None else height
         for name, value in (("width", width), ("height", height)):
@@ -457,6 +471,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             style=style,
             font=config.wall_font,
             italic_font=config.wall_font_italic,
+            caption_scale=caption,
         )
         return JSONResponse(plan.as_json())
 

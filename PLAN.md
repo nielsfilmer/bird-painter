@@ -629,3 +629,23 @@ whole magic; ship it first.
   multiply-blend onto paper where e-paper can't, so the two shapes share a
   placement and keep their own grounds. Not a follow-on; decided. For the table model this also retires the spiral's caption-metrics
   gap (#133/#136): the panel plan measures captions server-side.
+- **2026-09-03** — **The 7" table model runs bigger type and fewer birds**
+  (owner, on seeing the first unit: "increase the font size by 50% and limit
+  the amount of birds in the frame to 3"). Two per-unit settings, on the
+  kiosk URL / `.env` rather than in code: `?caption=1.5` on `/api/layout`,
+  which scales the panel's fixed-size type *through the plan* so the room
+  reserved under each bird and the measured caption widths grow with it (a
+  CSS-only scale is how #132 put labels on birds), and `BP_WALL_MAX_LIVE=3`.
+  The e-paper frame and the 10" keep their own values. Bounds for the
+  caption scale (0.5–2) are the same as the spiral's `?caption=`, pinned by
+  a test, so one number in a URL means one thing on every wall. The archive
+  chrome — corner button, overlay heading and close, "more", card lettering
+  — has its own knob, `?ui=` (same bounds; the 7" runs 1.5), because it is
+  the page's business rather than the plan's, and a frame may want its
+  controls and its captions sized differently (owner, same day: "make this a
+  configurable attribute so we can quickly switch per frame size"). The
+  two scales live on the kiosk URL (`?caption=`, `?ui=`) and the bird cap in
+  `.env` (`BP_WALL_MAX_LIVE`); the table-model install script (#145) will write
+  that URL from per-unit variables. One deliberate change for the desktop
+  wall: its archive overlay used to scale with `?caption=` by accident and
+  now follows `?ui=` only.

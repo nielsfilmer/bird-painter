@@ -80,6 +80,23 @@
      reused: the plan's vmin is the frame's (layout height, not viewport
      height), and the type is fixed-size by decision (PLAN.md 2026-08-13). */
   body.panel #header { display: none; } /* the sheet is the header */
+  /* A touchscreen is not a desktop: a touch-and-hold must not select a
+     caption (the owner's first tap on the real panel highlighted one), a
+     double-tap must not zoom, and the overlay must not grow a scrollbar. */
+  body.panel {
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  /* The overlay scrolls by DRAG (see the pointer handlers below), so the
+     browser's own pan must not compete — and a thin bar stays as the cue
+     that there is more below the fold (owner: "I also don't see the
+     scrollbar, even though the names of the second row are underneath"). */
+  body.panel #archive {
+    touch-action: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ink-dim) transparent;
+  }
   body.panel .plate .cell {
     position: relative;
     overflow: hidden;
@@ -228,6 +245,12 @@
   #empty.hidden { opacity: 0; }
   /* Archive: a quiet corner button + a full-screen overlay. Browser wall
      only — the server-rendered /wall.png never contains page chrome. */
+  /* --ui-scale sizes the archive chrome — the corner button, the overlay's
+     heading and close, "more", and the card lettering — independently of the
+     plates' captions. A frame read from across a room wants both bigger, but
+     not necessarily by the same amount, and in panel mode the caption scale
+     goes through the server's plan while this is purely the page's. Set from
+     ?ui= (owner, 2026-09-03: "make this configurable per frame size"). */
   #archive-button {
     position: fixed;
     right: 2vmin;
@@ -235,9 +258,9 @@
     z-index: 3;
     font-style: italic;
     font-size: clamp(
-      calc(11px * var(--caption-scale, 1)),
-      calc(1.4vmin * var(--caption-scale, 1)),
-      calc(15px * var(--caption-scale, 1))
+      calc(11px * var(--ui-scale, 1)),
+      calc(1.4vmin * var(--ui-scale, 1)),
+      calc(15px * var(--ui-scale, 1))
     );
     color: var(--ink-dim);
     background: none;
@@ -263,9 +286,9 @@
     letter-spacing: 0.18em;
     font-weight: normal;
     font-size: clamp(
-      calc(18px * var(--caption-scale, 1)),
-      calc(3vmin * var(--caption-scale, 1)),
-      calc(34px * var(--caption-scale, 1))
+      calc(18px * var(--ui-scale, 1)),
+      calc(3vmin * var(--ui-scale, 1)),
+      calc(34px * var(--ui-scale, 1))
     );
     text-align: center;
     margin-bottom: 3vmin;
@@ -278,13 +301,21 @@
     background: none;
     border: none;
     font-family: inherit;
-    font-size: clamp(20px, 3vmin, 30px);
+    font-size: clamp(
+      calc(20px * var(--ui-scale, 1)),
+      calc(3vmin * var(--ui-scale, 1)),
+      calc(30px * var(--ui-scale, 1))
+    );
+    /* A bigger × needs a bigger touch target, not just a bigger glyph. */
+    padding: 0.4em 0.6em;
     color: var(--ink-dim);
     cursor: pointer;
   }
   #archive-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    /* Columns grow with the lettering, or bigger captions wrap under
+       narrower cards. */
+    grid-template-columns: repeat(auto-fill, minmax(calc(150px * var(--ui-scale, 1)), 1fr));
     gap: 3vmin 2vmin;
   }
   .arch-card { text-align: center; }
@@ -302,17 +333,17 @@
     font-variant: small-caps;
     letter-spacing: 0.05em;
     font-size: clamp(
-      calc(9px * var(--caption-scale, 1)),
-      calc(1.1vmin * var(--caption-scale, 1)),
-      calc(13px * var(--caption-scale, 1))
+      calc(9px * var(--ui-scale, 1)),
+      calc(1.1vmin * var(--ui-scale, 1)),
+      calc(13px * var(--ui-scale, 1))
     );
   }
   .arch-card .when {
     font-style: italic;
     font-size: clamp(
-      calc(8px * var(--caption-scale, 1)),
-      calc(0.95vmin * var(--caption-scale, 1)),
-      calc(11px * var(--caption-scale, 1))
+      calc(8px * var(--ui-scale, 1)),
+      calc(0.95vmin * var(--ui-scale, 1)),
+      calc(11px * var(--ui-scale, 1))
     );
     color: #6b5e45;
   }
@@ -328,9 +359,9 @@
        there while every other archive label scaled — a "more" button a kiosk
        viewer can't read is a dead end in the only navigation this page has. */
     font-size: clamp(
-      calc(11px * var(--caption-scale, 1)),
-      calc(1.4vmin * var(--caption-scale, 1)),
-      calc(15px * var(--caption-scale, 1))
+      calc(11px * var(--ui-scale, 1)),
+      calc(1.4vmin * var(--ui-scale, 1)),
+      calc(15px * var(--ui-scale, 1))
     );
     padding: 0.8vmin 2.4vmin;
     cursor: pointer;
@@ -353,7 +384,7 @@
   <button id="archive-more">more</button>
 </div>
 <script type="module">
-import { computeCollage, normalizePanelOpts } from "/layout.js";
+import { computeCollage, createDragScroller, normalizePanelOpts } from "/layout.js";
 
 const wall = document.getElementById("wall");
 const empty = document.getElementById("empty");
@@ -379,13 +410,19 @@ const params = new URLSearchParams(location.search);
 const panelOpts = normalizePanelOpts({
   spread: params.get("spread"),
   captionScale: params.get("caption"),
+  uiScale: params.get("ui"),
 });
+// The archive chrome's scale is the page's own in every mode — nothing in
+// the server's plan concerns the overlay.
+document.documentElement.style.setProperty("--ui-scale", String(panelOpts.uiScale));
 // ?style=panel — place the birds exactly as the e-paper frame does (#138).
 // The layout is fetched from /api/layout rather than computed here, because
 // the frame's placement depends on measurements only the server can make;
-// see layoutPanel(). ?spread= and ?caption= are the spiral's knobs: in this
-// mode the plan carries its own fixed-size type, and --caption-scale is left
-// at 1 so the archive overlay doesn't scale either (QA on #139: it did).
+// see layoutPanel(). ?spread= is the spiral's knob and does nothing here.
+// ?caption= is FORWARDED to /api/layout rather than applied in CSS: the plan
+// owns the panel's type and reserves room for it, so scaling must happen
+// where the reserve is computed (the 7" unit runs 1.5). --caption-scale is
+// left at 1 here; the archive overlay has its own knob, ?ui= (--ui-scale).
 const panelStyle = params.get("style") === "panel";
 if (panelStyle) document.body.classList.add("panel");
 else document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));
@@ -404,6 +441,39 @@ function heardText(bornAt) {
 // module so `node --test` can guard it (layout.test.js).
 let liveOrder = []; // files, newest first — set by refresh()
 
+// ---- panel mode: the archive scrolls by drag -----------------------------
+// The decisions live in layout.js (createDragScroller) where `node --test`
+// can walk them; this is only the wiring from Pointer Events to the DOM. Why
+// the page scrolls its own overlay at all, and the tap/drag/capture rules,
+// are documented on the controller.
+if (panelStyle) {
+  const overlay = document.getElementById("archive");
+  const scroller = createDragScroller();
+  overlay.addEventListener("pointerdown", e => {
+    scroller.down({
+      id: e.pointerId, y: e.clientY, scrollTop: overlay.scrollTop,
+      pointerType: e.pointerType, button: e.button,
+    });
+  });
+  overlay.addEventListener("pointermove", e => {
+    const r = scroller.move({ id: e.pointerId, y: e.clientY, buttons: e.buttons });
+    if (!r) return;
+    if (r.capture) overlay.setPointerCapture(e.pointerId);
+    overlay.scrollTop = r.scrollTop;
+    e.preventDefault();
+  });
+  overlay.addEventListener("pointerup", e => scroller.up({ id: e.pointerId }));
+  overlay.addEventListener("pointercancel", e => scroller.cancel({ id: e.pointerId }));
+  overlay.addEventListener("click", e => {
+    if (scroller.click()) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+  // An emulated-mouse drag on an <img> starts a drag-and-drop ghost otherwise.
+  overlay.addEventListener("dragstart", e => e.preventDefault());
+}
+
 // ---- panel mode: apply the frame's plan ----------------------------------
 let lastPlanKey = null;  // viewport + live set the current plates were placed for
 let planInFlight = false;
@@ -419,7 +489,8 @@ async function layoutPanel() {
   planInFlight = true;
   let plan;
   try {
-    const res = await fetch(`/api/layout?style=panel&width=${W}&height=${H}`);
+    const res = await fetch(
+      `/api/layout?style=panel&width=${W}&height=${H}&caption=${panelOpts.captionScale}`);
     if (!res.ok) return;
     plan = await res.json();
   } catch { return; } // recorder briefly away; keep the current wall
