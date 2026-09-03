@@ -439,6 +439,35 @@ const panelStyle = params.get("style") === "panel";
 if (panelStyle) document.body.classList.add("panel");
 else document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));
 
+// The table model's own settings (#123). On the unit itself /unit answers
+// (it is loopback-only) and its CAPTION/UI are what the owner set on the
+// screen, so they win over the kiosk URL's; anywhere else the URL stands.
+// The settings screen is loaded only in panel mode, and only mounts when
+// /unit answers — the desktop wall never sees it.
+function applyUnitSettings(settings) {
+  const next = normalizePanelOpts({
+    spread: params.get("spread"),
+    captionScale: settings.CAPTION,
+    uiScale: settings.UI,
+  });
+  panelOpts.captionScale = next.captionScale;
+  panelOpts.uiScale = next.uiScale;
+  document.documentElement.style.setProperty("--ui-scale", String(panelOpts.uiScale));
+  lastPlanKey = null; // the plan depends on the caption scale: ask again
+  layoutPanel();
+}
+if (panelStyle) {
+  fetch("/unit", { cache: "no-store" })
+    .then(res => (res.ok ? res.json() : null))
+    .then(state => {
+      if (!state) return;
+      applyUnitSettings(state.settings);
+      return import("/unit-screen.js").then(m =>
+        m.mountUnitScreen({ initial: state, onSettings: s => applyUnitSettings(s.settings) }));
+    })
+    .catch(() => {}); // not the unit: no screen, the URL's values stand
+}
+
 function heardText(bornAt) {
   // A fixed clock time, not "x min ago": the e-ink frame only refreshes every
   // few minutes, so a relative label would be stale between draws. The
@@ -496,7 +525,7 @@ async function layoutPanel() {
   // The plan is deterministic per live set and viewport, so only ask when
   // one of them changed — the wall polls every few seconds, and the recorder
   // measures every live plate to answer.
-  const key = `${W}x${H}|${files.join("|")}`;
+  const key = `${W}x${H}|${panelOpts.captionScale}|${files.join("|")}`;
   if (key === lastPlanKey || planInFlight) return;
   planInFlight = true;
   let plan;
@@ -510,7 +539,7 @@ async function layoutPanel() {
   // A bird may have arrived or left, or the window changed shape, while we
   // waited: a plan for the old set would miss one or place a ghost, and a
   // plan for the old size lands 190px off (QA on #139). Let the next poll ask.
-  const nowKey = `${wall.clientWidth}x${wall.clientHeight}|${liveOrder.filter(f => plates.has(f)).join("|")}`;
+  const nowKey = `${wall.clientWidth}x${wall.clientHeight}|${panelOpts.captionScale}|${liveOrder.filter(f => plates.has(f)).join("|")}`;
   if (nowKey !== key) return;
   // An empty plan is the planner declining (a viewport too small for one
   // plate): don't remember it as done, or the wall stays frozen at that size.

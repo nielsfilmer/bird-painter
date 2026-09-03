@@ -373,6 +373,165 @@ ENDPOINTS: list[dict] = [
     },
     {
         "method": "GET",
+        "path": "/unit",
+        "summary": "The unit's own settings screen: everything it shows",
+        "description": (
+            "The table model's settings, as the screen on the unit reads them "
+            "(#123): the per-unit display knobs (CAPTION, UI, MAX_LIVE, ROTATE), "
+            "the night schedule, whether it is night now and whether a "
+            "backlight is being driven, the network (NetworkManager's "
+            "connectivity word, the SSID, the address, the networks in reach), "
+            "and an about block. "
+            "Reachable only from the unit's own machine (the same 404 as "
+            "/dev/paint from anywhere else): "
+            "the screen only exists on the touchscreen in front of the unit."
+        ),
+        "returns": "application/json",
+        "statuses": {"200": "the unit's state", "404": "not the unit's own machine"},
+        "example": {
+            "settings": {
+                "CAPTION": 1.5,
+                "UI": 1.5,
+                "MAX_LIVE": 3,
+                "ROTATE": 90,
+                "NIGHT_ENABLED": 1,
+                "NIGHT_FROM": 22,
+                "NIGHT_TO": 7,
+                "NIGHT_BRIGHTNESS": 20,
+            },
+            "night": {"is_night": False, "backlight": True},
+            "connectivity": {
+                "state": "full",
+                "ssid": "home-wifi",
+                "ip": "192.168.1.126",
+                "networks": [
+                    {"ssid": "home-wifi", "signal": 84, "secured": True, "active": True}
+                ],
+            },
+            "about": {
+                "unit": "birdframe-tm7 · bird-painter 0.1.0",
+                "recorder": "this unit (mic: USB PnP Sound Device)",
+                "ears": "BirdNET · floor 0.60",
+                "wall": "paintings stay 3 h · archive kept 31 days",
+            },
+        },
+    },
+    {
+        "method": "PUT",
+        "path": "/unit",
+        "summary": "Change the unit's settings",
+        "description": (
+            "A JSON object of the settings keys to change (any subset of what "
+            "GET /unit shows under `settings`). Numbers are clamped to their "
+            "bounds, unknown keys are dropped. Display knobs are written to the "
+            "unit's unit.conf and apply at once (the screen re-plans the wall; "
+            "ROTATE applies at the next start); MAX_LIVE and the night group are "
+            "written to .env and apply at once — the night watch is "
+            "rescheduled, so a moved hour changes the panel within a second. "
+            "Reachable only from the unit's own machine (the same 404 as "
+            "/dev/paint from anywhere else): "
+            "there is nothing to see from elsewhere."
+        ),
+        "returns": "application/json — the same body as GET /unit",
+        "statuses": {
+            "200": "applied",
+            "400": "nothing to change (no known key with a numeric value)",
+            "404": "not the unit's own machine",
+        },
+        "example": {"CAPTION": 1.7, "NIGHT_FROM": 23},
+    },
+    {
+        "method": "GET",
+        "path": "/unit/wifi",
+        "summary": "Networks in reach",
+        "description": (
+            "The `connectivity` block of GET /unit on its own; `?rescan=1` "
+            "asks NetworkManager for a fresh scan first (a few seconds). "
+            "Reachable only from the unit's own machine (the same 404 as "
+            "/dev/paint from anywhere else): "
+            "the network is the unit's business."
+        ),
+        "params": [
+            {"name": "rescan", "type": "bool", "default": False, "note": "scan first"}
+        ],
+        "returns": "application/json",
+        "statuses": {
+            "200": "the connectivity block",
+            "404": "not the unit's own machine",
+        },
+        "example": {
+            "state": "full",
+            "ssid": "home-wifi",
+            "ip": "192.168.1.126",
+            "networks": [
+                {"ssid": "home-wifi", "signal": 84, "secured": True, "active": True},
+                {"ssid": "KPN-Gast", "signal": 55, "secured": False, "active": False},
+            ],
+        },
+    },
+    {
+        "method": "POST",
+        "path": "/unit/wifi/join",
+        "summary": "Join a network",
+        "description": (
+            "JSON `{ssid, password}` (password optional for an open network). "
+            "Runs `nmcli device wifi connect`; the password goes to "
+            "NetworkManager as an argument and is never logged. On failure the "
+            "detail is NetworkManager's own last line. "
+            "Reachable only from the unit's own machine (the same 404 as "
+            "/dev/paint from anywhere else): "
+            "a unit joins networks from its own screen only."
+        ),
+        "returns": "application/json",
+        "statuses": {
+            "200": "joined; `connectivity` is the new state",
+            "400": "NetworkManager refused (wrong password, out of reach)",
+            "404": "not the unit's own machine",
+        },
+        "example": {"ok": True, "message": "Device 'wlan0' successfully activated."},
+    },
+    {
+        "method": "POST",
+        "path": "/unit/wifi/forget",
+        "summary": "Forget a saved network",
+        "description": (
+            "JSON `{ssid}`: deletes NetworkManager's saved connection of that "
+            "name. "
+            "Reachable only from the unit's own machine (the same 404 as "
+            "/dev/paint from anywhere else): "
+            "see /unit/wifi/join."
+        ),
+        "returns": "application/json",
+        "statuses": {
+            "200": "forgotten",
+            "400": "no such saved network",
+            "404": "not the unit's own machine",
+        },
+        "example": {"ok": True, "message": "forgotten"},
+    },
+    {
+        "method": "POST",
+        "path": "/unit/reboot",
+        "summary": "Reboot the unit",
+        "description": (
+            "What the settings screen's restart button does: `systemctl "
+            "reboot` through logind (the install script grants the unit's user "
+            "the polkit action; no sudo). Rotation and the kiosk's flags apply "
+            "on the way back up. "
+            "Reachable only from the unit's own machine (the same 404 as "
+            "/dev/paint from anywhere else): "
+            "nobody reboots a unit from across the room by accident."
+        ),
+        "returns": "application/json",
+        "statuses": {
+            "200": "rebooting",
+            "500": "logind refused (polkit rule missing)",
+            "404": "not the unit's own machine",
+        },
+        "example": {"ok": True, "message": "rebooting"},
+    },
+    {
+        "method": "GET",
         "path": "/api",
         "summary": "This description, as JSON",
         "description": "Machine-readable index of every endpoint and event.",

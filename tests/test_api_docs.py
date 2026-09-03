@@ -72,6 +72,7 @@ def test_every_real_api_route_is_documented(client):
         ("GET", "/redoc"),
         ("GET", "/docs/oauth2-redirect"),
         ("GET", "/layout.js"),
+        ("GET", "/unit-screen.js"),
     }
     served = set()
     for route in client.app.routes:
@@ -137,7 +138,7 @@ def test_description_carries_no_placeholder_gaps(config):
     description = describe(config)
     for endpoint in description["endpoints"]:
         assert endpoint["summary"] and endpoint["description"]
-        assert endpoint["method"] in {"GET", "POST"}
+        assert endpoint["method"] in {"GET", "POST", "PUT"}
     for event in description["websocket"]["events"]:
         assert event["description"] and event["example"]["type"] == event["type"]
 

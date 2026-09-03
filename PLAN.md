@@ -629,6 +629,24 @@ whole magic; ship it first.
   multiply-blend onto paper where e-paper can't, so the two shapes share a
   placement and keep their own grounds. Not a follow-on; decided. For the table model this also retires the spiral's caption-metrics
   gap (#133/#136): the panel plan measures captions server-side.
+- **2026-09-04** — **The table model has a settings screen, and joins WiFi
+  from it** (#123; owner: "a settings screen where you can adjust the
+  settings", and "the table model that leaves the house also needs a
+  mechanic to connect to unknown WiFi"). A long press in the bottom-left
+  corner opens it, on the wall's own paper: the display knobs (lettering,
+  controls, birds on the sheet, orientation), the night schedule, the
+  network, and an about block with a restart. What it edits is the two
+  files a unit already has — the install script's `unit.conf` and the app's
+  `.env` — so a re-run of the script keeps the owner's choices and nothing
+  new has to be backed up. Display and night changes apply at once (the
+  page re-plans; the night watch is rescheduled); orientation on the next
+  restart, which the kiosk reads from `unit.conf` at login. The API behind
+  it (`/unit*`) is loopback-only like `/dev`: a settings screen exists on
+  the touchscreen in front of the unit and nowhere else. WiFi goes through
+  NetworkManager (`nmcli`, argv lists — an SSID and a password are
+  touchscreen input) under a polkit rule scoped to the unit's user; the
+  password never reaches a log. No captive-portal handling: a unit in a
+  house joins a home network.
 - **2026-09-03** — **Night mode: the wall goes dark on a schedule** (#122).
   A backlit panel showing a cream wall is a lamp; the table model lives in
   living rooms. Between `BP_NIGHT_FROM` and `BP_NIGHT_TO` (local hours,

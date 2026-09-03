@@ -335,6 +335,18 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     `/sys/class/backlight/*` (a laptop has one too and would be dimmed; this
     Mac and the recorder's headless Pi have none, so there the watch keeps
     state only).
+  - `unit.py` — the table model's own settings and network (#123): the one
+    reader/writer of `~/.config/bird-painter/unit.conf` (CAPTION, UI,
+    MAX_LIVE, ROTATE — the install script's file) and of the `.env` lines
+    the screen may change (BP_WALL_MAX_LIVE, BP_NIGHT_*; the key is never
+    touched — merges keep every other line byte for byte). `LiveSettings`
+    is the runtime copy the routes read (the frozen Config stays what the
+    process started with); `apply` writes both files and it. `connectivity`
+    / `join` / `forget` / `reboot` wrap `nmcli` and `systemctl reboot` as
+    argv lists (an SSID is touchscreen input), under the polkit rule the
+    install script grants the unit's user. Paths override with
+    `BP_UNIT_CONF` / `BP_ENV_FILE` so a QA instance never writes into a
+    developer's home.
   - `occasions.py` — occasion hats: public-holiday table + `hat_for(...)`;
     personal days come only from env (`BP_HAT_DAYS`/`BP_HAT_DATES`), never
     committed (public repo).
@@ -359,7 +371,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     ground keyed to alpha — which is what panel mode shows), `/audio/*`
     (`?download=1` for an
     attachment), `/ws/detections` (live event stream), `/api` + `/api/docs`
-    (the API's own documentation), `/dev/paint/*` (loopback only, via the
+    (the API's own documentation), `/unit` GET/PUT + `/unit/wifi` +
+    `/unit/wifi/join|forget` + `/unit/reboot` (the settings screen's API,
+    loopback-only like `/dev`), `/dev/paint/*` (loopback only, via the
     `LocalOnly` ASGI guard on `LOCAL_ONLY_PREFIXES` — `/dev`, and `/unit`
     for #123 — 404 from
     off-machine; it skips the cap and spends money).
@@ -402,6 +416,14 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     nicety: without it the frame still polls, so an unreachable or older
     recorder costs latency, not the picture. NB the frame installs `--no-deps`,
     so `websockets` must be installed explicitly there.
+  - `static/unit-screen.js` — the table model's settings screen (#123),
+    drawn on the wall's paper from the design canvas: display knobs as
+    steppers (lettering, controls, birds on the sheet, orientation), the
+    night group, network (list in reach, join with an on-screen keyboard,
+    forget), about + restart. Loaded by the wall only in panel mode and only
+    when `/unit` answers (i.e. on the unit itself); opened by a 1.5 s press
+    in the bottom-left corner; closes on × or a minute idle. Every number it
+    shows is the server's.
   - `static/api-docs.html` — the documentation page: renders `/api` and
     carries a live console wired to `/ws/detections`.
   - `static/index.html` — the wall (polling, fade in/out); imports the layout
@@ -458,7 +480,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   guards), wall-layout port + JS-parity, /wall.png render incl. its
   style/layer params, the panel's focal scatter (`test_frame_layout.py`), the
   frame client's fetch/dither/stamp cycle, painting trim, night mode's
-  schedule/backlight/transitions (`test_night.py`); import-purity
+  schedule/backlight/transitions (`test_night.py`), the unit's settings
+  files and nmcli wrappers (`test_unit.py`); import-purity
   regression).
   Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub
@@ -479,6 +502,10 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   `ROTATE`, `CAPTION`, `UI`, `MAX_LIVE`) persist on the unit in
   `~/.config/bird-painter/unit.conf` — not a repo file — so a bare re-run
   keeps them. First run on the first unit: 2026-09-03.
+- `scripts/polkit/50-birdframe-unit.rules` — the polkit rule the install
+  script installs (user name substituted): NetworkManager's actions and
+  logind's reboot for the unit's user only, so the service — which has no
+  login session — can join a network and restart the unit from its screen.
 - `scripts/memcheck.py` — peak-RSS measurement of the Python side on a
   unit (#121's number). On the first unit with LiteRT: 261 MB with the
   Analyzer loaded, 331 MB after a clip cleanup; the whole running service
