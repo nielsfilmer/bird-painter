@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from bird_painter.api_docs import ENDPOINTS, WEBSOCKET, describe
 from bird_painter.events import EVENT_TYPES, PING_SECONDS, detected_event, painted_event
 from bird_painter.store import Painting
-from bird_painter.web import create_app
+from bird_painter.web import STATIC_DIR, create_app
 from tests.conftest import LOCAL, REMOTE
 
 
@@ -330,3 +330,52 @@ def test_the_http_layer_and_the_renderer_accept_the_same_values():
 
     assert set(WALL_LAYERS) == set(LAYERS)
     assert set(WALL_STYLES) == set(STYLES)
+
+
+def test_documented_wall_params_match_layout_js_clamps():
+    """Same failure mode as the /wall.png guard above, one endpoint along: `/`
+    grew `spread` and `caption` in PR #132 while the PR body claimed "no
+    server surface, no API-docs drift".
+
+    The ranges are enforced in JavaScript (`normalizePanelOpts` in
+    static/layout.js), so there is no Python constant to compare against —
+    parse them out of the module and pin the documented bounds to the real
+    ones. Ugly, but the alternative is a doc that drifts from the only place
+    the clamp actually lives.
+    """
+    import re
+
+    source = (STATIC_DIR / "layout.js").read_text()
+
+    def constant(name: str) -> float:
+        match = re.search(rf"\b{name}\s*=\s*([0-9.]+)", source)
+        assert match, f"{name} not found in layout.js — did it get renamed?"
+        return float(match.group(1))
+
+    entry = next(e for e in ENDPOINTS if e["path"] == "/")
+    documented = {p["name"]: p for p in entry.get("params", [])}
+    assert set(documented) == {"spread", "caption"}
+
+    # Round-2 review, N10: substring-matching each bound against prose passed
+    # even when a bound changed (4 -> 2 still "matched" a note containing a
+    # "2" elsewhere). Assert the exact "lo to hi" phrase the notes are written
+    # with, so a moved bound fails loudly.
+    def rendered(x: float) -> str:
+        return f"{x:g}"
+
+    expected = {
+        "spread": f"({rendered(0)} to {rendered(constant('CLUSTER_W_FRAC'))})",
+        "caption": (
+            f"({rendered(constant('CAPTION_SCALE_MIN'))} to "
+            f"{rendered(constant('CAPTION_SCALE_MAX'))})"
+        ),
+    }
+    for name, phrase in expected.items():
+        assert phrase in documented[name]["note"], (
+            f"{name}'s documented range is stale: layout.js says {phrase}, "
+            f"the note says {documented[name]['note']!r}"
+        )
+    assert float(documented["spread"]["default"]) == constant("DEFAULT_SPREAD")
+    assert float(documented["caption"]["default"]) == constant(
+        "DEFAULT_CAPTION_SCALE"
+    )

@@ -75,16 +75,34 @@
     text-align: center;
     margin-top: -0.4vmin;
     line-height: 1.15;
+    /* A species name longer than its plate is wide used to paint straight out
+       of the box — and because the box never grows, neither the layout's
+       on-screen clamp nor any getBoundingClientRect check could see it. Break
+       inside the word instead: an ugly wrap is measurable, an overhang is not. */
+    overflow-wrap: anywhere;
   }
+  /* --caption-scale multiplies BOTH the fluid size and the clamp rails. The
+     rails are the point: on a 720x1280 panel 1.05vmin lands under the floor
+     and on 1200x1920 it lands over the ceiling, so on both table-model panels
+     the type is pinned to a rail and scaling only the middle term would do
+     nothing. Set from ?caption= — see the script below. Default 1 = unchanged. */
   .plate .species {
     font-variant: small-caps;
     letter-spacing: 0.05em;
-    font-size: clamp(8px, 1.05vmin, 12px);
+    font-size: clamp(
+      calc(8px * var(--caption-scale, 1)),
+      calc(1.05vmin * var(--caption-scale, 1)),
+      calc(12px * var(--caption-scale, 1))
+    );
     color: var(--ink);
   }
   .plate .heard {
     font-style: italic;
-    font-size: clamp(7px, 0.85vmin, 10px);
+    font-size: clamp(
+      calc(7px * var(--caption-scale, 1)),
+      calc(0.85vmin * var(--caption-scale, 1)),
+      calc(10px * var(--caption-scale, 1))
+    );
     color: #6b5e45;
     margin-top: 0.05vmin;
   }
@@ -133,7 +151,11 @@
     bottom: 1.6vmin;
     z-index: 3;
     font-style: italic;
-    font-size: clamp(11px, 1.4vmin, 15px);
+    font-size: clamp(
+      calc(11px * var(--caption-scale, 1)),
+      calc(1.4vmin * var(--caption-scale, 1)),
+      calc(15px * var(--caption-scale, 1))
+    );
     color: var(--ink-dim);
     background: none;
     border: none;
@@ -157,7 +179,11 @@
     font-variant: small-caps;
     letter-spacing: 0.18em;
     font-weight: normal;
-    font-size: clamp(18px, 3vmin, 34px);
+    font-size: clamp(
+      calc(18px * var(--caption-scale, 1)),
+      calc(3vmin * var(--caption-scale, 1)),
+      calc(34px * var(--caption-scale, 1))
+    );
     text-align: center;
     margin-bottom: 3vmin;
   }
@@ -192,11 +218,19 @@
   .arch-card .species {
     font-variant: small-caps;
     letter-spacing: 0.05em;
-    font-size: clamp(9px, 1.1vmin, 13px);
+    font-size: clamp(
+      calc(9px * var(--caption-scale, 1)),
+      calc(1.1vmin * var(--caption-scale, 1)),
+      calc(13px * var(--caption-scale, 1))
+    );
   }
   .arch-card .when {
     font-style: italic;
-    font-size: clamp(8px, 0.95vmin, 11px);
+    font-size: clamp(
+      calc(8px * var(--caption-scale, 1)),
+      calc(0.95vmin * var(--caption-scale, 1)),
+      calc(11px * var(--caption-scale, 1))
+    );
     color: #6b5e45;
   }
   #archive-more {
@@ -207,6 +241,14 @@
     font-family: inherit;
     font-style: italic;
     color: var(--ink);
+    /* No font-size rule at all until now, so it inherited 13.3px and stayed
+       there while every other archive label scaled — a "more" button a kiosk
+       viewer can't read is a dead end in the only navigation this page has. */
+    font-size: clamp(
+      calc(11px * var(--caption-scale, 1)),
+      calc(1.4vmin * var(--caption-scale, 1)),
+      calc(15px * var(--caption-scale, 1))
+    );
     padding: 0.8vmin 2.4vmin;
     cursor: pointer;
   }
@@ -228,12 +270,34 @@
   <button id="archive-more">more</button>
 </div>
 <script type="module">
-import { computeCollage } from "/layout.js";
+import { computeCollage, normalizePanelOpts } from "/layout.js";
 
 const wall = document.getElementById("wall");
 const empty = document.getElementById("empty");
 const plates = new Map(); // file -> element
 const FADE_MS = 2300;
+
+// Panel tuning, from the query string — the kiosk's URL is where a table-model
+// unit is configured (slice #120), so this needs no server surface and no
+// restart to try a value. Both default to the desktop wall's existing look:
+//
+//   ?spread=0.75   widen the collage to claim at least 75% of the viewport.
+//                  On a tall portrait panel the widen-to-fit rule stops early
+//                  and leaves ~21% cream margin each side; this sets a floor.
+//   ?caption=1.6   enlarge the lettering. Both panels pin the caption to a
+//                  clamp rail — 8px on the 7", 12px on the 10" — around 1mm of
+//                  glyph, which a wall read from across a room cannot carry.
+//
+// computeCollage clamps both. It grows the per-plate caption reserve with the
+// scale, but that reserve is linear and a wrapped caption is not, so it holds
+// on the panels this is for and not on a small-vmin viewport — see the KNOWN
+// LIMIT note in layout.js, and #136.
+const params = new URLSearchParams(location.search);
+const panelOpts = normalizePanelOpts({
+  spread: params.get("spread"),
+  captionScale: params.get("caption"),
+});
+document.documentElement.style.setProperty("--caption-scale", String(panelOpts.captionScale));
 
 function heardText(bornAt) {
   // A fixed clock time, not "x min ago": the e-ink frame only refreshes every
@@ -252,7 +316,7 @@ function layoutAll() {
   const header = document.getElementById("header");
   const bandTop = header ? header.getBoundingClientRect().bottom + 8 : 0;
   const files = liveOrder.filter(f => plates.has(f));
-  const placements = computeCollage(files, wall.clientWidth, wall.clientHeight, bandTop);
+  const placements = computeCollage(files, wall.clientWidth, wall.clientHeight, bandTop, panelOpts);
   for (const p of placements) {
     const el = plates.get(p.file);
     if (!el) continue;

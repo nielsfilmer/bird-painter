@@ -39,6 +39,14 @@ CASES = [
     (1920, 1080, 150, 4),
     (375, 812, 120, 7),
     (2400, 1000, 150, 12),
+    # The table model's two panels (PR #132). This test — not the JS-only
+    # default-equality test — is the real frozen baseline: it pins the Python
+    # port and the JS module to each other on concrete viewports, so a change
+    # that shifted the DEFAULT layout would fail here even if both halves
+    # shifted together in JS. The panels belong in it because they are the
+    # viewports a physical object in somebody's living room renders at.
+    (720, 1280, 140, 12),
+    (1200, 1920, 140, 12),
 ]
 
 

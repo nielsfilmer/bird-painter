@@ -39,8 +39,46 @@ ENDPOINTS: list[dict] = [
         "summary": "The wall",
         "description": (
             "The full-screen collage page: birds fade in when heard and out "
-            "when their time is up. Meant for a spare screen, not for reading."
+            "when their time is up. Meant for a spare screen, not for reading. "
+            "The two params tune it for the table model's portrait panel, "
+            "which is read from across a room rather than at a desk; both "
+            "default to the look the wall has always had, so a plain / is "
+            "unchanged. They live in the URL rather than in BP_* env vars "
+            "because they describe the DISPLAY, not the service — one "
+            "recorder serves a phone, a laptop and a panel at once, and each "
+            "wants its own."
         ),
+        "params": [
+            {
+                "name": "spread",
+                "type": "number",
+                "default": "0",
+                "note": (
+                    "a floor on the collage's width, as a fraction of the "
+                    "viewport (0 to 0.92). 0 leaves placement entirely to the "
+                    "widen-to-fit rule, which on a tall portrait panel stops "
+                    "early and uses about 58% of the width; raising it claims "
+                    "more of the panel. Out-of-range values clamp; anything "
+                    "unreadable falls back to the default"
+                ),
+            },
+            {
+                "name": "caption",
+                "type": "number",
+                "default": "1",
+                "note": (
+                    "multiplier on the per-bird lettering (0.5 to 2). At 1 "
+                    "the type sits on a clamp rail at both panel sizes — 8px "
+                    "at 720 wide, 12px at 1200 — around a millimetre of "
+                    "glyph. It also grows the room the layout reserves under "
+                    "each plate, though that reserve is linear while a wrapped "
+                    "caption is not, so it holds on the panels this is built "
+                    "for (vmin 7.2 and 12) and not on a small-vmin viewport, "
+                    "where labels can still reach the bird below from about "
+                    "1.3 up. Capped at 2; see issue #136"
+                ),
+            },
+        ],
         "returns": "text/html",
     },
     {
