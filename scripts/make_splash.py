@@ -8,9 +8,16 @@ framebuffer before any compositor rotates anything. `wlr-randr --transform
 native buffer, so the native splash is the landscape one rotated CCW. The
 wallpaper is shown by the (already rotated) compositor and stays landscape.
 
-Usage: make_splash.py OUT_DIR [BIRD_IMAGE]
+Usage: make_splash.py OUT_DIR [BIRD_IMAGE] [ROTATE]
 Writes OUT_DIR/splash-landscape.png (1280x720) and OUT_DIR/splash-native.png
-(720x1280).
+(720x1280). ROTATE is the unit's `wlr-randr --transform` value from
+unit.conf (90, the default, or 270): the native image is the landscape one
+turned the way the compositor turns the desktop into the panel's buffer.
+wl_output's words for transform 90 are "90 degrees counter-clockwise" — the
+transform the compositor applies to a surface — so 90 turns the landscape
+image CCW and 270 turns it CW. That reading is the one thing here no test
+can check without a camera on the panel: if the first boot shows the splash
+upside down, the two branches below are swapped, nothing else.
 """
 import sys
 from pathlib import Path
@@ -60,7 +67,7 @@ def tracked(draw, cx, y, text, font, fill, tracking):
         x += w + tracking
 
 
-def main(out_dir: Path, bird_path: Path | None) -> None:
+def main(out_dir: Path, bird_path: Path | None, rotate: int = 90) -> None:
     img = paper(W, H)
     draw = ImageDraw.Draw(img)
     # The wall's header at this size: eyebrow 12px italic dim, title 30px caps
@@ -86,11 +93,17 @@ def main(out_dir: Path, bird_path: Path | None) -> None:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     img.save(out_dir / "splash-landscape.png", "PNG")
-    img.rotate(90, expand=True).save(out_dir / "splash-native.png", "PNG")
+    turn = 90 if rotate == 90 else -90  # PIL: positive = counter-clockwise
+    img.rotate(turn, expand=True).save(out_dir / "splash-native.png", "PNG")
     print("wrote", out_dir / "splash-landscape.png", "and splash-native.png")
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        sys.exit("usage: make_splash.py OUT_DIR [BIRD_IMAGE] [ROTATE]")
     out = Path(sys.argv[1])
-    bird = Path(sys.argv[2]) if len(sys.argv) > 2 else None
-    main(out, bird)
+    bird = Path(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else None
+    rotate = int(sys.argv[3]) if len(sys.argv) > 3 else 90
+    if rotate not in (90, 270):
+        sys.exit("ROTATE must be 90 or 270 (a landscape stand for a portrait panel)")
+    main(out, bird, rotate)

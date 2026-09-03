@@ -6,6 +6,12 @@
 Window.SetBackgroundTopColor(0.925, 0.882, 0.776);    // the paper's mid tone
 Window.SetBackgroundBottomColor(0.925, 0.882, 0.776);
 
+// Powering down is not waking up: shutdown and reboot show the bare paper.
+if (Plymouth.GetMode() == "shutdown" || Plymouth.GetMode() == "reboot") {
+  fun noop(text) {}
+  Plymouth.SetMessageFunction(noop);
+  Plymouth.SetDisplayNormalFunction(noop);
+} else {
 splash = Image("splash.png");
 sw = Window.GetWidth();
 sh = Window.GetHeight();
@@ -24,3 +30,4 @@ fun message_callback(text) {}
 Plymouth.SetMessageFunction(message_callback);
 fun display_normal_callback() {}
 Plymouth.SetDisplayNormalFunction(display_normal_callback);
+}

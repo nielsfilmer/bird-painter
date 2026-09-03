@@ -479,14 +479,21 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   `ROTATE`, `CAPTION`, `UI`, `MAX_LIVE`) persist on the unit in
   `~/.config/bird-painter/unit.conf` — not a repo file — so a bare re-run
   keeps them. Boot chrome removal (plymouth theme, wallpapers, no
-  taskbar) verified by reboot on the first unit 2026-09-03. First run on
-  the first unit: 2026-09-03.
+  taskbar) applied on the first unit 2026-09-03: the session after the
+  reboot was verified (kiosk up, no taskbar); the splash's rotation on the
+  panel itself is an assumption until someone watches a boot — see
+  `scripts/make_splash.py`'s docstring. First run on the first unit:
+  2026-09-03.
 - `scripts/make_splash.py` — the table model's boot splash + wallpaper:
   the wall's paper, its serif, one bird (a fixture plate), "waking up…" —
   `splash-landscape.png` (1280×720, the desktop/greeter wallpaper) and
-  `splash-native.png` (720×1280: the same rotated to the panel's native
-  portrait, because plymouth paints before any compositor rotates). The
-  install script runs it on the unit with the repo's venv.
+  `splash-native.png` (720×1280: the same turned to the panel's native
+  portrait the way the unit's `ROTATE` turns the desktop, because plymouth
+  paints before any compositor rotates). The install script runs it on the
+  unit with the repo's venv and keeps the PNGs under
+  `/usr/local/share/bird-painter` (world-readable: the greeter runs as
+  `lightdm`). `make lint` covers `scripts/`; `tests/test_make_splash.py`
+  runs the generator.
 - `scripts/plymouth/` — the `birdpainter` plymouth theme (`.plymouth` +
   `.script`): the same shape as Pi OS's own `pix` theme — one full-screen
   image, no messages — installed by the install script, which also turns
