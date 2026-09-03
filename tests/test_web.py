@@ -110,6 +110,29 @@ def test_unit_wifi_routes_drive_nmcli_and_report_its_refusal(config, monkeypatch
     with TestClient(app, client=REMOTE) as remote:
         assert remote.get("/unit/wifi").status_code == 404
 
+def test_wall_page_and_its_module_revalidate(client):
+    """#151: the kiosk's Chromium served a cached layout.js against a fresh
+    index.html after a deploy and the import died silently. Both — and the
+    docs page — say revalidate, and passing `headers=` must not have cost
+    them their content type (the way a Response argument can) nor the
+    module its stat headers. The API's JSON carries no validator and no
+    freshness at all, so a browser has nothing to reuse it on."""
+    types = {
+        "/": "text/html",
+        "/layout.js": "text/javascript",
+        "/api/docs": "text/html",
+    }
+    for path, mime in types.items():
+        response = client.get(path)
+        assert response.headers["cache-control"] == "no-cache", path
+        assert response.headers["content-type"].startswith(mime), path
+    module = client.get("/layout.js").headers
+    assert module.get("etag") and module.get("last-modified")
+    for path in ("/api/live", "/api/archive"):
+        headers = client.get(path).headers
+        freshness = {"cache-control", "etag", "last-modified", "expires"}
+        assert not freshness & set(headers), path
+
 
 def test_live_reports_night_from_the_watch(config):
     """#122: the page dims itself on `night`; the flag is the watch's state,

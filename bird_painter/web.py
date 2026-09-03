@@ -60,6 +60,20 @@ LAYOUT_CAPTION_MIN = 0.5
 LAYOUT_CAPTION_MAX = 2.0
 
 
+# The page and the module it imports must come from the same deploy. A
+# kiosk Chromium keeps its disk cache across relaunches and, with no
+# directive, reuses a "fresh enough" layout.js against a newly fetched
+# index.html — the import then fails silently and the wall shows its empty
+# state (#151, seen on the first unit). `no-cache` means "ask before
+# reusing", not "don't cache". A bare FileResponse sends an ETag but does
+# not answer a conditional request with 304 (that lives in StaticFiles), so
+# every load re-downloads the 21 KB module over loopback — cheap, and not
+# worth conditional handling here. The issue's optional `?v=<mtime>` on the
+# import is skipped on purpose: with both files revalidated the mismatch
+# window is the milliseconds between two requests of one page load.
+REVALIDATE = {"Cache-Control": "no-cache"}
+
+
 def _is_loopback(client: tuple[str, int] | None) -> bool:
     """Whether a request came from this machine.
 
@@ -324,13 +338,16 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.live_settings = live_settings
 
     @app.get("/", response_class=HTMLResponse)
-    def wall() -> str:
-        return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    def wall() -> HTMLResponse:
+        page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        return HTMLResponse(page, headers=REVALIDATE)
 
     @app.get("/layout.js")
     def layout_js() -> FileResponse:
         # The wall imports this ES module (its layout maths, unit-tested).
-        return FileResponse(STATIC_DIR / "layout.js", media_type="text/javascript")
+        return FileResponse(
+            STATIC_DIR / "layout.js", media_type="text/javascript", headers=REVALIDATE
+        )
 
     @app.get("/unit-screen.js")
     def unit_screen_js() -> FileResponse:
@@ -339,11 +356,12 @@ def create_app(config: Config | None = None) -> FastAPI:
         return FileResponse(STATIC_DIR / "unit-screen.js", media_type="text/javascript")
 
     @app.get("/api/docs", response_class=HTMLResponse)
-    def api_docs_page() -> str:
+    def api_docs_page() -> HTMLResponse:
         """The API, documented for a human: every endpoint, every WebSocket
         event, and a live console wired to this wall's own stream. It renders
         `/api` — so the page can't drift from the description."""
-        return (STATIC_DIR / "api-docs.html").read_text(encoding="utf-8")
+        page = (STATIC_DIR / "api-docs.html").read_text(encoding="utf-8")
+        return HTMLResponse(page, headers=REVALIDATE)
 
     @app.get("/api")
     def api_description() -> JSONResponse:
