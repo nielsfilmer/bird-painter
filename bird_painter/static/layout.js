@@ -369,7 +369,12 @@ export function createDragScroller(threshold = DRAG_THRESHOLD_PX) {
   return {
     down({ id, y, scrollTop, pointerType = "touch", button = 0 }) {
       if (pointerType === "mouse" && button !== 0) return false;
-      swallow = false;
+      // A second finger landing mid-swipe re-seats the gesture (the first
+      // finger's release is then ignored by the id check), so the swipe's
+      // click must be swallowed from here — else a two-finger swipe over a
+      // card replays a bird (round-2 review of #146). A fresh press clears
+      // any stale flag.
+      swallow = drag !== null && drag.moved;
       drag = { id, y, top: scrollTop, moved: false };
       return true;
     },
@@ -387,7 +392,7 @@ export function createDragScroller(threshold = DRAG_THRESHOLD_PX) {
     },
     up({ id }) {
       if (!drag || id !== drag.id) return;
-      swallow = drag.moved;
+      swallow = swallow || drag.moved;
       drag = null;
     },
     cancel({ id }) {

@@ -219,8 +219,9 @@ def test_plan_wall_caption_scale_grows_type_and_reserve_together(tmp_path):
     ]
     one = plan_wall(paintings, tmp_path, 1280, 720, style="panel")
     big = plan_wall(paintings, tmp_path, 1280, 720, style="panel", caption_scale=1.5)
-    assert big.species_size == int(one.species_size * 1.5 + 0.5)
-    assert big.heard_size == int(one.heard_size * 1.5 + 0.5)
+    assert (big.species_size, big.heard_size) == (
+        int(one.species_size * 1.5 + 0.5), int(one.heard_size * 1.5 + 0.5)
+    ), "the general case; the literal below is what pins the rounding"
     assert big.caption_gap == one.caption_gap  # air above the name is not type
     # Bigger type, same sheet: the birds must give up room for it.
     assert max(p["size_vmin"] for p in big.placements) < max(

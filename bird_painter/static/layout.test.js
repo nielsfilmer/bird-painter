@@ -496,13 +496,29 @@ test("a non-primary mouse button is not a gesture", () => {
   assert.equal(s.dragging, false);
 });
 
-test("a second pointer is ignored while the first drags", () => {
+test("a stray pointer that never went down is ignored", () => {
   const s = createDragScroller();
   s.down({ id: 1, y: 600, scrollTop: 0 });
   assert.equal(s.move({ id: 2, y: 100 }), null);
   s.up({ id: 2 });
   assert.equal(s.dragging, true, "the stray pointer did not end the real gesture");
   assert.deepEqual(s.move({ id: 1, y: 500 }), { scrollTop: 100, capture: true });
+});
+
+test("a second finger landing mid-swipe still swallows the swipe's click", () => {
+  const s = createDragScroller();
+  s.down({ id: 1, y: 600, scrollTop: 0 });
+  assert.deepEqual(s.move({ id: 1, y: 500 }), { scrollTop: 100, capture: true });
+  s.down({ id: 2, y: 400, scrollTop: 100 }); // re-seats the gesture
+  s.up({ id: 1 });                            // the first finger's release: not ours any more
+  s.up({ id: 2 });                            // the second never moved
+  assert.equal(s.click(), true, "the swipe's click is swallowed");
+  assert.equal(s.click(), false, "once");
+  // A second finger landing during a mere press (no swipe) swallows nothing.
+  s.down({ id: 3, y: 600, scrollTop: 0 });
+  s.down({ id: 4, y: 500, scrollTop: 0 });
+  s.up({ id: 4 });
+  assert.equal(s.click(), false);
 });
 
 test("the threshold is the threshold", () => {

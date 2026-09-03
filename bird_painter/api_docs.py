@@ -41,7 +41,7 @@ ENDPOINTS: list[dict] = [
             "The full-screen collage page: birds fade in when heard and out "
             "when their time is up. Meant for a spare screen, not for reading. "
             "The params tune it for the table model's portrait panel, "
-            "which is read from across a room rather than at a desk; both "
+            "which is read from across a room rather than at a desk; all "
             "default to the look the wall has always had, so a plain / is "
             "unchanged. They live in the URL rather than in BP_* env vars "
             "because they describe the DISPLAY, not the service — one "

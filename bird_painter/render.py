@@ -156,9 +156,9 @@ def _caption_sizes(
     """Species and "heard at" type sizes, in pixels.
 
     `scale` multiplies the panel's sizes AFTER the clamp — a unit read from
-    further away asks for bigger type, and "50% bigger" should mean exactly
-    that at whole pixels (11 × 1.5 → 17, half rounding up), not "a different
-    clamp". It only exists for the plan: the layout
+    further away asks for bigger type, and "50% bigger" should mean that as
+    nearly as whole pixels allow (11 × 1.5 → 17, half rounding up), not "a
+    different clamp". It only exists for the plan: the layout
     reserves room for these sizes and measures each caption's width in them,
     so the type and the room it needs cannot drift apart (the #132 lesson).
     The e-paper frame stays at 1.

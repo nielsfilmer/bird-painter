@@ -705,8 +705,11 @@ def test_api_layout_caption_scales_the_panels_type(config):
         client.post("/dev/paint/robin")
         one = client.get("/api/layout?width=1280&height=720").json()
         big = client.get("/api/layout?width=1280&height=720&caption=1.5").json()
-        assert big["species_size"] == int(one["species_size"] * 1.5 + 0.5)
-        assert big["heard_size"] == int(one["heard_size"] * 1.5 + 0.5)
+        # The literal pins the endpoint's own number, not a restatement of the
+        # formula (round-2 QA of #146): 1280x720 sits at the panel's floor,
+        # 9/11 px, so 1.5 is 13.5/16.5 — half rounds UP, not to even.
+        assert (one["species_size"], one["heard_size"]) == (9, 11)
+        assert (big["species_size"], big["heard_size"]) == (14, 17)
         for query in ("caption=0.1", "caption=3", "caption=abc", "caption=-1"):
             assert client.get(f"/api/layout?{query}").status_code == 422, query
         # Both rails accepted.
