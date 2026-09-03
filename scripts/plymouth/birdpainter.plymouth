@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=bird-painter
+Description=The table model's boot splash: the wall's paper, one bird, "waking up…"
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/birdpainter
+ScriptFile=/usr/share/plymouth/themes/birdpainter/birdpainter.script

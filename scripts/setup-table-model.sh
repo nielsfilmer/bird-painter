@@ -64,7 +64,7 @@ log() { printf '\n==> %s\n' "$*"; }
 log "system packages"
 sudo apt-get update -q
 sudo apt-get install -y -q git python3-venv python3-dev libportaudio2 chromium \
-  wlr-randr curl
+  wlr-randr curl plymouth plymouth-themes
 
 log "checkout"
 if [ -d "$APP_DIR/.git" ]; then
@@ -262,10 +262,113 @@ if command -v raspi-config >/dev/null; then
   sudo raspi-config nonint do_blanking 1 || true          # 1 = disable
 fi
 
+log "boot: no Pi chrome from power-on to the wall"
+# From power-on to the wall the unit used to show: the rainbow splash, the
+# Pi's own plymouth theme, the greeter's wallpaper, then the desktop with
+# its panel and icons until Chromium came up. Each is replaced with the
+# wall's paper so the panel reads as one object waking up (owner: "boot
+# without showing any Pi interfaces"). This step runs LAST, after autologin
+# and blanking are set: it is cosmetic, and under `set -e` a failure here
+# must not leave a fresh unit without its autologin. A wrong theme or
+# wallpaper never stops a boot; the kernel line is not touched; the two
+# system files edited are copied aside once (`.bp-orig`) before the first
+# edit.
+# 5 (first, because it needs no splash). No taskbar: the kiosk covers it,
+#    but it flashes before Chromium and peeks out if Chromium ever
+#    restarts. Pi OS starts it under `lwrespawn` (/etc/xdg/labwc/autostart),
+#    which brings it straight back — so the respawner goes first, then the
+#    panel, retried for a while because on a cold boot neither may exist
+#    yet when our autostart runs. The [-] keeps the pattern from matching
+#    the shell that carries it; single quotes keep $(seq …) for that shell.
+sed -i '/pkill -x wf-panel-pi/d' "$AUTOSTART"
+append_line "$AUTOSTART" 'for _ in $(seq 1 30); do pkill -f "lwrespawn /usr/bin/wf-panel[-]pi"; pkill -x wf-panel-pi && break; sleep 1; done &'
+backup_once() {  # backup_once FILE — a root-owned copy aside, the first time only
+  [ -f "$1.bp-orig" ] || sudo cp "$1" "$1.bp-orig"
+}
+sudo_append_line() {  # append_line, for a root-owned file
+  if sudo test -s "$1" && [ "$(sudo tail -c1 "$1" | wc -l)" -eq 0 ]; then
+    echo | sudo tee -a "$1" >/dev/null
+  fi
+  echo "$2" | sudo tee -a "$1" >/dev/null
+}
+SPLASH_DIR=/usr/local/share/bird-painter   # root-owned, world-readable: the greeter runs as lightdm
+SPLASH_TMP="$(mktemp -d)"
+SPLASH_NOTE="splash, greeter wallpaper and desktop take effect on the next boot"
+if "$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/make_splash.py" "$SPLASH_TMP" \
+     "$APP_DIR/tests/fixtures/plates/good-hummingbird.jpg" "$ROTATE"; then
+  sudo mkdir -p "$SPLASH_DIR"
+  sudo cp "$SPLASH_TMP/splash-landscape.png" "$SPLASH_TMP/splash-native.png" "$SPLASH_DIR/"
+else
+  SPLASH_NOTE="the splash could NOT be generated; the boot chrome stays as it was"
+  echo "boot: $SPLASH_NOTE"
+fi
+rm -rf "$SPLASH_TMP"
+if [ -f "$SPLASH_DIR/splash-native.png" ]; then
+  # 1. The rainbow square at power-on. Appended at the end of config.txt,
+  #    which Pi OS ends with an [all] section; if a hand-added filter
+  #    section comes last, the line lands under it — put it where you want.
+  if [ -f /boot/firmware/config.txt ]; then
+    backup_once /boot/firmware/config.txt
+    if ! grep -q '^disable_splash=1' /boot/firmware/config.txt; then
+      sudo_append_line /boot/firmware/config.txt 'disable_splash=1'
+    fi
+  else
+    echo "boot: no /boot/firmware/config.txt — not a Pi OS boot partition; rainbow left alone"
+  fi
+  # 2. plymouth: the same shape as the Pi's own "pix" theme (one image,
+  #    nothing else), with the wall's paper. The image is pre-rotated to the
+  #    panel's native orientation — plymouth paints before any compositor.
+  #    A changed image or script needs the initramfs rebuilt (-R) as much
+  #    as a changed theme does, so the check is on all three files, not on
+  #    the theme name alone.
+  THEME_DIR=/usr/share/plymouth/themes/birdpainter
+  if [ "$(sudo /usr/sbin/plymouth-set-default-theme)" != "birdpainter" ] \
+     || ! sudo cmp -s "$SPLASH_DIR/splash-native.png" "$THEME_DIR/splash.png" \
+     || ! sudo cmp -s "$APP_DIR/scripts/plymouth/birdpainter.script" "$THEME_DIR/birdpainter.script" \
+     || ! sudo cmp -s "$APP_DIR/scripts/plymouth/birdpainter.plymouth" "$THEME_DIR/birdpainter.plymouth"; then
+    sudo mkdir -p "$THEME_DIR"
+    sudo cp "$APP_DIR/scripts/plymouth/birdpainter.plymouth" \
+            "$APP_DIR/scripts/plymouth/birdpainter.script" "$THEME_DIR/"
+    sudo cp "$SPLASH_DIR/splash-native.png" "$THEME_DIR/splash.png"
+    sudo /usr/sbin/plymouth-set-default-theme -R birdpainter \
+      || echo "boot: plymouth theme not set (the boot is unaffected)"
+  fi
+  # 3. The greeter's wallpaper, for the moment before autologin.
+  if [ -f /etc/lightdm/pi-greeter.conf ]; then
+    backup_once /etc/lightdm/pi-greeter.conf
+    for kv in "wallpaper=${SPLASH_DIR}/splash-landscape.png" "wallpaper_mode=fit"; do
+      key="${kv%%=*}"
+      if grep -qs "^${key}=" /etc/lightdm/pi-greeter.conf; then
+        sudo sed -i "s#^${key}=.*#${kv}#" /etc/lightdm/pi-greeter.conf
+      else
+        sudo_append_line /etc/lightdm/pi-greeter.conf "$kv"
+      fi
+    done
+  fi
+  # 4. The desktop behind Chromium: the same paper, no icons. This file is
+  #    the kiosk's, so it is written whole — a hand edit does not survive.
+  mkdir -p "$HOME/.config/pcmanfm/LXDE-pi"
+  cat > "$HOME/.config/pcmanfm/LXDE-pi/desktop-items-0.conf" <<DESK
+[*]
+wallpaper_mode=fit
+wallpaper_common=1
+wallpaper=${SPLASH_DIR}/splash-landscape.png
+desktop_bg=#ece1c6
+desktop_fg=#4a3f2e
+desktop_shadow=#ece1c6
+show_wm_menu=0
+show_documents=0
+show_trash=0
+show_mounts=0
+DESK
+fi
+
 log "done"
 echo "unit:    caption ${CAPTION}, ui ${UI}, birds ${MAX_LIVE}, rotate ${ROTATE} on ${OUTPUT} (remembered in ${UNIT_CONF})"
 echo "service: $(systemctl is-active bird-painter) (restarted)"
 echo "kiosk:   the URL and flags take effect on the next login — reboot (a relaunched Chromium keeps the flags its loop started with)"
+echo "boot:    ${SPLASH_NOTE}"
+echo "         the splash's rotation on the panel is an assumption (see scripts/make_splash.py) — watch one boot; if it is upside down, say so"
 echo "cursor/rotation/autologin/blanking: session settings — take effect on the next login (reboot)"
 echo "wall:    http://$(hostname -I | awk '{print $1}'):${PORT}/?style=panel"
 echo "backend: $("$APP_DIR/.venv/bin/python" -c 'import importlib.util as u; print("tflite-runtime" if u.find_spec("tflite_runtime") else ("tensorflow" if u.find_spec("tensorflow") else "NONE"))')"
