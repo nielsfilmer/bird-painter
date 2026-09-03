@@ -25,10 +25,22 @@ def test_wall_page_serves(client):
     assert "<title>bird-painter</title>" in response.text
 
 
+def test_live_reports_night_from_the_watch(config):
+    """#122: the page dims itself on `night`; the flag is the watch's state,
+    which the schedule sets on its own thread. Off (the fixture) it is False
+    whatever the clock says; flipped, /api/live says so at once."""
+    app = create_app(config)
+    with TestClient(app, client=LOCAL) as client:
+        assert client.get("/api/live").json()["night"] is False
+        app.state.night.is_night = True
+        assert client.get("/api/live").json()["night"] is True
+
+
 def test_live_starts_empty_with_ttl(client, config):
     body = client.get("/api/live").json()
     assert body == {
         "ttl_seconds": config.paint_ttl_seconds,
+        "night": False,
         "paintings": [],
     }
 

@@ -323,6 +323,13 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     cooldown (via the store) + rolling per-hour cap.
   - `runner.py` — `PaintRunner`: detections → gate → brush → store; the
     callback the mic feeds. Only a successful paint consumes a cap slot.
+  - `night.py` — night mode (#122): `NightSchedule` (local hours, may wrap
+    midnight; same hour twice = never), `Backlight` (percent in, sysfs
+    integers out), `NightWatch` (a daemon thread; writes the backlight ONLY
+    on transitions, so a hand adjustment is not fought; `is_night` is what
+    `/api/live` reports and the page dims itself on). `watch_from_config`
+    finds the first `/sys/class/backlight/*` — none on a dev box or the
+    recorder, where the watch keeps state only.
   - `occasions.py` — occasion hats: public-holiday table + `hat_for(...)`;
     personal days come only from env (`BP_HAT_DAYS`/`BP_HAT_DATES`), never
     committed (public repo).
@@ -443,7 +450,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   event hub + detection WebSocket, API docs (incl. docs-vs-routes drift
   guards), wall-layout port + JS-parity, /wall.png render incl. its
   style/layer params, the panel's focal scatter (`test_frame_layout.py`), the
-  frame client's fetch/dither/stamp cycle, painting trim; import-purity
+  frame client's fetch/dither/stamp cycle, painting trim, night mode's
+  schedule/backlight/transitions (`test_night.py`); import-purity
   regression).
   Always injects absolute tmp archive dirs.
 - `scripts/status.sh` — live per-phase status snapshot from GitHub

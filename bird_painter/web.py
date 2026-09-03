@@ -28,6 +28,7 @@ from .api_docs import describe, openapi_websocket_path
 from .config import Config, load_config
 from .events import PING_SECONDS, EventHub, absolutize, announce_painted
 from .gate import TriggerGate
+from .night import watch_from_config
 from .occasions import hat_for
 from .placeholder import placeholder_svg
 from .runner import PaintRunner
@@ -192,12 +193,14 @@ def create_app(config: Config | None = None) -> FastAPI:
     gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
     events = EventHub()
     runner = PaintRunner(config, store, gate, events)
+    night = watch_from_config(config)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # The mic thread publishes from off-loop; the hub needs the loop to
         # hop onto before any detection can reach a socket.
         events.bind(asyncio.get_running_loop())
+        night.start()
         if config.enable_listener:
             threading.Thread(
                 target=_start_listener, args=(config, runner), daemon=True
@@ -207,6 +210,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         try:
             yield
         finally:
+            night.stop()
             events.unbind()
 
     app = FastAPI(
@@ -256,6 +260,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.config = config
     app.state.store = store
     app.state.events = events
+    app.state.night = night
 
     @app.get("/", response_class=HTMLResponse)
     def wall() -> str:
@@ -285,6 +290,9 @@ def create_app(config: Config | None = None) -> FastAPI:
         return JSONResponse(
             {
                 "ttl_seconds": config.paint_ttl_seconds,
+                # True between the night hours: the page dims itself on it
+                # (the backlight, where there is one, is dimmed server-side).
+                "night": bool(night.is_night),
                 "paintings": [
                     {
                         "file": p.file,

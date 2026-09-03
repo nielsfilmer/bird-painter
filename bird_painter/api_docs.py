@@ -102,11 +102,16 @@ ENDPOINTS: list[dict] = [
         "description": (
             "The live set — paintings younger than the TTL, newest first, "
             "capped at BP_WALL_MAX_LIVE. `audio` is the detection clip's "
-            "filename, or null for birds painted without one."
+            "filename, or null for birds painted without one. `night` is "
+            "true between BP_NIGHT_FROM and BP_NIGHT_TO (local hours; "
+            "BP_NIGHT_ENABLED=false makes it always false): the wall dims "
+            "itself on it, and a panel with a backlight is dimmed to "
+            "BP_NIGHT_BRIGHTNESS percent by the service."
         ),
         "returns": "application/json",
         "example": {
             "ttl_seconds": 10800,
+            "night": False,
             "paintings": [
                 {
                     "file": EXAMPLE_PAINTING_FILE,

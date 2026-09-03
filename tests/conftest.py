@@ -41,6 +41,7 @@ def config(archive_dir: Path) -> Config:
     return Config(
         archive_dir=archive_dir,
         enable_listener=False,
+        night_enabled=False,  # the real clock must not decide a test
         fal_key="",
     )
 

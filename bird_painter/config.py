@@ -241,8 +241,31 @@ class Config:
     enhance_clips: bool = field(
         default_factory=lambda: _env_bool("BP_ENHANCE_CLIPS", True)
     )
+    # Night mode (#122): between these local hours the backlight is dimmed
+    # to BP_NIGHT_BRIGHTNESS percent (on a panel that exposes one) and the
+    # wall dims itself (everywhere). A lit cream wall in a dark room is a
+    # lamp; the table model lives in living rooms. Same hour twice = never.
+    night_enabled: bool = field(
+        default_factory=lambda: _env_bool("BP_NIGHT_ENABLED", True)
+    )
+    night_from_hour: int = field(default_factory=lambda: _env_int("BP_NIGHT_FROM", 22))
+    night_to_hour: int = field(default_factory=lambda: _env_int("BP_NIGHT_TO", 7))
+    night_brightness: int = field(
+        default_factory=lambda: _env_int("BP_NIGHT_BRIGHTNESS", 20)
+    )
 
     def __post_init__(self) -> None:
+        for name in ("night_from_hour", "night_to_hour"):
+            if not 0 <= getattr(self, name) <= 23:
+                raise ConfigError(
+                    f"BP_NIGHT_FROM / BP_NIGHT_TO are hours, 0..23; got "
+                    f"{getattr(self, name)} for {name}"
+                )
+        if not 1 <= self.night_brightness <= 100:
+            raise ConfigError(
+                "BP_NIGHT_BRIGHTNESS is a percentage, 1..100; got "
+                f"{self.night_brightness}"
+            )
         # The location filter keys on a lat/lon pair — one without the other is
         # a misconfiguration, not a partial filter. Fail loudly rather than
         # silently ignoring the half that was set.
