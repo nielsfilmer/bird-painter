@@ -477,6 +477,8 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   wrapper the senior-dev review runs. `test-js` skips gracefully if node is
   absent.
 - `tests/fixtures/plates/` — five real plates (downscaled) pinning thresholds
+  (one of them, the hummingbird, is also the boot splash's bird — the
+  install script draws the splash from it)
   calibrated over the whole archive: three for the plate check (one good, one
   desk photo, one grey block) and two for the panel's ground detection (one
   painted on a grey field inside a white border, one pale bird on true white —
@@ -514,6 +516,28 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   script installs (user name substituted): NetworkManager's actions and
   logind's reboot for the unit's user only, so the service — which has no
   login session — can join a network and restart the unit from its screen.
+  keeps them. Boot chrome removal (plymouth theme, wallpapers, no
+  taskbar) applied on the first unit 2026-09-03: the session after the
+  reboot was verified (kiosk up, no taskbar); the splash's rotation on the
+  panel itself is an assumption until someone watches a boot — see
+  `scripts/make_splash.py`'s docstring. First run on the first unit:
+  2026-09-03.
+- `scripts/make_splash.py` — the table model's boot splash + wallpaper:
+  the wall's paper, its serif, one bird (a fixture plate), "waking up…" —
+  `splash-landscape.png` (1280×720, the desktop/greeter wallpaper) and
+  `splash-native.png` (720×1280: the same turned to the panel's native
+  portrait the way the unit's `ROTATE` turns the desktop, because plymouth
+  paints before any compositor rotates). The install script runs it on the
+  unit with the repo's venv and keeps the PNGs under
+  `/usr/local/share/bird-painter` (world-readable: the greeter runs as
+  `lightdm`). `make lint` covers `scripts/`; `tests/test_make_splash.py`
+  runs the generator.
+- `scripts/plymouth/` — the `birdpainter` plymouth theme (`.plymouth` +
+  `.script`): the same shape as Pi OS's own `pix` theme — one full-screen
+  image, no messages — installed by the install script, which also turns
+  the rainbow square off (`disable_splash=1`), points the greeter and the
+  desktop at the wallpaper, and kills the taskbar (and its `lwrespawn`) at
+  login, so nothing but the wall's paper shows from power-on to the wall.
 - `scripts/memcheck.py` — peak-RSS measurement of the Python side on a
   unit (#121's number). On the first unit with LiteRT: 261 MB with the
   Analyzer loaded, 331 MB after a clip cleanup; the whole running service

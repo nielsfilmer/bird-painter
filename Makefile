@@ -16,7 +16,7 @@ QA_PID ?= /tmp/bp-qa.pid
 .PHONY: lint test test-js review-checks run qa-up qa-down
 
 lint:
-	$(VENV)/ruff check bird_painter tests
+	$(VENV)/ruff check bird_painter tests scripts
 
 test:
 	$(VENV)/pytest -q
