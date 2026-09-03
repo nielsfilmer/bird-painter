@@ -18,6 +18,9 @@ is driven through `nmcli`; the install script grants the unit's user
 NetworkManager's polkit actions, because a service with no session otherwise
 gets "auth" and nothing can answer it. Every subprocess is an argv list,
 never a shell: an SSID is untrusted text that arrives from a touchscreen.
+A password is handed to nmcli as an argument, so it is never in a log line —
+but it is in that process's argv (`/proc/<pid>/cmdline`) for the seconds the
+join takes, readable by any user on the box. The unit has one.
 """
 
 from __future__ import annotations
@@ -44,25 +47,39 @@ NMCLI = "/usr/bin/nmcli"
 NMCLI_TIMEOUT = 30
 JOIN_TIMEOUT = 60
 
-# Every knob the screen may write, with its bounds and where it lives.
-# unit.conf keys are bare; .env keys carry the BP_ prefix.
-KNOBS: dict[str, tuple[float, float, str]] = {
-    "CAPTION": (0.5, 2.0, "unit"),
-    "UI": (0.5, 2.0, "unit"),
-    "MAX_LIVE": (1, 12, "unit"),
-    "ROTATE": (0, 270, "unit"),
-    "NIGHT_ENABLED": (0, 1, "env"),
-    "NIGHT_FROM": (0, 23, "env"),
-    "NIGHT_TO": (0, 23, "env"),
-    "NIGHT_BRIGHTNESS": (1, 100, "env"),
+
+@dataclass(frozen=True)
+class Knob:
+    """One setting the screen may change: its bounds, the step its stepper
+    takes, which file it lives in (`unit.conf` bare, `.env` as BP_*), and
+    for MAX_LIVE both. The ONE table: the page reads it from /unit, so a
+    stepper can't drift from the server's bounds (review of #157)."""
+
+    lo: float
+    hi: float
+    step: float
+    unit: bool = True
+    env: str | None = None
+
+    @property
+    def integer(self) -> bool:
+        return float(self.step).is_integer()
+
+
+KNOBS: dict[str, Knob] = {
+    "CAPTION": Knob(0.5, 2.0, 0.1),
+    "UI": Knob(0.5, 2.0, 0.1),
+    "MAX_LIVE": Knob(1, 12, 1, env="BP_WALL_MAX_LIVE"),
+    "ROTATE": Knob(0, 270, 90),  # a quarter turn; snapped in _bounded
+    "NIGHT_ENABLED": Knob(0, 1, 1, unit=False, env="BP_NIGHT_ENABLED"),
+    "NIGHT_FROM": Knob(0, 23, 1, unit=False, env="BP_NIGHT_FROM"),
+    "NIGHT_TO": Knob(0, 23, 1, unit=False, env="BP_NIGHT_TO"),
+    "NIGHT_BRIGHTNESS": Knob(1, 100, 5, unit=False, env="BP_NIGHT_BRIGHTNESS"),
 }
-ENV_NAMES = {
-    "MAX_LIVE": "BP_WALL_MAX_LIVE",
-    "NIGHT_ENABLED": "BP_NIGHT_ENABLED",
-    "NIGHT_FROM": "BP_NIGHT_FROM",
-    "NIGHT_TO": "BP_NIGHT_TO",
-    "NIGHT_BRIGHTNESS": "BP_NIGHT_BRIGHTNESS",
-}
+
+
+def knobs_json() -> dict:
+    return {k: {"min": v.lo, "max": v.hi, "step": v.step} for k, v in KNOBS.items()}
 
 
 @dataclass
@@ -103,28 +120,39 @@ class LiveSettings:
 
 
 def _bounded(key: str, raw, default: float) -> float:
-    lo, hi, _ = KNOBS[key]
+    knob = KNOBS[key]
     try:
         value = float(raw) if raw is not None else default
-    except ValueError:
+    except (TypeError, ValueError):
         value = default
-    return min(hi, max(lo, value))
+    if value != value:  # NaN: min/max would pass it through by argument order
+        value = default
+    value = min(knob.hi, max(knob.lo, value))
+    if key == "ROTATE":
+        value = int((value + 45) // 90) * 90 % 360  # wlr-randr knows quarter turns only
+    return value
 
 
 # ---- the files -------------------------------------------------------------
 
 
+class SettingsWriteError(OSError):
+    """A settings file could not be written; the message names it."""
+
+
 def read_conf(path: Path) -> dict[str, str]:
-    """KEY=VALUE lines; comments and blanks ignored; last value wins."""
+    """KEY=VALUE lines; comments and blanks ignored; last value wins. A file
+    that can't be read — missing, or not UTF-8 — is empty, not fatal: this
+    runs at startup, and one stray byte in .env must not stop the wall."""
     values: dict[str, str] = {}
     try:
-        for line in path.read_text().splitlines():
+        for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, _, value = line.partition("=")
             values[key.strip()] = value.strip().strip('"').strip("'")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         pass
     return values
 
@@ -135,9 +163,10 @@ def write_conf(updates: dict[str, str], path: Path) -> dict[str, str]:
     twice collapses to its first line. Returns the merged values."""
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        lines = path.read_text().splitlines()
-    except OSError:
-        lines = []
+        lines = path.read_text(encoding="utf-8").splitlines()
+        mode = path.stat().st_mode & 0o777
+    except (OSError, UnicodeDecodeError):
+        lines, mode = [], 0o600
     seen: set[str] = set()
     out: list[str] = []
     for line in lines:
@@ -151,8 +180,13 @@ def write_conf(updates: dict[str, str], path: Path) -> dict[str, str]:
     for key, value in updates.items():
         if key not in seen:
             out.append(f"{key}={value}")
+    # The temp file is born with the target's mode (0600 for a new file): a
+    # .env with the key in it must never sit world-readable, even briefly.
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text("\n".join(out) + "\n")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("\n".join(out) + "\n")
+    os.chmod(tmp, mode)
     os.replace(tmp, path)
     return read_conf(path)
 
@@ -169,6 +203,8 @@ def clean_updates(payload: dict) -> dict[str, float]:
             value = float(payload[key])
         except (TypeError, ValueError):
             continue
+        if value != value:  # NaN is not a setting
+            continue
         updates[key] = _bounded(key, value, value)
     return updates
 
@@ -176,7 +212,7 @@ def clean_updates(payload: dict) -> dict[str, float]:
 def _fmt(key: str, value: float) -> str:
     if key == "NIGHT_ENABLED":
         return "true" if value else "false"
-    if key in ("MAX_LIVE", "ROTATE", "NIGHT_FROM", "NIGHT_TO", "NIGHT_BRIGHTNESS"):
+    if KNOBS[key].integer:
         return str(int(value))
     return f"{value:g}"
 
@@ -188,18 +224,22 @@ def apply(
     conf_path: Path | None = None,
     env_path: Path | None = None,
 ) -> LiveSettings:
-    """Write the changed knobs to their files and to the running settings.
-    The caller reschedules the night watch from `live.night`."""
+    """Write the changed knobs to their files and then to the running
+    settings — the files first, so a write that fails leaves the process as
+    it was and the error says which file did not take (the other, if any,
+    already did; a retry is idempotent). The caller reschedules the night
+    watch from `live.night`."""
     conf_path = conf_path or UNIT_CONF
     env_path = env_path or ENV_FILE
-    unit_writes = {k: _fmt(k, v) for k, v in updates.items() if KNOBS[k][2] == "unit"}
-    env_writes = {
-        ENV_NAMES[k]: _fmt(k, v) for k, v in updates.items() if k in ENV_NAMES
-    }
-    if unit_writes:
-        write_conf(unit_writes, conf_path)
-    if env_writes:
-        write_conf(env_writes, env_path)
+    unit_writes = {k: _fmt(k, v) for k, v in updates.items() if KNOBS[k].unit}
+    env_writes = {KNOBS[k].env: _fmt(k, v) for k, v in updates.items() if KNOBS[k].env}
+    for writes, path in ((unit_writes, conf_path), (env_writes, env_path)):
+        if not writes:
+            continue
+        try:
+            write_conf(writes, path)
+        except OSError as exc:
+            raise SettingsWriteError(f"could not write {path.name}: {exc}") from exc
     if "CAPTION" in updates:
         live.caption = updates["CAPTION"]
     if "UI" in updates:
@@ -248,14 +288,37 @@ class Connectivity:
 
 def _nmcli(*args: str, timeout: float = NMCLI_TIMEOUT) -> str:
     # An absolute path and an argv list: nothing here is shell-interpreted,
-    # and an SSID from the touchscreen is just one argument.
+    # and an SSID from the touchscreen is just one argument. Terse output
+    # with escapes ON: a `:` inside an SSID arrives as `\:`, see _fields.
     return subprocess.run(  # noqa: S603
-        [NMCLI, "-t", "--escape", "no", *args],
+        [NMCLI, "-t", "--escape", "yes", *args],
         capture_output=True,
         text=True,
         timeout=timeout,
         check=True,
     ).stdout
+
+
+def _fields(line: str) -> list[str]:
+    """Split one terse nmcli line on its unescaped colons ("Cafe\\: Guest"
+    is one field). A `\\\\` is a literal backslash."""
+    out: list[str] = []
+    cur: list[str] = []
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if c == "\\" and i + 1 < len(line):
+            cur.append(line[i + 1])
+            i += 2
+            continue
+        if c == ":":
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(c)
+        i += 1
+    out.append("".join(cur))
+    return out
 
 
 def connectivity(rescan: bool = False) -> Connectivity:
@@ -278,7 +341,7 @@ def connectivity(rescan: bool = False) -> Connectivity:
             *(["--rescan", "yes"] if rescan else []),
         )
         for line in listing.splitlines():
-            parts = line.split(":")
+            parts = _fields(line)
             if len(parts) < 4 or not parts[1]:
                 continue
             active = parts[0] == "yes"
@@ -293,14 +356,18 @@ def connectivity(rescan: bool = False) -> Connectivity:
                 ssid = net.ssid
         for line in _nmcli("-f", "IP4.ADDRESS", "device", "show", "wlan0").splitlines():
             if line.startswith("IP4.ADDRESS"):
-                ip = line.partition(":")[2].split("/")[0]
+                ip = _fields(line)[1].split("/")[0]
                 break
     except (OSError, subprocess.SubprocessError, ValueError):
         pass
-    # One row per SSID — the strongest, the active one on top.
+    # One row per SSID — the active one whatever its signal, else the
+    # strongest; the active one on top.
     best: dict[str, Network] = {}
     for net in networks:
-        if net.ssid not in best or net.signal > best[net.ssid].signal or net.active:
+        held = best.get(net.ssid)
+        if held is None or (net.active and not held.active):
+            best[net.ssid] = net
+        elif held.active == net.active and net.signal > held.signal:
             best[net.ssid] = net
     ordered = sorted(best.values(), key=lambda n: (not n.active, -n.signal))
     return Connectivity(state=state or "unknown", ssid=ssid, ip=ip, networks=ordered)

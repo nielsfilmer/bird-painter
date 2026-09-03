@@ -422,8 +422,15 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
     night group, network (list in reach, join with an on-screen keyboard,
     forget), about + restart. Loaded by the wall only in panel mode and only
     when `/unit` answers (i.e. on the unit itself); opened by a 1.5 s press
-    in the bottom-left corner; closes on × or a minute idle. Every number it
-    shows is the server's.
+    in the bottom-left corner; closes on × or a minute idle (not during a
+    join). Every number it shows is the server's — bounds and steps too,
+    from `/unit`'s `bounds`, so a stepper can't drift from the server. Taps
+    coalesce into one PUT per 300 ms; a failed PUT reloads the server's
+    numbers; restart needs a second tap. With no internet at boot it opens
+    the network list by itself after 20 s, and keeps the wall's
+    "offline — still listening…" line current. Its pure helpers (stepper
+    maths, escaping, signal bars, error wording) are unit-tested in
+    `static/unit-screen.test.js` (`make test-js`).
   - `static/api-docs.html` — the documentation page: renders `/api` and
     carries a live console wired to `/ws/detections`.
   - `static/index.html` — the wall (polling, fade in/out); imports the layout

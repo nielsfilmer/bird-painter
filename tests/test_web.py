@@ -74,6 +74,11 @@ def test_unit_screen_api_is_loopback_only_and_writes_its_files(
         }
         assert local.put("/unit", json={"FAL_KEY": "x"}).status_code == 400
         assert local.put("/unit", json=[1]).status_code == 400
+        assert local.put("/unit", content=b"x").status_code == 400  # not 500
+        assert local.post("/unit/wifi/join", content=b"").status_code == 400
+        assert local.get("/unit").json()["bounds"]["CAPTION"]["max"] == 2.0
+        # /api reports the cap the screen set, not the one the process started with
+        assert local.get("/api").json()["settings"]["wall_max_live"] == 4
 
 
 def test_unit_wifi_routes_drive_nmcli_and_report_its_refusal(config, monkeypatch):
@@ -109,6 +114,7 @@ def test_unit_wifi_routes_drive_nmcli_and_report_its_refusal(config, monkeypatch
         assert local.post("/unit/reboot").status_code == 500
     with TestClient(app, client=REMOTE) as remote:
         assert remote.get("/unit/wifi").status_code == 404
+
 
 def test_wall_page_and_its_module_revalidate(client):
     """#151: the kiosk's Chromium served a cached layout.js against a fresh

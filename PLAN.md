@@ -642,7 +642,11 @@ whole magic; ship it first.
   page re-plans; the night watch is rescheduled); orientation on the next
   restart, which the kiosk reads from `unit.conf` at login. The API behind
   it (`/unit*`) is loopback-only like `/dev`: a settings screen exists on
-  the touchscreen in front of the unit and nowhere else. WiFi goes through
+  the touchscreen in front of the unit and nowhere else; it also serves
+  every knob's bounds, so the page never carries its own copy. First boot
+  with no internet opens the network list by itself after twenty seconds,
+  and the wall shows "offline — still listening…" until the network is
+  fully up. WiFi goes through
   NetworkManager (`nmcli`, argv lists — an SSID and a password are
   touchscreen input) under a polkit rule scoped to the unit's user; the
   password never reaches a log. No captive-portal handling: a unit in a

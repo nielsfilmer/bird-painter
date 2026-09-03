@@ -119,9 +119,9 @@ class FakeRun:
 
 
 WIFI_LIST = (
+    "no:home-wifi:90:WPA2\n"  # a stronger BSSID of the same network, not the active one
     "yes:home-wifi:84:WPA2\n"
-    "no:home-wifi:40:WPA2\n"
-    "no:KPN-Gast:55:\n"
+    "no:Cafe\\: Guest:55:\n"  # a colon in the name, escaped by nmcli
     "no::30:WPA2\n"
     "no:neighbours-5G:22:WPA2 WPA3\n"
 )
@@ -138,10 +138,10 @@ def test_connectivity_parses_nmcli_and_dedupes_ssids(monkeypatch):
     monkeypatch.setattr(unit.subprocess, "run", run)
     c = unit.connectivity()
     assert c.state == "full" and c.ssid == "home-wifi" and c.ip == "192.168.1.126"
-    assert [n.ssid for n in c.networks] == ["home-wifi", "KPN-Gast", "neighbours-5G"]
-    assert c.networks[0].active and c.networks[0].signal == 84
+    assert [n.ssid for n in c.networks] == ["home-wifi", "Cafe: Guest", "neighbours-5G"]
+    assert c.networks[0].active and c.networks[0].signal == 84  # active beats stronger
     assert not c.networks[1].secured and c.networks[2].secured
-    assert all(a[:4] == [unit.NMCLI, "-t", "--escape", "no"] for a in run.calls)
+    assert all(a[:4] == [unit.NMCLI, "-t", "--escape", "yes"] for a in run.calls)
     assert not any("--rescan" in a for a in run.calls)
     unit.connectivity(rescan=True)
     assert any("--rescan" in a for a in run.calls)
@@ -184,3 +184,51 @@ def test_join_reports_nmclis_last_line_on_failure_without_the_password(monkeypat
     monkeypatch.setattr(unit.subprocess, "run", fail)
     ok, msg = unit.join("home-wifi", "s3cret")
     assert not ok and "refused" in msg and "s3cret" not in msg
+
+
+def test_terse_fields_honour_nmclis_escapes():
+    assert unit._fields("yes:Cafe\\: Guest:55:WPA2") == [
+        "yes",
+        "Cafe: Guest",
+        "55",
+        "WPA2",
+    ]
+    assert unit._fields("a\\\\b:c") == ["a\\b", "c"]
+    assert unit._fields("IP4.ADDRESS[1]:192.0.2.7/24") == [
+        "IP4.ADDRESS[1]",
+        "192.0.2.7/24",
+    ]
+
+
+def test_write_conf_keeps_the_files_mode_and_never_exposes_the_key(tmp_path: Path):
+    env = tmp_path / ".env"
+    env.write_text("FAL_KEY=secret\n")
+    env.chmod(0o600)
+    unit.write_conf({"BP_NIGHT_FROM": "23"}, env)
+    assert env.stat().st_mode & 0o777 == 0o600
+    fresh = tmp_path / "new.conf"
+    unit.write_conf({"UI": "1"}, fresh)
+    assert fresh.stat().st_mode & 0o777 == 0o600
+
+
+def test_rotate_snaps_to_a_quarter_turn_and_nan_is_dropped():
+    assert unit.clean_updates({"ROTATE": 45}) == {"ROTATE": 90}
+    assert unit.clean_updates({"ROTATE": 300}) == {"ROTATE": 270}
+    assert unit.clean_updates({"CAPTION": "nan"}) == {}
+    assert unit.clean_updates({"CAPTION": float("inf")}) == {"CAPTION": 2.0}
+
+
+def test_apply_names_the_file_that_could_not_be_written(tmp_path: Path):
+    import pytest
+
+    conf = tmp_path / "unit.conf"
+    conf.write_text("CAPTION=1.5\n")
+    env = tmp_path / "ro" / ".env"  # its directory does not exist and cannot be made
+    (tmp_path / "ro").write_text("not a directory")
+    live = unit.LiveSettings.from_config(config_for(tmp_path), conf)
+    with pytest.raises(unit.SettingsWriteError, match=".env"):
+        unit.apply(
+            {"CAPTION": 1.7, "NIGHT_FROM": 23}, live, conf_path=conf, env_path=env
+        )
+    assert unit.read_conf(conf)["CAPTION"] == "1.7"  # the first file took
+    assert live.caption == 1.5  # the process did not move

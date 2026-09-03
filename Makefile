@@ -34,15 +34,22 @@ test-js:
 review-checks: lint test test-js
 
 # The wall itself, in the foreground — the normal way to run this thing.
+# A dev box is loopback, so ?style=panel would mount the settings screen and a
+# stepper tap would rewrite the developer's own ~/bird-painter/.env: both the
+# dev wall and the QA instance keep their settings files in throwaway places.
 run:
-	$(VENV)/python -m bird_painter
+	@mkdir -p .bp-dev
+	BP_UNIT_CONF=$(CURDIR)/.bp-dev/unit.conf BP_ENV_FILE=$(CURDIR)/.bp-dev/.env \
+		$(VENV)/python -m bird_painter
 
 # Start / stop the throwaway instance. These exist so the recurring chore of
 # hosting an instance is ONE narrow allowlisted command instead of a raw
 # interpreter invocation (CLAUDE.md's permission policy: a repo wrapper, not an
 # open `python`/`npm run` surface).
 qa-up:
+	@mkdir -p $(QA_ARCHIVE)
 	@BP_ARCHIVE_DIR=$(QA_ARCHIVE) BP_ENABLE_LISTENER=false BP_PORT=$(QA_PORT) \
+		BP_UNIT_CONF=$(QA_ARCHIVE)/unit.conf BP_ENV_FILE=$(QA_ARCHIVE)/.env \
 		FAL_KEY= nohup $(VENV)/python -m bird_painter --no-prompt \
 		> $(QA_LOG) 2>&1 & echo $$! > $(QA_PID)
 	@sleep 4

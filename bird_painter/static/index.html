@@ -378,10 +378,19 @@
      relaunched at 03:00 must not show four seconds of bright cream. */
   body.polled #night { transition: opacity 4s ease; }
   body.night #night { opacity: 0.55; }
+  /* The unit's offline line (#123): italic, dim, low on the sheet, only in
+     panel mode and only while the network is not fully up. */
+  #offline {
+    position: fixed; left: 0; right: 0; bottom: 3.6vh; z-index: 12; text-align: center;
+    font-style: italic; letter-spacing: 0.12em; color: var(--ink-dim, #8d8065);
+    font-size: calc(2.6vmin * var(--ui-scale, 1)); pointer-events: none;
+  }
+  body:not(.panel) #offline { display: none; }
 </style>
 </head>
 <body>
 <div id="night" aria-hidden="true"></div>
+<div id="offline" hidden>offline — still listening…</div>
 <div id="header">
   <div class="eyebrow">birds outside</div>
   <div class="title">heard recently</div>
@@ -456,16 +465,27 @@ function applyUnitSettings(settings) {
   lastPlanKey = null; // the plan depends on the caption scale: ask again
   layoutPanel();
 }
+// "offline — still listening…": the unit's own line, shown while the
+// network is not fully up (#123). The screen module keeps it current.
+function showConnectivity(c) {
+  const line = document.getElementById("offline");
+  if (line) line.hidden = !c || c.state === "full" || c.state === "unknown";
+}
 if (panelStyle) {
   fetch("/unit", { cache: "no-store" })
     .then(res => (res.ok ? res.json() : null))
     .then(state => {
-      if (!state) return;
+      if (!state) return; // not the unit: no screen, the URL's values stand
       applyUnitSettings(state.settings);
-      return import("/unit-screen.js").then(m =>
-        m.mountUnitScreen({ initial: state, onSettings: s => applyUnitSettings(s.settings) }));
+      return import("/unit-screen.js").then(m => m.mountUnitScreen({
+        initial: state,
+        onSettings: s => applyUnitSettings(s.settings),
+        onConnectivity: showConnectivity,
+      }));
     })
-    .catch(() => {}); // not the unit: no screen, the URL's values stand
+    // A stale module against a fresh page is #151's failure; say so rather
+    // than sit quietly without a settings screen.
+    .catch(err => console.warn("settings screen not loaded:", err));
 }
 
 function heardText(bornAt) {

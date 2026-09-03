@@ -89,7 +89,7 @@ ENDPOINTS: list[dict] = [
                     "button, the overlay's heading and close, 'more', and "
                     "the card lettering. Independent of caption, so a frame "
                     "can size its plates' type and its controls separately; "
-                    "the 7\" table model runs 1.5 for both"
+                    'the 7" table model runs 1.5 for both'
                 ),
             },
         ],
@@ -305,7 +305,7 @@ ENDPOINTS: list[dict] = [
                     "0.5..2; scales the panel's fixed-size type, and with it "
                     "the room the plan reserves under each bird and the "
                     "measured caption widths — so bigger lettering never "
-                    "lands on a bird. The 7\" table model runs 1.5. Ignored "
+                    'lands on a bird. The 7" table model runs 1.5. Ignored '
                     "for style=wall, whose type is the browser's own"
                 ),
             },
@@ -314,8 +314,7 @@ ENDPOINTS: list[dict] = [
         "statuses": {
             "200": "the plan",
             "422": (
-                "unknown style, a size outside 64..8192, or a caption "
-                "outside 0.5..2"
+                "unknown style, a size outside 64..8192, or a caption outside 0.5..2"
             ),
         },
         "example": {
@@ -378,9 +377,11 @@ ENDPOINTS: list[dict] = [
         "description": (
             "The table model's settings, as the screen on the unit reads them "
             "(#123): the per-unit display knobs (CAPTION, UI, MAX_LIVE, ROTATE), "
-            "the night schedule, whether it is night now and whether a "
-            "backlight is being driven, the network (NetworkManager's "
-            "connectivity word, the SSID, the address, the networks in reach), "
+            "the night schedule, the bounds and step of every knob (what "
+            "the steppers use, so page and server can't disagree), whether it "
+            "is night now and whether a backlight is being driven, the network "
+            "(NetworkManager's connectivity word, the SSID, the address, the "
+            "networks in reach), "
             "and an about block. "
             "Reachable only from the unit's own machine (the same 404 as "
             "/dev/paint from anywhere else): "
@@ -399,17 +400,18 @@ ENDPOINTS: list[dict] = [
                 "NIGHT_TO": 7,
                 "NIGHT_BRIGHTNESS": 20,
             },
+            "bounds": {"CAPTION": {"min": 0.5, "max": 2.0, "step": 0.1}},
             "night": {"is_night": False, "backlight": True},
             "connectivity": {
                 "state": "full",
                 "ssid": "home-wifi",
-                "ip": "192.168.1.126",
+                "ip": "192.0.2.7",
                 "networks": [
                     {"ssid": "home-wifi", "signal": 84, "secured": True, "active": True}
                 ],
             },
             "about": {
-                "unit": "birdframe-tm7 · bird-painter 0.1.0",
+                "unit": "birdframe · bird-painter 0.1.0",
                 "recorder": "this unit (mic: USB PnP Sound Device)",
                 "ears": "BirdNET · floor 0.60",
                 "wall": "paintings stay 3 h · archive kept 31 days",
@@ -435,8 +437,12 @@ ENDPOINTS: list[dict] = [
         "returns": "application/json — the same body as GET /unit",
         "statuses": {
             "200": "applied",
-            "400": "nothing to change (no known key with a numeric value)",
+            "400": (
+                "not a JSON object, or nothing to change (no known key with a "
+                "numeric value)"
+            ),
             "404": "not the unit's own machine",
+            "500": "a settings file could not be written; the detail names it",
         },
         "example": {"CAPTION": 1.7, "NIGHT_FROM": 23},
     },
@@ -462,10 +468,10 @@ ENDPOINTS: list[dict] = [
         "example": {
             "state": "full",
             "ssid": "home-wifi",
-            "ip": "192.168.1.126",
+            "ip": "192.0.2.7",
             "networks": [
                 {"ssid": "home-wifi", "signal": 84, "secured": True, "active": True},
-                {"ssid": "KPN-Gast", "signal": 55, "secured": False, "active": False},
+                {"ssid": "cafe-guest", "signal": 55, "secured": False, "active": False},
             ],
         },
     },

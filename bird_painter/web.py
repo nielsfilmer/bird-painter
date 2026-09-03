@@ -11,6 +11,7 @@ no side effects; uvicorn builds the production app via
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime
 import importlib.metadata
 import ipaddress
@@ -118,7 +119,7 @@ def _route_path(scope: Scope) -> str:
     if path == root:
         return ""
     if path[len(root)] == "/":
-        return path[len(root):]
+        return path[len(root) :]
     return path
 
 
@@ -353,7 +354,13 @@ def create_app(config: Config | None = None) -> FastAPI:
     def unit_screen_js() -> FileResponse:
         # The table model's settings screen (panel mode imports it; it only
         # does anything on the unit itself, where /unit answers).
-        return FileResponse(STATIC_DIR / "unit-screen.js", media_type="text/javascript")
+        # Revalidated like layout.js (#151): a stale copy against a fresh page
+        # fails the dynamic import, which the page deliberately swallows.
+        return FileResponse(
+            STATIC_DIR / "unit-screen.js",
+            media_type="text/javascript",
+            headers=REVALIDATE,
+        )
 
     @app.get("/api/docs", response_class=HTMLResponse)
     def api_docs_page() -> HTMLResponse:
@@ -367,7 +374,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     def api_description() -> JSONResponse:
         """The same documentation as JSON, with this instance's settings —
         what `/api/docs` reads, and what a script would."""
-        return JSONResponse(describe(config))
+        # The cap the settings screen may have changed since startup.
+        return JSONResponse(
+            describe(
+                dataclasses.replace(config, wall_max_live=live_settings.wall_max_live)
+            )
+        )
 
     @app.get("/api/live")
     def live() -> JSONResponse:
@@ -552,9 +564,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             if not LAYOUT_MIN_SIDE <= value <= LAYOUT_MAX_SIDE:
                 raise HTTPException(
                     status_code=422,
-                    detail=(
-                        f"{name} must be {LAYOUT_MIN_SIDE}..{LAYOUT_MAX_SIDE}"
-                    ),
+                    detail=(f"{name} must be {LAYOUT_MIN_SIDE}..{LAYOUT_MAX_SIDE}"),
                 )
         plan = plan_wall(
             _live_for_render(),
@@ -720,9 +730,23 @@ def create_app(config: Config | None = None) -> FastAPI:
             ),
         }
 
+    async def _json_object(request: Request) -> dict:
+        """The request's JSON object, or a 400 that says so — a malformed or
+        empty body is the caller's mistake, not a server error."""
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="expected a JSON object"
+            ) from None
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="expected a JSON object")
+        return body
+
     def _unit_payload(rescan: bool = False) -> dict:
         return {
             "settings": live_settings.as_json(),
+            "bounds": unit.knobs_json(),
             "night": {
                 "is_night": bool(night.is_night),
                 "backlight": night.backlight is not None,
@@ -739,11 +763,13 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.put("/unit")
     async def unit_update(request: Request) -> JSONResponse:
         _require_local(request)
-        body = await request.json()
-        updates = unit.clean_updates(body) if isinstance(body, dict) else {}
+        updates = unit.clean_updates(await _json_object(request))
         if not updates:
             raise HTTPException(status_code=400, detail="nothing to change")
-        unit.apply(updates, live_settings)
+        try:
+            unit.apply(updates, live_settings)
+        except unit.SettingsWriteError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         night.reschedule(live_settings.night)
         return JSONResponse(await run_in_threadpool(_unit_payload))
 
@@ -756,9 +782,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.post("/unit/wifi/join")
     async def unit_wifi_join(request: Request) -> JSONResponse:
         _require_local(request)
-        body = await request.json()
-        ssid = str(body.get("ssid", "")) if isinstance(body, dict) else ""
-        password = body.get("password") if isinstance(body, dict) else None
+        body = await _json_object(request)
+        ssid = str(body.get("ssid", ""))
+        password = body.get("password")
         ok, message = await run_in_threadpool(unit.join, ssid, password or None)
         if not ok:
             raise HTTPException(status_code=400, detail=message)
@@ -770,9 +796,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.post("/unit/wifi/forget")
     async def unit_wifi_forget(request: Request) -> JSONResponse:
         _require_local(request)
-        body = await request.json()
-        ssid = str(body.get("ssid", "")) if isinstance(body, dict) else ""
-        ok, message = await run_in_threadpool(unit.forget, ssid)
+        body = await _json_object(request)
+        ok, message = await run_in_threadpool(unit.forget, str(body.get("ssid", "")))
         if not ok:
             raise HTTPException(status_code=400, detail=message)
         return JSONResponse({"ok": True, "message": message})
