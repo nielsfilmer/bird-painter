@@ -461,13 +461,19 @@ if (panelStyle) {
     // PREVIOUS drag's own pointerup produces, never for the next tap.
     delete overlay.dataset.swallowClick;
     drag = { id: e.pointerId, y: e.clientY, top: overlay.scrollTop, moved: false };
-    overlay.setPointerCapture(e.pointerId);
+    // No pointer capture yet: capturing here retargets the pointerup — and
+    // with it the click — to the overlay, so a TAP on the close button, a
+    // card or "more" never reaches it (owner, first unit: "I'm not able
+    // anymore to tap the close button"). Capture only once this is a drag.
   });
   overlay.addEventListener("pointermove", e => {
     if (!drag || e.pointerId !== drag.id) return;
     const dy = e.clientY - drag.y;
     if (!drag.moved && Math.abs(dy) < DRAG_PX) return;
-    drag.moved = true;
+    if (!drag.moved) {
+      drag.moved = true;
+      overlay.setPointerCapture(e.pointerId); // keep the drag if it leaves a card
+    }
     overlay.scrollTop = drag.top - dy;
     e.preventDefault();
   });
