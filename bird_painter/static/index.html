@@ -80,6 +80,16 @@
      reused: the plan's vmin is the frame's (layout height, not viewport
      height), and the type is fixed-size by decision (PLAN.md 2026-08-13). */
   body.panel #header { display: none; } /* the sheet is the header */
+  /* A touchscreen is not a desktop: a touch-and-hold must not select a
+     caption (the owner's first tap on the real panel highlighted one), a
+     double-tap must not zoom, and the overlay must not grow a scrollbar. */
+  body.panel {
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  body.panel #archive { scrollbar-width: none; }
+  body.panel #archive::-webkit-scrollbar { display: none; }
   body.panel .plate .cell {
     position: relative;
     overflow: hidden;
