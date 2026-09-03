@@ -60,9 +60,13 @@ LAYOUT_CAPTION_MAX = 2.0
 # kiosk Chromium keeps its disk cache across relaunches and, with no
 # directive, reuses a "fresh enough" layout.js against a newly fetched
 # index.html — the import then fails silently and the wall shows its empty
-# state (#151, seen on the first unit). `no-cache` means revalidate, not
-# "don't cache": FileResponse's ETag / Last-Modified make the common case a
-# 304, and a deploy is picked up on the next load.
+# state (#151, seen on the first unit). `no-cache` means "ask before
+# reusing", not "don't cache". A bare FileResponse sends an ETag but does
+# not answer a conditional request with 304 (that lives in StaticFiles), so
+# every load re-downloads the 21 KB module over loopback — cheap, and not
+# worth conditional handling here. The issue's optional `?v=<mtime>` on the
+# import is skipped on purpose: with both files revalidated the mismatch
+# window is the milliseconds between two requests of one page load.
 REVALIDATE = {"Cache-Control": "no-cache"}
 
 
