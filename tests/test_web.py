@@ -499,6 +499,10 @@ def test_local_only_guard_reserves_unit_on_a_boundary(config):
     before it exists — but only `/unit` and `/unit/...`, not `/unittest`."""
     app = create_app(config)
 
+    @app.get("/unit")
+    def unit_root():
+        return {"ok": True}
+
     @app.get("/unit/state")
     def unit_state():
         return {"ok": True}
@@ -512,11 +516,12 @@ def test_local_only_guard_reserves_unit_on_a_boundary(config):
         assert remote.get("/unit").status_code == 404
         assert remote.get("/unittest").status_code == 200
     with TestClient(app, client=LOCAL) as local:
+        assert local.get("/unit").status_code == 200
         assert local.get("/unit/state").status_code == 200
         assert local.get("/unittest").status_code == 200
 
 
-def test_local_only_guard_takes_its_prefixes_as_an_argument(config):
+def test_local_only_guard_takes_its_prefixes_as_an_argument():
     from fastapi import FastAPI
 
     from bird_painter.web import LocalOnly
