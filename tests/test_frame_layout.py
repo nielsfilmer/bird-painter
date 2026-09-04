@@ -124,6 +124,26 @@ def test_the_birds_stay_one_cluster(sheet):
         assert gap <= reach, (i, gap, reach)
 
 
+def test_growth_in_place_is_capped_by_a_birds_own_weight():
+    """Three birds on the 7" with tall captions leave room: without the
+    INFLATE_MAX cap the oldest grew to 0.94 of the newest and the size story
+    was gone (the six-bird guard doesn't see this — at six nothing has room
+    to grow)."""
+    files = [f"b{i}.jpg" for i in range(3)]
+    placements = compute_frame_layout(
+        files,
+        1280,
+        720,
+        0,
+        aspects=ASPECTS[:3],
+        caption_px=66,
+        caption_widths=CAPTIONS[:3],
+    )
+    areas = [p.size_vmin * p.height_vmin for p in placements]
+    assert areas[2] <= areas[0] * 0.62 * 1.12 + 1e-6
+    assert areas[1] <= areas[0] * NEWEST_SHARE + 1e-6
+
+
 def test_sizes_follow_recency():
     """Newest largest, the recent five a step below, older ones tapering —
     the size story from the scatter, kept. Growth in place may lift a bird,
@@ -224,6 +244,22 @@ def test_when_nothing_packs_around_the_centre_the_sheet_gets_rows_not_nothing():
         caption_widths=[400.0] * 12,
     )
     assert len(placements) == 12
+    # …with the invariants intact, and at a size the rows had room for
+    # (their own scan, not the floor the spiral gave up at).
+    vmin = 7.2
+    boxes = []
+    for p in placements:
+        fw, fh = max(p.size_vmin * vmin, 400.0), p.height_vmin * vmin
+        left, top = p.x + 640 - fw / 2, p.y + 360 - fh / 2
+        boxes.append((left, top, left + fw, top + fh + 60))
+    for i, a in enumerate(boxes):
+        assert (
+            a[0] >= 1280 * SIDE_MARGIN - 0.5 and a[2] <= 1280 * (1 - SIDE_MARGIN) + 0.5
+        )
+        assert a[1] >= -0.5 and a[3] <= 720 * (1 - BOTTOM_MARGIN) + 0.5
+        for b in boxes[i + 1 :]:
+            assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
+    assert placements[0].size_vmin * vmin > 40  # rows: 50 px, not the spiral's 28
 
 
 def test_the_plan_is_memoised_on_its_inputs():

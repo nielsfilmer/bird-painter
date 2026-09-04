@@ -563,7 +563,7 @@ def plan_wall(
     species_font = fonts.get(species_size)
     heard_font = fonts.get(heard_size, italic=True)
     tracking = species_size * 0.05 + 0.5
-    # The panel is a fixed sheet seen from across a room, so it gets the focal
+    # The panel is a fixed sheet seen from across a room, so it gets the packed
     # rosette that fills it (see frame_layout) rather than the browser wall's
     # spiral, which is built to reflow in a window. `style="wall"` renders the
     # spiral — what the README's hero image and any browser expects.

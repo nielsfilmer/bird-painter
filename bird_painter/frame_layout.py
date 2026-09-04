@@ -60,6 +60,10 @@ NEWEST_SHARE = 0.9
 # the starting scale (below it nothing sensible is left).
 SCALE_STEP = 0.97
 SCALE_FLOOR = 0.05
+# Below this share of the starting scale the spiral's answer is compared
+# with plain rows, which take over when larger by this factor.
+ROWS_BELOW = 0.25
+ROWS_WIN = 1.5
 # After packing, birds grow in place into free room: this factor a step,
 # this many passes over the set — and never past this multiple of their own
 # recency weight, so a ring of six still tapers with age (the owner's
@@ -173,11 +177,10 @@ def _sized(
     w0, h0 = out[0]
     k = min(1.0, cap_w / w0 if w0 else 1.0, cap_h / h0 if h0 else 1.0)
     out[0] = (w0 * k, h0 * k)
-    # …and nobody outgrows it: once the newest is capped the scan could
-    # otherwise lift the others past it (two birds on the 10" had the
-    # second larger than the first, and the newest at 0.39 of the width
-    # with 0.6 to spare — QA on #161). Others stop at NEWEST_SHARE of its
-    # area, so "newest largest" holds in area at every scale.
+    # …and nobody outgrows it: once the newest is capped, the scan could
+    # otherwise lift the others past it (a wide newest with a tall second
+    # bird on the 10" reached 0.98 of its area). Others stop at NEWEST_SHARE
+    # of its area, so "newest largest" holds in area at every scale.
     ceiling = out[0][0] * out[0][1] * NEWEST_SHARE
     for i in range(1, len(out)):
         w, h = out[i]
@@ -287,7 +290,10 @@ def _inflate(
         for i in range(1, len(cells)):
             cx, cy, _rect = placed[i]
             w, h = cells[i]
-            ceiling = min(areas[i - 1], weights[i] * INFLATE_MAX * scale * scale)
+            ceiling = min(
+                areas[i - 1] if i > 1 else areas[0] * NEWEST_SHARE,
+                weights[i] * INFLATE_MAX * scale * scale,
+            )
             k = 1.0
             while True:
                 nk = k * INFLATE_STEP
@@ -403,10 +409,26 @@ def _layout(
         if best is not None:
             break
         scale *= SCALE_STEP
-    if best is None:
-        scale = hi * SCALE_FLOOR
-        cells = _sized(dims, scale, cap_w, cap_h)
-        best = _rows(cells, sheet)
+    if best is None or scale < hi * ROWS_BELOW:
+        # Rows: when nothing packs around the centre, or the spiral only
+        # managed it far down its scan (a dozen birds with two-line captions
+        # on a small sheet pack as thumbnails around a caption list). Rows
+        # get their own scan and win if they come out larger by a margin.
+        rows, rows_scale = None, hi
+        while rows_scale > hi * SCALE_FLOOR:
+            rows_cells = _sized(dims, rows_scale, cap_w, cap_h)
+            rows = _rows(rows_cells, sheet)
+            if rows is not None:
+                break
+            rows_scale *= SCALE_STEP
+        if rows is not None and (best is None or rows_scale > scale * ROWS_WIN):
+            best, cells, scale = rows, rows_cells, rows_scale
+            logger.warning(
+                "frame layout: %d birds in rows, not around the centre (%gx%g)",
+                len(files),
+                width,
+                height,
+            )
         if best is None:
             logger.warning(
                 "frame layout: %d birds don't fit %gx%g; rendering nothing",
@@ -415,12 +437,6 @@ def _layout(
                 height,
             )
             return ()
-        logger.warning(
-            "frame layout: %d birds packed in rows, not around the centre (%gx%g)",
-            len(files),
-            width,
-            height,
-        )
     best, cells = _inflate(best, cells, weights, scale, sheet)
     return tuple(
         Placement(
