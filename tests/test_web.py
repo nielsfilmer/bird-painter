@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -72,6 +73,18 @@ def test_unit_screen_api_is_loopback_only_and_writes_its_files(
             "BP_WALL_MAX_LIVE": "4",
             "BP_NIGHT_FROM": "23",
         }
+        # A rotation redraws the boot splash off the request; nothing else does.
+        redraws = []
+        monkeypatch.setattr(
+            unit, "refresh_splash", lambda: redraws.append(1) or (True, "ok")
+        )
+        assert local.put("/unit", json={"ROTATE": 180}).status_code == 200
+        assert local.put("/unit", json={"UI": 1.1}).status_code == 200
+        for _ in range(50):
+            if redraws:
+                break
+            time.sleep(0.02)
+        assert redraws == [1]
         assert local.put("/unit", json={"FAL_KEY": "x"}).status_code == 400
         assert local.put("/unit", json=[1]).status_code == 400
         assert local.put("/unit", content=b"x").status_code == 400  # not 500

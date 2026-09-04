@@ -41,13 +41,20 @@ def test_a_portrait_stand_and_the_ten_inch_get_their_own_picture(tmp_path: Path)
     seen = Image.open(tmp_path / "p" / "splash-desktop.png")
     native = Image.open(tmp_path / "p" / "splash-native.png")
     assert seen.size == (1200, 1920) and native.tobytes() == seen.tobytes()
-    assert seen.getpixel((600, 1000)) != seen.getpixel((40, 40))  # the bird, mid-sheet
+    # The bird is on the sheet: against a bird-less render of the same size
+    # the middle differs (the paper's own gradient is the same in both).
+    assert run(str(tmp_path / "bare"), "", "0", "1200x1920").returncode == 0
+    bare = Image.open(tmp_path / "bare" / "splash-desktop.png")
+    assert seen.getpixel((600, 1000)) != bare.getpixel((600, 1000))
+    assert seen.getpixel((40, 40)) == bare.getpixel((40, 40))
     assert run(str(tmp_path / "u"), str(BIRD), "180", "1200x1920").returncode == 0
     upside = Image.open(tmp_path / "u" / "splash-native.png")
     assert upside.tobytes() == seen.rotate(180).tobytes()
     assert run(str(tmp_path / "l"), str(BIRD), "90", "1200x1920").returncode == 0
     assert Image.open(tmp_path / "l" / "splash-desktop.png").size == (1920, 1200)
-    assert run(str(tmp_path / "x"), str(BIRD), "90", "huge").returncode != 0
+    for bad in ("huge", "²x²", "100x100"):
+        odd = run(str(tmp_path / "x"), str(BIRD), "90", bad)
+        assert odd.returncode != 0 and "NATIVE must look like" in odd.stderr, bad
 
 
 def test_refuses_a_missing_out_dir_and_an_odd_rotate(tmp_path: Path):

@@ -22,6 +22,7 @@ can check without a camera on the panel: if the first boot shows the splash
 upside down, the two branches below are swapped, nothing else.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -166,8 +167,11 @@ if __name__ == "__main__":
     native = (NATIVE_W, NATIVE_H)
     if len(sys.argv) > 4 and sys.argv[4]:
         parts = sys.argv[4].lower().split("x")
-        if len(parts) != 2 or not all(
-            p.isdigit() and 200 <= int(p) <= 8000 for p in parts
+        ascii_digits = all(re.fullmatch(r"[0-9]+", p) for p in parts)
+        if (
+            len(parts) != 2
+            or not ascii_digits
+            or not all(200 <= int(p) <= 8000 for p in parts)
         ):
             sys.exit("NATIVE must look like 1200x1920 (the panel's own mode)")
         native = (int(parts[0]), int(parts[1]))

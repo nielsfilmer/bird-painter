@@ -534,6 +534,15 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   `/usr/local/share/bird-painter` (world-readable: the greeter runs as
   `lightdm`). `make lint` covers `scripts/`; `tests/test_make_splash.py`
   runs the generator.
+- `scripts/bird-splash-refresh.sh` — the root helper the install script
+  puts at `/usr/local/sbin/bird-splash-refresh` with a sudoers line for the
+  unit's user (that exact command, no arguments): reads `unit.conf`
+  (ROTATE, OUTPUT) and the panel's mode, draws the splash as the user with
+  the venv, installs it for plymouth, rebuilds the initramfs only when
+  something it carries changed, and tells the running desktop. The
+  installer calls it; so does the settings screen's rotate (`/unit` PUT
+  with ROTATE → `unit.refresh_splash`, off the request), so the next boot
+  is upright without a re-install.
 - `scripts/plymouth/` — the `birdpainter` plymouth theme (`.plymouth` +
   `.script`): the same shape as Pi OS's own `pix` theme — one full-screen
   image, no messages — installed by the install script, which also turns

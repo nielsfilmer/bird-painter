@@ -234,3 +234,31 @@ def test_apply_names_the_file_that_could_not_be_written(tmp_path: Path):
         )
     assert unit.read_conf(conf)["CAPTION"] == "1.7"  # the first file took
     assert live.caption == 1.5  # the process did not move
+
+
+def test_refresh_splash_runs_the_root_helper_and_fails_soft(monkeypatch):
+    calls = []
+
+    def ok(argv, **kw):
+        calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv, 0, stdout="bird-splash-refresh: rotate 0 — done\n", stderr=""
+        )
+
+    monkeypatch.setattr(unit.subprocess, "run", ok)
+    assert unit.refresh_splash() == (True, "bird-splash-refresh: rotate 0 — done")
+    assert calls == [["/usr/bin/sudo", "-n", unit.SPLASH_REFRESH]]
+
+    def refused(argv, **kw):
+        raise subprocess.CalledProcessError(
+            1, argv, stderr="sudo: a password is required\n"
+        )
+
+    monkeypatch.setattr(unit.subprocess, "run", refused)
+    assert unit.refresh_splash() == (False, "sudo: a password is required")
+
+    def missing(argv, **kw):
+        raise FileNotFoundError("sudo")
+
+    monkeypatch.setattr(unit.subprocess, "run", missing)
+    assert unit.refresh_splash()[0] is False
