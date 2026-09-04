@@ -33,6 +33,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .night import NightSchedule
+from .styles import DEFAULT_STYLE, STYLES, style_for
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,10 @@ KNOBS: dict[str, Knob] = {
 }
 
 
+# The one non-numeric setting: a choice from styles.py, in unit.conf.
+CHOICES: dict[str, tuple[str, ...]] = {"STYLE": tuple(s.key for s in STYLES)}
+
+
 def knobs_json() -> dict:
     return {k: {"min": v.lo, "max": v.hi, "step": v.step} for k, v in KNOBS.items()}
 
@@ -92,6 +97,7 @@ class LiveSettings:
     caption: float = 1.0
     ui: float = 1.0
     rotate: int = 90
+    style: str = DEFAULT_STYLE
     night: NightSchedule = field(default_factory=NightSchedule)
 
     @classmethod
@@ -102,6 +108,7 @@ class LiveSettings:
             caption=_bounded("CAPTION", unit.get("CAPTION"), 1.0),
             ui=_bounded("UI", unit.get("UI"), 1.0),
             rotate=int(_bounded("ROTATE", unit.get("ROTATE"), 90)),
+            style=style_for(unit.get("STYLE") or config.style).key,
             night=NightSchedule.from_config(config),
         )
 
@@ -112,6 +119,7 @@ class LiveSettings:
             "UI": self.ui,
             "MAX_LIVE": self.wall_max_live,
             "ROTATE": self.rotate,
+            "STYLE": self.style,
             "NIGHT_ENABLED": 1 if n.enabled else 0,
             "NIGHT_FROM": n.start_hour,
             "NIGHT_TO": n.end_hour,
@@ -191,11 +199,15 @@ def write_conf(updates: dict[str, str], path: Path) -> dict[str, str]:
     return read_conf(path)
 
 
-def clean_updates(payload: dict) -> dict[str, float]:
+def clean_updates(payload: dict) -> dict[str, float | str]:
     """Validate a settings write from the page: known keys only, numeric,
-    clamped. Anything else is dropped, not errored — the screen only ever
-    sends what it shows, so an unknown key is a bug there, not a request."""
-    updates: dict[str, float] = {}
+    clamped — or, for a choice, one of its allowed values. Anything else is
+    dropped, not errored — the screen only ever sends what it shows, so an
+    unknown key is a bug there, not a request."""
+    updates: dict[str, float | str] = {}
+    for key, allowed in CHOICES.items():
+        if key in payload and isinstance(payload[key], str) and payload[key] in allowed:
+            updates[key] = payload[key]
     for key in KNOBS:
         if key not in payload:
             continue
@@ -209,7 +221,9 @@ def clean_updates(payload: dict) -> dict[str, float]:
     return updates
 
 
-def _fmt(key: str, value: float) -> str:
+def _fmt(key: str, value: float | str) -> str:
+    if isinstance(value, str):
+        return value
     if key == "NIGHT_ENABLED":
         return "true" if value else "false"
     if KNOBS[key].integer:
@@ -231,8 +245,14 @@ def apply(
     watch from `live.night`."""
     conf_path = conf_path or UNIT_CONF
     env_path = env_path or ENV_FILE
-    unit_writes = {k: _fmt(k, v) for k, v in updates.items() if KNOBS[k].unit}
-    env_writes = {KNOBS[k].env: _fmt(k, v) for k, v in updates.items() if KNOBS[k].env}
+    unit_writes = {
+        k: _fmt(k, v) for k, v in updates.items() if k in CHOICES or KNOBS[k].unit
+    }
+    env_writes = {
+        KNOBS[k].env: _fmt(k, v)
+        for k, v in updates.items()
+        if k not in CHOICES and KNOBS[k].env
+    }
     for writes, path in ((unit_writes, conf_path), (env_writes, env_path)):
         if not writes:
             continue
@@ -248,6 +268,8 @@ def apply(
         live.wall_max_live = int(updates["MAX_LIVE"])
     if "ROTATE" in updates:
         live.rotate = int(updates["ROTATE"])
+    if "STYLE" in updates:
+        live.style = str(updates["STYLE"])
     n = live.night
     live.night = NightSchedule(
         start_hour=int(updates.get("NIGHT_FROM", n.start_hour)),

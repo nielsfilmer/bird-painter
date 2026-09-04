@@ -38,6 +38,7 @@ from .occasions import hat_for
 from .placeholder import placeholder_svg
 from .runner import PaintRunner
 from .store import Store
+from .styles import style_choices
 from .trim import trim_to_bird
 from .unit import LiveSettings
 
@@ -279,12 +280,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     )
     gate = TriggerGate(store, config.paint_ttl_seconds, config.max_paints_per_hour)
     events = EventHub()
-    runner = PaintRunner(config, store, gate, events)
     night = watch_from_config(config)
     # What the table model's settings screen may change while running (#123):
     # the bird cap and the night schedule live here, the frozen Config stays
     # what the process started with.
     live_settings = LiveSettings.from_config(config)
+    runner = PaintRunner(config, store, gate, events, style=lambda: live_settings.style)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -336,6 +337,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.store = store
     app.state.events = events
     app.state.night = night
+    app.state.runner = runner
     app.state.live_settings = live_settings
 
     @app.get("/", response_class=HTMLResponse)
@@ -669,6 +671,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             fal_key=config.fal_key,
             model=config.fal_model,
             hat=hat_for(datetime.date.today(), config.hat_days, config.hat_dates),
+            style=live_settings.style,
         )
         if isinstance(result, brush.Rejected):
             # The model painted something that isn't a bird on white, twice.
@@ -747,6 +750,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         return {
             "settings": live_settings.as_json(),
             "bounds": unit.knobs_json(),
+            "styles": style_choices(),
             "night": {
                 "is_night": bool(night.is_night),
                 "backlight": night.backlight is not None,

@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import logging
 import time
+from collections.abc import Callable
 
 import numpy as np
 
@@ -31,8 +32,12 @@ class PaintRunner:
         store: Store,
         gate: TriggerGate,
         events: EventHub | None = None,
+        style: Callable[[], str] | None = None,
     ):
         self.config = config
+        # Asked at paint time, not read once: the table model's settings
+        # screen changes it while the service runs.
+        self.style = style or (lambda: config.style)
         self.store = store
         self.gate = gate
         # Where recognitions are broadcast from (the /ws/detections stream);
@@ -77,6 +82,7 @@ class PaintRunner:
             hat=hat_for(
                 datetime.date.today(), self.config.hat_days, self.config.hat_dates
             ),
+            style=self.style(),
         )
         if isinstance(result, Rejected):
             # The model keeps painting this species as something that isn't a

@@ -223,6 +223,10 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
     if (el) el.textContent = text || "";
   }
 
+  function styleName(key) {
+    const found = (state.unit?.styles || []).find((s) => s.key === key);
+    return found ? found.name : key;
+  }
   function stepper(key, value) {
     const b = bounds(key);
     const view = KNOB_VIEW[key];
@@ -251,6 +255,7 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
         ${knobRow("CAPTION", s.CAPTION)}
         ${knobRow("UI", s.UI)}
         ${knobRow("MAX_LIVE", s.MAX_LIVE)}
+        <div class="row"><div><div class="label">painting style</div><div class="value">${esc(styleName(s.STYLE))}</div></div><div class="stepper" data-key="STYLE"><div class="step" data-act="style" data-dir="-1">${ICON.minus}</div><div class="value" style="min-width:64px;text-align:center">${u.styles ? u.styles.findIndex((x) => x.key === s.STYLE) + 1 : "–"}/${u.styles ? u.styles.length : "–"}</div><div class="step" data-act="style" data-dir="1">${ICON.plus}</div></div></div>
         <div class="row"><div><div class="label">orientation</div><div class="value">${s.ROTATE % 180 === 0 ? "portrait" : "landscape"} · ${s.ROTATE}°</div></div><button class="btn" data-act="rotate">rotate</button></div>
       </div>
       <div class="group"><div class="group-title">night</div>
@@ -356,6 +361,14 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
       else { renderSettings(); show("settings"); }
     },
     step: (el) => step(el.parentElement.dataset.key, Number(el.dataset.dir)),
+    style: (el) => {
+      const keys = (state.unit?.styles || []).map((s) => s.key);
+      if (!keys.length) return;
+      const next = nextChoice(keys, state.unit.settings.STYLE, Number(el.dataset.dir));
+      state.unit.settings.STYLE = next;
+      renderSettings();
+      queuePut("STYLE", next);
+    },
     night: () => {
       const on = state.unit.settings.NIGHT_ENABLED ? 0 : 1;
       state.unit.settings.NIGHT_ENABLED = on;
@@ -547,6 +560,13 @@ export function noConnection(connectivity) {
 // which is no nmcli at all (a dev box), not an outage.
 export function isOffline(connectivity) {
   return !!connectivity && connectivity.state !== "full" && connectivity.state !== "unknown";
+}
+
+// The next of a list of choices, wrapping at both ends (the styles).
+export function nextChoice(keys, current, dir) {
+  if (!keys.length) return current;
+  const i = Math.max(0, keys.indexOf(current));
+  return keys[(i + dir + keys.length) % keys.length];
 }
 
 // A message the owner can act on: the server's detail is kept when it is

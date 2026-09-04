@@ -301,7 +301,16 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `store.py` — permanent archive (files + `meta.jsonl`) + ephemeral live
     view + per-species `last_painted_at` (the cooldown key).
   - `brush.py` — the brush: species → fal FLUX `schnell` REST call →
-    painting bytes; house-style prompt template; soft-failure policy.
+    painting bytes; the prompt template, whose look and palette come from
+    the chosen style; soft-failure policy.
+  - `styles.py` — the painting styles (#162): seven `Style`s (key, screen
+    name, look phrase, palette phrase) — vintage naturalist (the default),
+    Japanese watercolour, Dutch Golden Age, Art Nouveau, field sketch, folk
+    linocut, cubist. Only the two phrases change per style; the house rule
+    (one bird, side view, flat white, no text) stays, because the wall's
+    blend and the plate check depend on it. `BP_STYLE` for the recorder
+    shape; a table model's screen sets `STYLE` in `unit.conf` per unit,
+    for new paintings only.
   - `ears.py` — the ears: BirdNET via `birdnetlib`; `detect_file` /
     `detect_samples` → `Detection`s above the confidence floor. Optional
     location filter (lat/lon); the SEASONAL half of it is opt-in
