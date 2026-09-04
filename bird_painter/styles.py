@@ -69,6 +69,13 @@ STYLES: tuple[Style, ...] = (
         "two or three flat inks — black, rust red and olive — with the white "
         "showing through",
     ),
+    # Watch item: the canonical cubist corpus is papier collé — pasted
+    # lettering, painted borders, a faceted ground — the very things the
+    # prompt's tail suppresses. Two verification plates came back clean on
+    # white; if a cubist plate ever carries text or a full-bleed ground, the
+    # plate check discards it and the retry pays a fraction of a cent.
+    # ("the whole bird" is repeated by the template right after the look —
+    # left as is: rewording would invalidate the two paid verifications.)
     Style(
         "cubist",
         "cubist",
