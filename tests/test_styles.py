@@ -61,13 +61,37 @@ def test_the_prompt_takes_the_styles_look_and_keeps_the_house_rule(style):
     assert "perched in full side view, wearing a tiny party hat" in hatted
 
 
+# The prompt the wall has always painted with, word for word (main before
+# #162). Pinned so a style edit can't drift the default.
+ORIGINAL_PROMPT = (
+    "A single Robin (Erithacus rubecula) bird, hand-painted naturalist watercolor, "
+    "the whole bird perched in full side view, soft muted natural colors, fine "
+    "feather detail, cleanly isolated and centred on a pure flat bright white "
+    "background, the bird is the only thing in the image. No text, no words, no "
+    "letters, no caption, no label, no numbers, no signature, no watermark, no "
+    "border, no frame, no paper texture, no vignette, no scenery, no background "
+    "objects. Not a photograph of a painting: no sheet of paper, no desk or "
+    "table, no pencils, brushes or art supplies, no hands, no sketchbook, no "
+    "plain coloured blocks or panels — just the bird itself, centred with clear "
+    "white space all around it."
+)
+
+
 def test_the_default_prompt_is_the_one_the_wall_always_had():
-    assert brush.build_prompt("Robin", "Erithacus rubecula") == brush.build_prompt(
-        "Robin", "Erithacus rubecula", style="naturalist"
+    assert brush.build_prompt("Robin", "Erithacus rubecula") == ORIGINAL_PROMPT
+    assert (
+        brush.build_prompt("Robin", "Erithacus rubecula", style="naturalist")
+        == ORIGINAL_PROMPT
     )
-    assert "hand-painted naturalist watercolor" in brush.build_prompt(
-        "Robin", "Erithacus rubecula"
-    )
+
+
+def test_no_style_names_the_artefacts_the_prompt_bans():
+    """Words FLUX takes literally: it paints the object, and the plate check
+    lists a baked-in caption and a photographed print among its misses."""
+    for s in STYLES:
+        text = f"{s.look} {s.palette}".lower()
+        for word in ("poster", "print", "notebook", "paper", "engraving", "off-white"):
+            assert word not in text, (s.key, word)
 
 
 def test_config_validates_bp_style(monkeypatch, tmp_path):
@@ -144,8 +168,13 @@ def test_a_style_set_on_the_screen_reaches_the_next_painting(
             == "sumi"
         )
         local.post("/dev/paint/Wren")
-        # The runner (the mic's path) asks the live settings too, at paint time.
+        # The runner (the mic's path) asks the live settings at paint time.
+        from bird_painter.ears import Detection
+
         app.state.live_settings.style = "cubist"
-        assert app.state.runner.style() == "cubist"
+        app.state.runner.on_detections(
+            [Detection("Dunnock", "Prunella modularis", 0.91, 0.0, 3.0)]
+        )
     assert prompts[0].count("hand-painted naturalist watercolor") == 1
     assert style_for("sumi").look in prompts[1]
+    assert style_for("cubist").look in prompts[2]

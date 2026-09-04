@@ -50,22 +50,22 @@ STYLES: tuple[Style, ...] = (
     Style(
         "nouveau",
         "Art Nouveau",
-        "Art Nouveau illustration in the manner of a 1900s decorative poster, "
-        "with flowing elegant outlines and flat stylised colour",
+        "Art Nouveau illustration with flowing elegant outlines, flat "
+        "stylised colour and ornamental curves in the manner of 1900",
         "muted jade, old gold, cream and terracotta with bold clean contour lines",
     ),
     Style(
         "sketch",
         "field sketch",
-        "a naturalist's field-notebook study in pencil with a light watercolour "
-        "wash, quick and precise, unfinished at the edges",
+        "a naturalist's pencil study with a light watercolour wash, quick and "
+        "precise, the lines fading out towards the edges of the bird",
         "graphite lines with a few translucent washes of the bird's true colours",
     ),
     Style(
         "linocut",
         "folk linocut",
-        "a hand-pulled folk-art linocut print with bold carved marks and "
-        "slightly uneven ink",
+        "a bold folk-art linocut with carved, slightly uneven marks and "
+        "flat areas of ink",
         "two or three flat inks — black, rust red and olive — with the white "
         "showing through",
     ),
@@ -74,7 +74,7 @@ STYLES: tuple[Style, ...] = (
         "cubist",
         "an early-twentieth-century cubist painting, the bird broken into "
         "overlapping geometric facets and planes seen from several angles at once",
-        "muted ochre, slate grey, dusty blue and off-white, angular, in "
+        "muted ochre, slate grey, dusty blue and pale cream facets, angular, in "
         "textured oil paint",
     ),
 )
@@ -84,9 +84,12 @@ _BY_KEY = {s.key: s for s in STYLES}
 
 
 def style_for(key: str | None) -> Style:
-    """The style with this key, or the default — a unit.conf line from an
-    older install, or a typo in .env, paints the house look rather than
-    nothing."""
+    """The style with this key (case- and space-insensitive), or the DEFAULT
+    — a unit.conf line from an older install paints the house look rather
+    than nothing. Lenient on purpose; `is_style` is the strict twin that
+    Config uses to refuse a misspelt BP_STYLE at startup, where a person
+    can still read the message. Note the fallback is the default, not
+    BP_STYLE: a stale unit.conf value is treated as "no choice made"."""
     return _BY_KEY.get((key or "").strip().lower(), _BY_KEY[DEFAULT_STYLE])
 
 

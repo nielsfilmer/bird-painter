@@ -5,8 +5,9 @@ Two files hold a unit's settings, and this module is the service's one
 reader and writer of both:
 
 - `~/.config/bird-painter/unit.conf` — the install script's KEY=VALUE file
-  (CAPTION, UI, MAX_LIVE, ROTATE, OUTPUT): what makes this unit the 7" or
-  the 10". The screen edits it in place; a re-run of the script keeps it.
+  (CAPTION, UI, MAX_LIVE, ROTATE, STYLE, OUTPUT): what makes this unit the
+  7" or the 10", and how it paints. The screen edits it in place; a re-run
+  of the script keeps it.
 - `~/bird-painter/.env` — the app's own knobs. The screen touches only the
   night group (BP_NIGHT_*) and the bird cap (BP_WALL_MAX_LIVE, which the
   install script mirrors from unit.conf); everything else — the key above

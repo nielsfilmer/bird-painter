@@ -518,7 +518,7 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   environment (Wayland has no `unclutter`; this hides the compositor's
   pointer and Chromium's alike), autologin and no blanking. Idempotent;
   re-run to update. The per-unit values it was run with (`OUTPUT`,
-  `ROTATE`, `CAPTION`, `UI`, `MAX_LIVE`) persist on the unit in
+  `ROTATE`, `CAPTION`, `UI`, `MAX_LIVE`, `STYLE`) persist on the unit in
   `~/.config/bird-painter/unit.conf` — not a repo file — so a bare re-run
   keeps them. First run on the first unit: 2026-09-03.
 - `scripts/polkit/50-birdframe-unit.rules` — the polkit rule the install

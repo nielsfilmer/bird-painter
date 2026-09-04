@@ -227,6 +227,13 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
     const found = (state.unit?.styles || []).find((s) => s.key === key);
     return found ? found.name : key;
   }
+  // A choice among the server's list: the name as the value, "n/N" between
+  // the arrows (an unknown current shows as 0/N and steps to the first).
+  function choiceRow(label, name, choices, current) {
+    const at = choices.findIndex((c) => c.key === current) + 1;
+    return `<div class="row"><div><div class="label">${label}</div><div class="value">${esc(name)}</div></div>
+      <div class="stepper"><div class="step" data-act="style" data-dir="-1">${ICON.minus}</div><div class="value">${at}/${choices.length}</div><div class="step" data-act="style" data-dir="1">${ICON.plus}</div></div></div>`;
+  }
   function stepper(key, value) {
     const b = bounds(key);
     const view = KNOB_VIEW[key];
@@ -255,7 +262,7 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
         ${knobRow("CAPTION", s.CAPTION)}
         ${knobRow("UI", s.UI)}
         ${knobRow("MAX_LIVE", s.MAX_LIVE)}
-        <div class="row"><div><div class="label">painting style</div><div class="value">${esc(styleName(s.STYLE))}</div></div><div class="stepper" data-key="STYLE"><div class="step" data-act="style" data-dir="-1">${ICON.minus}</div><div class="value" style="min-width:64px;text-align:center">${u.styles ? u.styles.findIndex((x) => x.key === s.STYLE) + 1 : "–"}/${u.styles ? u.styles.length : "–"}</div><div class="step" data-act="style" data-dir="1">${ICON.plus}</div></div></div>
+        ${choiceRow("painting style", styleName(s.STYLE), u.styles || [], s.STYLE)}
         <div class="row"><div><div class="label">orientation</div><div class="value">${s.ROTATE % 180 === 0 ? "portrait" : "landscape"} · ${s.ROTATE}°</div></div><button class="btn" data-act="rotate">rotate</button></div>
       </div>
       <div class="group"><div class="group-title">night</div>
