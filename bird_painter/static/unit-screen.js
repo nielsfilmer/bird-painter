@@ -71,6 +71,7 @@ const CSS = `
 #unit .row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 56px; }
 #unit .label { font-variant: small-caps; letter-spacing: 0.08em; font-size: calc(1.39vmin * var(--ui-scale, 1)); color: #8d8065; }
 #unit .value { font-size: calc(2.04vmin * var(--ui-scale, 1)); overflow-wrap: anywhere; }
+#unit .value.choice { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
 #unit .stepper { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 #unit .step { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px;
   border: 1px solid #8d8065; cursor: pointer; }
@@ -232,7 +233,7 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
   // to the first).
   function choiceRow(label, name, choices, current) {
     const at = choices.findIndex((c) => c.key === current) + 1;
-    return `<div class="row"><div><div class="label">${label}</div><div class="value">${esc(name)}</div></div>
+    return `<div class="row"><div><div class="label">${label}</div><div class="value choice">${esc(name)}</div></div>
       <div class="stepper"><div class="step" data-act="style" data-dir="-1">${ICON.minus}</div><div class="value">${at}/${choices.length}</div><div class="step" data-act="style" data-dir="1">${ICON.plus}</div></div></div>`;
   }
   function stepper(key, value) {

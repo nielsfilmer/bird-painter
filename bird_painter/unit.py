@@ -224,7 +224,7 @@ def clean_updates(payload: dict) -> dict[str, float | str]:
 
 def _fmt(key: str, value: float | str) -> str:
     if isinstance(value, str):
-        return value
+        return f'"{value}"'  # as the install script writes it (the file is sourced)
     if key == "NIGHT_ENABLED":
         return "true" if value else "false"
     if KNOBS[key].integer:

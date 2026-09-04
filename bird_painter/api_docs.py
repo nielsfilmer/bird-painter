@@ -443,7 +443,8 @@ ENDPOINTS: list[dict] = [
             "200": "applied",
             "400": (
                 "not a JSON object, or nothing to change (no known key with a "
-                "numeric value)"
+                "value in range — a number within its bounds, or one of the "
+                "listed styles)"
             ),
             "404": "not the unit's own machine",
             "500": "a settings file could not be written; the detail names it",

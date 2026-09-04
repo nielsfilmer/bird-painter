@@ -139,6 +139,7 @@ def test_the_unit_keeps_its_own_style_in_unit_conf(tmp_path: Path):
     env.write_text("FAL_KEY=secret\n")
     unit.apply({"STYLE": "cubist"}, live, conf_path=conf, env_path=env)
     assert unit.read_conf(conf)["STYLE"] == "cubist" and live.style == "cubist"
+    assert 'STYLE="cubist"' in conf.read_text()  # quoted, as the installer writes it
     assert unit.read_conf(env) == {
         "FAL_KEY": "secret"
     }  # the style is the unit's, not .env's
