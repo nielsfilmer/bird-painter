@@ -21,7 +21,7 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from . import fonts as fonts_module
-from .frame_layout import compute_frame_scatter
+from .frame_layout import compute_frame_layout
 from .wall_layout import PLATE_ASPECT, compute_collage
 
 logger = logging.getLogger(__name__)
@@ -563,15 +563,15 @@ def plan_wall(
     species_font = fonts.get(species_size)
     heard_font = fonts.get(heard_size, italic=True)
     tracking = species_size * 0.05 + 0.5
-    # The panel is a fixed sheet seen from across a room, so it gets the focal
-    # scatter that fills it (see frame_layout) rather than the browser wall's
+    # The panel is a fixed sheet seen from across a room, so it gets the packed
+    # rosette that fills it (see frame_layout) rather than the browser wall's
     # spiral, which is built to reflow in a window. `style="wall"` renders the
     # spiral — what the README's hero image and any browser expects.
     ink: dict[str, InkBox | None] = {}
     if panel:
         metrics = {f: _ink_for(image_dir / f) for f in files}
         ink = {f: metrics[f][1] for f in files}
-        placements = compute_frame_scatter(
+        placements = compute_frame_layout(
             files,
             width,
             layout_h,
@@ -655,7 +655,7 @@ def render_wall_png(
     `style="panel"` drops the cream paper for plain white — the e-paper's own
     ground. Cream isn't one of the panel's six colours, so it dithers into a
     red/green speckle over every pixel; white is, and costs nothing. It also
-    swaps the spiral for the focal scatter and fits each bird to its own ink.
+    swaps the spiral for the packed rosette and fits each bird to its own ink.
 
     The frame dithers the picture and then stamps the text through the mask in
     pure panel black. Dithering scatters a 6-colour approximation across every
@@ -668,7 +668,7 @@ def render_wall_png(
     if style not in STYLES:
         raise ValueError(f"style must be one of {STYLES}, got {style!r}")
     # "panel" is everything the e-paper frame needs and the browser doesn't:
-    # its own white as the ground, the focal scatter instead of the spiral,
+    # its own white as the ground, the packed rosette instead of the spiral,
     # birds fitted to their cells, and no title — the frame hangs on a wall,
     # where a heading saying what it is costs a row of birds to state the
     # obvious.

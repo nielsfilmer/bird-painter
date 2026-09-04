@@ -240,7 +240,7 @@ ENDPOINTS: list[dict] = [
                     "wall = the browser's cream paper and spiral collage; "
                     "panel = the e-paper frame — the panel's own white as the "
                     "ground (cream isn't one of its six colours and dithers "
-                    "into a speckle everywhere), the focal scatter, birds "
+                    "into a speckle everywhere), the packed rosette, birds "
                     "fitted to their own ink, and no title"
                 ),
             },
@@ -283,7 +283,7 @@ ENDPOINTS: list[dict] = [
                 "name": "style",
                 "type": "enum",
                 "default": "panel",
-                "note": "panel = the frame's focal scatter; wall = the spiral",
+                "note": "panel = the frame's packed rosette; wall = the spiral",
             },
             {
                 "name": "width",

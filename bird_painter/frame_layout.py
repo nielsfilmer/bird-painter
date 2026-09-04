@@ -1,102 +1,80 @@
-"""Placement for the e-paper frame — a focal scatter, not a grid.
+"""Placement for the panel — a packed rosette, newest at the centre.
 
-The grid filled the sheet but read as a spreadsheet (owner, 2026-08-13).
-Replaced with the arrangement the owner dictated:
+Replaces the focal scatter (owner, 2026-09-04): "fills the screen as much
+as possible and always has the most recent bird centered (drop the random
+placement)". Three rules, no dice:
 
-- an ANCHOR is picked inside a central box holding ~30% of the sheet's
-  area — so it can sit off-centre, but never in a corner;
-- the newest bird sits on the anchor, largest;
-- the five heard before it gather AROUND it, a step smaller;
-- everything older is smaller again, shrinking with its age rank, and is
-  placed wherever the sheet is currently emptiest — which is naturally
-  the side the anchor left open, so the whole sheet stays covered and
-  the distribution comes out roughly uniform;
-- positions carry jitter, but DETERMINISTIC jitter: the same live set
-  always lays out the same way. The frame redraws only when the image
-  bytes change, so a layout that wandered on every render would wear the
-  panel for nothing. Any new bird reseeds the whole composition, which
-  is one redraw it was going to spend anyway.
+- the NEWEST bird sits on the sheet's centre, largest;
+- every other bird, in recency order, takes the spot nearest the centre
+  where it fits — so the sheet fills from the middle outward and the
+  cluster stays one cluster, never a bird alone in a corner;
+- the whole arrangement is scaled up until nothing more fits: the size is
+  SOLVED from the sheet, not guessed from a fill fraction.
+
+Deterministic per live set: the same birds always land the same way (the
+e-paper redraws only when the bytes change), and a new bird re-packs the
+whole sheet, which is one redraw it was going to spend anyway. The only
+per-set variation is the angle the spiral of candidate spots starts at,
+hashed from the set, so two walls of the same shape don't look stamped.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-import random
 from dataclasses import dataclass
+from functools import lru_cache
 
 from .wall_layout import hash_str
 
 logger = logging.getLogger(__name__)
 
-# The anchor box: a centred region holding this share of the usable area.
-ANCHOR_BOX_AREA = 0.30
-# The five birds heard before the newest one ("surround it").
+# Relative plate AREAS by recency rank: the newest dominates, the five heard
+# before it sit a step below, everything older tapers with age (kept from
+# the scatter — the size story was right, the placing wasn't).
 RECENT_COUNT = 5
-# Relative plate widths by recency rank. The newest dominates, the recent
-# five sit a step below it, and everything older tapers off with age.
-#
-# The ring tapers WITHIN itself as well. A flat ring band read as "nothing
-# gets smaller with age" on the panel (owner, 2026-08-20) — and it always
-# would have, because a wall of six birds is the newest plus exactly
-# RECENT_COUNT others, so the old-bird taper below never ran at all. Six
-# birds is a completely ordinary wall, so the size story has to be legible
-# without a seventh.
 NEWEST_WEIGHT = 1.0
 RECENT_WEIGHT_MAX = 0.78
 RECENT_WEIGHT_MIN = 0.62
 OLD_WEIGHT_MAX = 0.56
 OLD_WEIGHT_MIN = 0.40
-# How many older birds it takes to reach OLD_WEIGHT_MIN. Fixed, so a bird's
-# size follows its own age rather than the size of the wall it landed on.
 OLD_TAPER_SPAN = 8
-# How much of the usable sheet the plates' footprints aim to occupy. The
-# global scale is solved from this, so two birds come out big and twelve
-# come out small without separate rules per count.
-FILL = 0.62
-PLATE_ASPECT = 1.25  # cell height / width, as the wall's plates
-# Captions are FIXED-SIZE text (owner: don't resize the text), so the room
-# they need is absolute pixels, not a fraction of the plate — a small bird's
-# caption is exactly as tall as a large bird's. The renderer measures and
-# passes both the height and each caption's true width; the width becomes a
-# floor on the footprint so two small neighbours can't overlap lettering.
-CAPTION_SPACE = 0.20  # fallback fraction when the caller passes no caption_px
+PLATE_ASPECT = 1.25  # cell height / width when a bird's own ink shape is unknown
 SIDE_MARGIN = 0.03
 BOTTOM_MARGIN = 0.05
 # Minimum clear space between footprints, in vmin. Small: birds carry their
 # own whitespace once cropped to their ink.
 GAP_VMIN = 0.8
-# Candidate positions sampled per bird; the scorer picks among the valid ones.
-CANDIDATES = 60
-# The recent five are placed in POLAR coordinates around the anchor: each
-# takes a sector of the circle and creeps outward from the anchor until it
-# stops overlapping, so it ends up as close as it can get. Sampling them
-# uniformly over the whole sheet (as this did until 2026-08-20) barely ever
-# offered a spot near the anchor, so "nearest valid of sixty distant ones"
-# won and the ring never actually surrounded anything.
-RING_STEPS = 48  # radii tried, innermost first
-RING_STEP = 0.35  # each step outward, as a share of the bird's own size
-RING_WOBBLE = 0.30  # radians of jitter within a sector, so it isn't a clock face
-# How far a petal may creep from its innermost possible radius before the whole
-# layout shrinks and tries again, as a multiple of the bird's own size. Without
-# a cap a blocked sector sends one petal halfway across the sheet — it ends up
-# farther out than most of the OLDER birds, which reads as no arrangement at
-# all (QA measured one at 846px against a rosette body of 453px).
-RING_MAX_CREEP = 1.7
-# When a pass can't place everything, shrink and retry; the last pass places
-# regardless, so the function cannot fail outright.
-SHRINK = 0.94
-MAX_PASSES = 30
-# How strongly the small old birds prefer the outskirts, scaled by how much
-# smaller than the newest they are (0 = ignore the edges, 1 = the edge matters
-# as much as emptiness). The recent five aren't affected — they hug the anchor.
-# Both terms it weighs are normalised to 0..1 first; when they were raw pixel
-# distances the edge term simply outweighed emptiness and pinned every old
-# bird to a border (owner, 2026-08-20).
-EDGE_PULL = 0.55
+# The spiral of candidate spots: rings this many vmin apart, spots the same
+# distance apart along each ring (at least ANGLES_PER_RING of them), each
+# bird's ring starting a golden angle on from the last so nothing lines up.
+RADIUS_STEP_VMIN = 1.5
+ANGLES_PER_RING = 24
+GOLDEN = math.radians(137.507764)
 # Sanity caps so one lone bird doesn't become a poster.
-MAX_NEWEST_WIDTH = 0.46  # of usable width
+MAX_NEWEST_WIDTH = 0.6  # of usable width
 MAX_NEWEST_HEIGHT = 0.92  # of usable height, footprint incl. caption
+# No other bird's area passes this share of the newest's, whatever the scan.
+NEWEST_SHARE = 0.9
+# The scale scan: each step shrinks by this factor, down to this share of
+# the starting scale (below it nothing sensible is left).
+SCALE_STEP = 0.97
+SCALE_FLOOR = 0.05
+# Below this share of the starting scale the spiral's answer is compared
+# with plain rows, which take over when larger by this factor.
+ROWS_BELOW = 0.25
+ROWS_WIN = 1.5
+# After packing, birds grow in place into free room: this factor a step,
+# this many passes over the set — and never past this multiple of their own
+# recency weight, so a ring of six still tapers with age (the owner's
+# 2026-08-20 complaint was a flat ring).
+INFLATE_STEP = 1.03
+INFLATE_PASSES = 2
+INFLATE_MAX = 1.12
+# Plans are deterministic, so the last few are kept: the wall asks for the
+# same plan on every poll until its set or viewport changes, and the frame
+# renders the same plan twice per redraw (picture and text layers).
+PLAN_CACHE = 32
 
 
 @dataclass(frozen=True)
@@ -113,49 +91,73 @@ class Placement:
 
 
 def _ramp(lo: float, hi: float, i: int, n: int) -> float:
-    """`hi` at i=0 down to `lo` at i=n-1 (or `hi` when there's only one)."""
     return hi if n <= 1 else hi + (lo - hi) * (i / (n - 1))
 
 
 def _weights(count: int) -> list[float]:
-    """Plate width by recency rank.
-
-    Both ramps run over a FIXED span rather than over however many birds
-    happen to be on the wall. Scaling the ramp to the count puts the whole
-    drop into whatever birds exist: with seven birds the single old one sat at
-    the top of its range, and with eight the second one fell straight to the
-    bottom — a cliff between two consecutive birds, the same shape as the
-    six-bird bug. A fixed span means a bird's size depends on its own age, not
-    on how many others were heard, so the wall grows smoothly."""
-    weights = []
-    for rank in range(count):
-        if rank == 0:
-            weight = NEWEST_WEIGHT
-        elif rank <= RECENT_COUNT:
-            weight = _ramp(
-                RECENT_WEIGHT_MIN, RECENT_WEIGHT_MAX, rank - 1, RECENT_COUNT
+    """Relative AREA per bird, newest first."""
+    weights = [NEWEST_WEIGHT]
+    recent = min(RECENT_COUNT, max(0, count - 1))
+    for i in range(recent):
+        weights.append(_ramp(RECENT_WEIGHT_MIN, RECENT_WEIGHT_MAX, i, recent))
+    for i in range(count - 1 - recent):
+        weights.append(
+            _ramp(
+                OLD_WEIGHT_MIN,
+                OLD_WEIGHT_MAX,
+                min(i, OLD_TAPER_SPAN),
+                OLD_TAPER_SPAN + 1,
             )
-        else:
-            age = rank - RECENT_COUNT - 1
-            weight = _ramp(
-                OLD_WEIGHT_MIN, OLD_WEIGHT_MAX, min(age, OLD_TAPER_SPAN - 1),
-                OLD_TAPER_SPAN,
-            )
-        weights.append(weight)
-    return weights
+        )
+    return weights[:count]
 
 
-def _median(values: list[float]) -> float:
-    if not values:
-        return 0.0
-    ordered = sorted(values)
-    middle = len(ordered) // 2
-    if len(ordered) % 2:
-        return ordered[middle]
-    return (ordered[middle - 1] + ordered[middle]) / 2
+@dataclass(frozen=True)
+class _Sheet:
+    """The usable sheet and what every bird carries onto it: the fixed
+    caption height, each caption's measured width, the gap between
+    footprints, and where this set's spiral of candidate spots starts."""
+
+    left: float
+    top: float
+    uw: float
+    uh: float
+    gap: float
+    caption_px: float
+    caption_ws: tuple[float, ...]
+    base_angle: float
+    vmin: float
+
+    @property
+    def centre(self) -> tuple[float, float]:
+        # The newest's centre: the sheet's centre, its caption counted in,
+        # so bird plus lettering sit centred as a whole.
+        return self.left + self.uw / 2, self.top + self.uh / 2 - self.caption_px / 2
+
+    def inside(self, rect: tuple[float, float, float, float]) -> bool:
+        return (
+            rect[0] >= self.left
+            and rect[1] >= self.top
+            and rect[2] <= self.left + self.uw
+            and rect[3] <= self.top + self.uh
+        )
 
 
-def _overlaps(a: tuple, b: tuple, gap: float) -> bool:
+Rect = tuple[float, float, float, float]
+Spot = tuple[float, float, Rect]
+
+
+def _footprint(
+    cx: float, cy: float, w: float, h: float, cap_w: float, cap_h: float
+) -> Rect:
+    """The box a bird really occupies: its cell plus the caption hanging
+    below it, at least as wide as the caption's lettering. Centre = the
+    image's centre (what the renderer places)."""
+    fw = max(w, cap_w)
+    return (cx - fw / 2, cy - h / 2, cx + fw / 2, cy + h / 2 + cap_h)
+
+
+def _overlaps(a: Rect, b: Rect, gap: float) -> bool:
     return not (
         a[2] + gap <= b[0]
         or b[2] + gap <= a[0]
@@ -164,162 +166,163 @@ def _overlaps(a: tuple, b: tuple, gap: float) -> bool:
     )
 
 
-def _try_layout(
-    files, dims, scale, rng, left, top, uw, uh, gap, caption_px, caption_ws, force
-):
-    """One placement attempt at one scale. None = didn't fit, go smaller."""
-    placed = []  # (cx, cy, rect)
-    anchor = anchor_foot = None
-    ring_phase = rng.random() * math.tau  # where the rosette's first bird sits
-    ring_radii = []  # how far each rosette petal sits from the anchor
-    diag = math.hypot(uw, uh)
-    for i, _file in enumerate(files):
-        w = dims[i][0] * scale
-        plate_h = dims[i][1] * scale
-        foot_w = max(w, caption_ws[i])
-        foot_h = plate_h + (caption_px or plate_h * CAPTION_SPACE)
-        min_cx, max_cx = left + foot_w / 2, left + uw - foot_w / 2
-        min_cy = top + plate_h / 2
-        max_cy = top + uh - foot_h + plate_h / 2
-        if min_cx > max_cx or min_cy > max_cy:
-            return None  # plate wider/taller than the sheet at this scale
+def _sized(
+    dims: list[tuple[float, float]], scale: float, cap_w: float, cap_h: float
+) -> list[tuple[float, float]]:
+    """Every bird's cell at `scale` — except that the newest never grows
+    past its caps: once it is as big as a bird should be, the sheet's
+    remaining room goes to the others (a global cap would have frozen them
+    at their ratio to it, and left the sheet half empty)."""
+    out = [(w * scale, h * scale) for w, h in dims]
+    w0, h0 = out[0]
+    k = min(1.0, cap_w / w0 if w0 else 1.0, cap_h / h0 if h0 else 1.0)
+    out[0] = (w0 * k, h0 * k)
+    # …and nobody outgrows it: once the newest is capped, the scan could
+    # otherwise lift the others past it (a wide newest with a tall second
+    # bird on the 10" reached 0.98 of its area). Others stop at NEWEST_SHARE
+    # of its area, so "newest largest" holds in area at every scale.
+    ceiling = out[0][0] * out[0][1] * NEWEST_SHARE
+    for i in range(1, len(out)):
+        w, h = out[i]
+        if w * h > ceiling:
+            f = math.sqrt(ceiling / (w * h))
+            out[i] = (w * f, h * f)
+    return out
 
-        if i == 0:
-            # The anchor: uniform within a centred box of ANCHOR_BOX_AREA.
-            box_w = uw * math.sqrt(ANCHOR_BOX_AREA)
-            box_h = uh * math.sqrt(ANCHOR_BOX_AREA)
-            cx = left + uw / 2 + (rng.random() - 0.5) * box_w
-            cy = top + uh / 2 + (rng.random() - 0.5) * box_h
-            cx = min(max(cx, min_cx), max_cx)
-            cy = min(max(cy, min_cy), max_cy)
-            anchor = (cx, cy)
-            anchor_foot = (foot_w, plate_h)
-            placed.append(
-                (cx, cy,
-                 (cx - foot_w / 2, cy - plate_h / 2,
-                  cx + foot_w / 2, cy - plate_h / 2 + foot_h))
-            )
-            continue
 
-        def _rect(cx, cy, foot_w=foot_w, plate_h=plate_h, foot_h=foot_h):
-            return (cx - foot_w / 2, cy - plate_h / 2,
-                    cx + foot_w / 2, cy - plate_h / 2 + foot_h)
-
-        if i <= RECENT_COUNT:
-            # The recent five surround the newest. Each owns a sector of the
-            # circle and creeps outward from the anchor until it clears its
-            # neighbours, so it lands as close to the anchor as it can — which
-            # is what "gathered around it" means, and what sampling the whole
-            # sheet could never produce.
-            sector = math.tau / min(RECENT_COUNT, len(files) - 1)
-            angle = (
-                ring_phase
-                + (i - 1) * sector
-                + (rng.random() - 0.5) * RING_WOBBLE
-            )
-            step = RING_STEP * max(foot_w, foot_h)
-            start = 0.5 * (
-                min(anchor_foot[0], anchor_foot[1]) + min(foot_w, foot_h)
-            )
-            spot = None
-            ceiling = start + RING_MAX_CREEP * max(foot_w, foot_h)
-            for k in range(RING_STEPS):
-                radius = start + k * step
-                if radius > ceiling:
-                    break  # too far to still be "gathered around" — shrink instead
-                cx = anchor[0] + radius * math.cos(angle)
-                cy = anchor[1] + radius * math.sin(angle)
-                cx, cy = min(max(cx, min_cx), max_cx), min(max(cy, min_cy), max_cy)
-                rect = _rect(cx, cy)
-                if not any(_overlaps(rect, r, gap) for _, _, r in placed):
-                    spot = (cx, cy, rect)
-                    break
-            if spot is None:
-                if not force:
-                    return None  # shrink and try again: the rosette didn't fit
-                cx = min(max(anchor[0] + start * math.cos(angle), min_cx), max_cx)
-                cy = min(max(anchor[1] + start * math.sin(angle), min_cy), max_cy)
-                spot = (cx, cy, _rect(cx, cy))
-            placed.append(spot)
-            ring_radii.append(
-                math.hypot(spot[0] - anchor[0], spot[1] - anchor[1])
-            )
-            continue
-
-        # The bar an old bird has to clear is the rosette's MEDIAN radius, not
-        # its farthest petal. One petal can creep a long way out looking for
-        # space, and holding every later bird beyond that outlier is a bar the
-        # sheet may have no room for — it would push the old birds off the
-        # edge or fail the pass outright.
-        ring_edge = _median(ring_radii)
-
-        best = best_outside = None
-        # Half the candidates are drawn from the annulus beyond the rosette,
-        # where an old bird BELONGS, and half uniformly over the sheet so the
-        # corners still get filled. Drawing them all uniformly left the outside
-        # pool empty whenever the ring was wide, and the bird fell back to a
-        # gap between two petals.
-        for candidate in range(CANDIDATES):
-            if candidate % 2 == 0:
-                angle = rng.random() * math.tau
-                radius = ring_edge + (diag - ring_edge) * math.sqrt(rng.random())
-                cx = anchor[0] + radius * math.cos(angle)
-                cy = anchor[1] + radius * math.sin(angle)
-                cx = min(max(cx, min_cx), max_cx)
-                cy = min(max(cy, min_cy), max_cy)
-            else:
-                cx = rng.uniform(min_cx, max_cx)
-                cy = rng.uniform(min_cy, max_cy)
-            rect = _rect(cx, cy)
-            collides = any(_overlaps(rect, r, gap) for _, _, r in placed)
-            if collides and not force:
-                continue
-            # Older (smaller) birds fill the emptiest region — the candidate
-            # whose nearest neighbour is farthest wins — with a pull outward
-            # on top (owner: small birds on the outskirts, large ones inside).
-            # The pull grows as the bird shrinks, so the oldest drift furthest
-            # out. Both terms are normalised to 0..1 so the two actually trade
-            # off; as raw pixel distances the pull simply won and pinned every
-            # old bird to a border.
-            #
-            # Outward means away from the ANCHOR, not from the middle of the
-            # sheet. The anchor is where the composition's weight sits, and it
-            # can be well off-centre — measured from the sheet's middle, the
-            # small birds happily filled the space between the anchor and the
-            # far edge, i.e. straight through the ring they're supposed to be
-            # outside of.
-            nearest = math.sqrt(min(
-                (cx - px) ** 2 + (cy - py) ** 2 for px, py, _ in placed
-            ))
-            from_focus = math.hypot(cx - anchor[0], cy - anchor[1])
-            outward = EDGE_PULL * (1 - dims[i][0] / dims[0][0])
-            score = nearest / diag + outward * from_focus / (diag / 2)
-            if collides:
-                score -= 1e12  # forced pass: overlap only as a last resort
-            if best is None or score > best[0]:
-                best = (score, cx, cy, rect)
-            # The pull outward is a score term, and a score term can be
-            # outvoted: a gap BETWEEN two ring petals scores well on emptiness
-            # while sitting closer in than the ring itself, which is how the
-            # oldest bird on a real nine-bird wall ended up nearest the anchor
-            # of all nine. "Smaller birds on the outskirts" is a rule, not a
-            # preference, so a candidate outside the ring's outer edge beats
-            # every candidate inside it outright.
-            # Not on the forced pass, though: an overlapping spot outside the
-            # rosette must not beat a clean one inside it, or the `-= 1e12`
-            # last-resort penalty above is defeated by the very next line.
-            if not collides and from_focus >= ring_edge and (
-                best_outside is None or score > best_outside[0]
-            ):
-                best_outside = (score, cx, cy, rect)
-        chosen = best_outside or best
-        if chosen is None:
+def _pack(cells: list[tuple[float, float]], sheet: _Sheet) -> list[Spot] | None:
+    """Place every bird (its cell already sized), nearest the centre first;
+    None if one doesn't fit anywhere on the sheet."""
+    cx0, cy0 = sheet.centre
+    w0, h0 = cells[0]
+    first = _footprint(cx0, cy0, w0, h0, sheet.caption_ws[0], sheet.caption_px)
+    if not sheet.inside(first):
+        return None
+    placed: list[Spot] = [(cx0, cy0, first)]
+    max_r = math.hypot(sheet.uw, sheet.uh) / 2
+    step = RADIUS_STEP_VMIN * sheet.vmin
+    for i in range(1, len(cells)):
+        w, h = cells[i]
+        found = None
+        r = step
+        while r <= max_r and found is None:
+            # Spots a step apart along the ring too, so pockets by the
+            # sheet's edge are found as surely as those near the centre.
+            angles = max(ANGLES_PER_RING, int(2 * math.pi * r / step))
+            for k in range(angles):
+                ang = sheet.base_angle + i * GOLDEN + k * (2 * math.pi / angles)
+                cx, cy = cx0 + r * math.cos(ang), cy0 + r * math.sin(ang)
+                rect = _footprint(cx, cy, w, h, sheet.caption_ws[i], sheet.caption_px)
+                if not sheet.inside(rect):
+                    continue
+                if any(_overlaps(rect, p[2], sheet.gap) for p in placed):
+                    continue
+                found = (cx, cy, rect)
+                break
+            r += step
+        if found is None:
             return None
-        placed.append((chosen[1], chosen[2], chosen[3]))
+        placed.append(found)
     return placed
 
 
-def compute_frame_scatter(
+def _rows(cells: list[tuple[float, float]], sheet: _Sheet) -> list[Spot] | None:
+    """The last resort when no scale packs around the centre (a dozen birds
+    with captions two lines wide on a small sheet): rows, centred, newest
+    first from the top. Loses "newest in the middle", never the wall — the
+    browser freezes on an empty plan and the e-paper spends a redraw on a
+    blank sheet. None only if a single footprint is wider than the sheet."""
+    x = y = 0.0
+    row_h = 0.0
+    row: list[tuple[int, float, float]] = []
+    rows: list[tuple[list[tuple[int, float, float]], float, float]] = []
+    for i, (w, h) in enumerate(cells):
+        fw = max(w, sheet.caption_ws[i])
+        fh = h + sheet.caption_px
+        if fw > sheet.uw or fh > sheet.uh:
+            return None
+        if row and x + sheet.gap + fw > sheet.uw:
+            rows.append((row, x, row_h))
+            y += row_h + sheet.gap
+            row, x, row_h = [], 0.0, 0.0
+        if row:
+            x += sheet.gap
+        row.append((i, x, fw))
+        x += fw
+        row_h = max(row_h, fh)
+    rows.append((row, x, row_h))
+    if y + row_h > sheet.uh:
+        return None
+    y = sheet.top + (sheet.uh - (y + row_h)) / 2
+    spots: dict[int, Spot] = {}
+    for row, width, height in rows:
+        x0 = sheet.left + (sheet.uw - width) / 2
+        for i, dx, fw in row:
+            w, h = cells[i]
+            cx, cy = x0 + dx + fw / 2, y + h / 2
+            spots[i] = (
+                cx,
+                cy,
+                _footprint(cx, cy, w, h, sheet.caption_ws[i], sheet.caption_px),
+            )
+        y += height + sheet.gap
+    return [spots[i] for i in range(len(cells))]
+
+
+def _inflate(
+    placed: list[Spot],
+    cells: list[tuple[float, float]],
+    weights: list[float],
+    scale: float,
+    sheet: _Sheet,
+) -> tuple[list[Spot], list[tuple[float, float]]]:
+    """Grow each bird in place into the room around it — a few percent a
+    step, until it would touch a neighbour or the edge — never past the
+    bird one rank newer, and never past INFLATE_MAX of its own weight, so
+    the size still tells the age. The newest stays as the scan sized it.
+    Two passes: a bird's growth frees nothing, but a later bird's ceiling
+    (its newer neighbour) may have risen."""
+    cells = list(cells)
+    for _ in range(INFLATE_PASSES):
+        # Ceilings from this pass's starting sizes: a bird grown earlier in
+        # the pass doesn't lift the ceiling of the one after it.
+        areas = [w * h for w, h in cells]
+        for i in range(1, len(cells)):
+            cx, cy, _rect = placed[i]
+            w, h = cells[i]
+            ceiling = min(
+                areas[i - 1] if i > 1 else areas[0] * NEWEST_SHARE,
+                weights[i] * INFLATE_MAX * scale * scale,
+            )
+            k = 1.0
+            while True:
+                nk = k * INFLATE_STEP
+                nw, nh = w * nk, h * nk
+                if nw * nh > ceiling:
+                    break
+                rect = _footprint(cx, cy, nw, nh, sheet.caption_ws[i], sheet.caption_px)
+                if not sheet.inside(rect):
+                    break
+                if any(
+                    _overlaps(rect, p[2], sheet.gap)
+                    for j, p in enumerate(placed)
+                    if j != i
+                ):
+                    break
+                k = nk
+            if k > 1.0:
+                cells[i] = (w * k, h * k)
+                placed[i] = (
+                    cx,
+                    cy,
+                    _footprint(
+                        cx, cy, w * k, h * k, sheet.caption_ws[i], sheet.caption_px
+                    ),
+                )
+    return placed, cells
+
+
+def compute_frame_layout(
     files: list[str],
     width: float,
     height: float,
@@ -329,81 +332,120 @@ def compute_frame_scatter(
     caption_px: float = 0.0,
     caption_widths: list[float] | None = None,
 ) -> list[Placement]:
-    """Lay the birds out as a focal scatter. `files` is newest-first.
+    """Lay the birds out as a packed rosette. `files` is newest-first.
 
-    `aspects` is each bird's OWN ink aspect (height/width), so its cell is
-    shaped like the bird rather than a 4:5 plate — a heron gets a tall thin
-    cell, a plump owl a squarish one, and the whitespace a mismatched cell
-    carried inside itself is gone (owner: "crop the birds so there is less
-    whitespace in the paints itself"). The recency weights set each bird's
-    AREA, so a tall bird doesn't out-bulk a wide one of the same rank."""
+    `aspects` is each bird's OWN ink aspect (height/width) so its cell is
+    shaped like the bird; the recency weights set each bird's AREA. The
+    plan is a pure function of its inputs and is memoised (PLAN_CACHE)."""
+    return list(
+        _layout(
+            tuple(files),
+            float(width),
+            float(height),
+            float(band_top),
+            None if aspects is None else tuple(aspects),
+            float(caption_px),
+            None if caption_widths is None else tuple(caption_widths),
+        )
+    )
+
+
+@lru_cache(maxsize=PLAN_CACHE)
+def _layout(
+    files: tuple[str, ...],
+    width: float,
+    height: float,
+    band_top: float,
+    aspects: tuple[float, ...] | None,
+    caption_px: float,
+    caption_widths: tuple[float, ...] | None,
+) -> tuple[Placement, ...]:
     if width <= 0 or height <= 0 or not files:
-        return []
+        return ()
     vmin = min(width, height) / 100
     left, top = width * SIDE_MARGIN, band_top
     uw = width * (1 - 2 * SIDE_MARGIN)
     uh = height * (1 - BOTTOM_MARGIN) - band_top
     if uw <= 0 or uh <= 0:
-        return []
-
+        return ()
     weights = _weights(len(files))
-    if aspects is None:
-        aspects = [PLATE_ASPECT] * len(files)
-    aspects = [min(2.4, max(0.45, a)) for a in aspects]
-    caption_ws = caption_widths or [0.0] * len(files)
-    # The weight is an AREA: unit dims per bird follow its own ink shape.
+    shapes = [PLATE_ASPECT] * len(files) if aspects is None else list(aspects)
+    shapes = [min(2.4, max(0.45, a)) for a in shapes]
+    # A weight is an AREA: the cell's side is its root, shaped by the bird's
+    # own ink aspect. (The scatter's cells were weight/√a × weight·√a — an
+    # area of weight², the oldest a quarter of the newest; this is the size
+    # story the constants describe, and a deliberate change of look.)
     dims = [
-        (w / math.sqrt(a), w * math.sqrt(a))
-        for w, a in zip(weights, aspects, strict=True)
+        (math.sqrt(w) / math.sqrt(a), math.sqrt(w) * math.sqrt(a))
+        for w, a in zip(weights, shapes, strict=True)
     ]
-    # Solve the global scale so the footprints (bird + its fixed-height
-    # caption) hit the fill target: sum(uw*uh)*s^2 + sum(uw)*caption*s = F*U.
-    quad = sum(dw * dh for dw, dh in dims)
-    lin = sum(dw for dw, _ in dims) * caption_px
-    target = FILL * uw * uh
-    scale = (-lin + math.sqrt(lin * lin + 4 * quad * target)) / (2 * quad)
-    scale = min(
-        scale,
-        MAX_NEWEST_WIDTH * uw / dims[0][0],
-        (MAX_NEWEST_HEIGHT * uh - caption_px) / dims[0][1],
+    sheet = _Sheet(
+        left=left,
+        top=top,
+        uw=uw,
+        uh=uh,
+        gap=GAP_VMIN * vmin,
+        caption_px=caption_px,
+        caption_ws=caption_widths or (0.0,) * len(files),
+        base_angle=(hash_str("|".join(files)) % 3600) / 3600 * 2 * math.pi,
+        vmin=vmin,
     )
-    gap = GAP_VMIN * vmin
-    seed = hash_str("|".join(files))
-
-    placed = None
-    for attempt in range(MAX_PASSES):
-        rng = random.Random(seed * 1000003 + attempt)  # noqa: S311 — layout jitter, not cryptography
-        placed = _try_layout(
-            files, dims, scale * SHRINK**attempt, rng,
-            left, top, uw, uh, gap, caption_px, caption_ws,
-            force=attempt == MAX_PASSES - 1,
-        )
-        if placed is not None:
-            scale = scale * SHRINK**attempt
+    # The largest scale at which everything fits: scanned DOWN from the
+    # scale at which the largest bird alone would fill the sheet, a few
+    # percent a step. Not a binary search — a greedy packer isn't monotonic
+    # (a slightly smaller scale can fail where a larger one fit, because the
+    # spots it picks change), and a bisection stops at the first false
+    # failure. The newest is capped inside `_sized`, so the scan really asks
+    # how big the others can go.
+    cap_w = MAX_NEWEST_WIDTH * uw
+    cap_h = max(1.0, MAX_NEWEST_HEIGHT * uh - caption_px)
+    hi = min(uw / max(w for w, _ in dims), (uh - caption_px) / max(h for _, h in dims))
+    if hi <= 0:
+        return ()
+    best, scale = None, hi
+    while scale > hi * SCALE_FLOOR:
+        cells = _sized(dims, scale, cap_w, cap_h)
+        best = _pack(cells, sheet)
+        if best is not None:
             break
-
-    if placed is None:
-        # Even the forced pass bails when a single plate is wider or taller
-        # than the usable sheet — a viewport far smaller than any real panel.
-        # An empty wall is the honest answer there; the alternative was a
-        # TypeError from zipping against None, under a docstring promising
-        # this function cannot fail outright.
-        logger.warning(
-            "frame layout: %d birds don't fit %gx%g; rendering nothing",
-            len(files), width, height,
-        )
-        return []
-
-    placements = []
-    for i, (file, (cx, cy, _rect)) in enumerate(zip(files, placed, strict=True)):
-        placements.append(
-            Placement(
-                file=file,
-                x=cx - width / 2,
-                y=cy - height / 2,
-                size_vmin=dims[i][0] * scale / vmin,
-                height_vmin=dims[i][1] * scale / vmin,
-                z=len(files) - i,  # newest on top, as on the wall
+        scale *= SCALE_STEP
+    if best is None or scale < hi * ROWS_BELOW:
+        # Rows: when nothing packs around the centre, or the spiral only
+        # managed it far down its scan (a dozen birds with two-line captions
+        # on a small sheet pack as thumbnails around a caption list). Rows
+        # get their own scan and win if they come out larger by a margin.
+        rows, rows_scale = None, hi
+        while rows_scale > hi * SCALE_FLOOR:
+            rows_cells = _sized(dims, rows_scale, cap_w, cap_h)
+            rows = _rows(rows_cells, sheet)
+            if rows is not None:
+                break
+            rows_scale *= SCALE_STEP
+        if rows is not None and (best is None or rows_scale > scale * ROWS_WIN):
+            best, cells, scale = rows, rows_cells, rows_scale
+            logger.warning(
+                "frame layout: %d birds in rows, not around the centre (%gx%g)",
+                len(files),
+                width,
+                height,
             )
+        if best is None:
+            logger.warning(
+                "frame layout: %d birds don't fit %gx%g; rendering nothing",
+                len(files),
+                width,
+                height,
+            )
+            return ()
+    best, cells = _inflate(best, cells, weights, scale, sheet)
+    return tuple(
+        Placement(
+            file=file,
+            x=cx - width / 2,
+            y=cy - height / 2,
+            size_vmin=cells[i][0] / vmin,
+            height_vmin=cells[i][1] / vmin,
+            z=len(files) - i,
         )
-    return placements
+        for i, (file, (cx, cy, _rect)) in enumerate(zip(files, best, strict=True))
+    )

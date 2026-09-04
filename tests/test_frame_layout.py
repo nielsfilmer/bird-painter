@@ -1,277 +1,295 @@
-"""The frame's focal scatter, encoding the owner's dictated rules
-(2026-08-13): newest bird largest on an anchor inside a central box, the
-five before it around it a step smaller, older birds smaller still and
-spread wherever the sheet is emptiest, deterministic jitter, whole sheet
-covered."""
+"""The panel's packed rosette (owner, 2026-09-04): newest bird on the
+sheet's centre, largest; everything else as close to it as it fits, in
+recency order; the whole arrangement as large as the sheet allows; no
+randomness."""
 
 import math
 
+import pytest
+
 from bird_painter.frame_layout import (
-    ANCHOR_BOX_AREA,
     BOTTOM_MARGIN,
-    CAPTION_SPACE,
-    PLATE_ASPECT,
+    MAX_NEWEST_WIDTH,
+    NEWEST_SHARE,
+    OLD_WEIGHT_MIN,
     RECENT_COUNT,
     SIDE_MARGIN,
-    compute_frame_scatter,
+    _layout,
+    _rows,
+    _Sheet,
+    compute_frame_layout,
 )
 
-PANEL = (1600, 1200)
-BAND_TOP = 54
-VMIN = min(PANEL) / 100
-
-
-def place(count: int, salt: str = ""):
-    files = [f"bird{salt}{i:02d}.jpg" for i in range(count)]  # newest first
-    return compute_frame_scatter(files, *PANEL, BAND_TOP)
-
-
-# What the renderer actually passes: each bird's own ink aspect, a fixed
-# caption height in pixels, and each caption's measured width. The suite used
-# to call compute_frame_scatter with none of them, which is why a placement bug
-# reached the panel — with plain unit cells the rosette never got wide enough
-# to leave a tempting gap between its petals.
-IN_THE_WILD_ASPECTS = [1.05, 0.72, 1.55, 0.88, 1.30, 0.95, 1.80, 0.65, 1.20,
-                       1.40, 0.80, 1.10, 1.62, 0.90, 1.15, 0.75]
-IN_THE_WILD_CAPTIONS = [150, 220, 190, 260, 170, 210, 240, 160, 200, 180,
-                        230, 175, 205, 145, 250, 165]
+# The three real sheets: the e-paper frame, the 7" in landscape, the 10" in
+# portrait — with what the renderer actually passes (each bird's own ink
+# aspect, a fixed caption height, each caption's measured width).
+SHEETS = {"frame": (1600, 1200, 54), "seven": (1280, 720, 0), "ten": (1200, 1920, 0)}
+ASPECTS = [1.05, 0.72, 1.55, 0.88, 1.30, 0.95, 1.80, 0.65, 1.20, 1.40, 0.80, 1.10]
+CAPTIONS = [150, 220, 190, 260, 170, 210, 240, 160, 200, 180, 230, 175]
 CAPTION_PX = 33.0
 
 
-def place_as_rendered(count: int, salt: str = ""):
-    files = [f"bird{salt}{i:02d}.jpg" for i in range(count)]
-    return compute_frame_scatter(
-        files, *PANEL, BAND_TOP,
-        aspects=IN_THE_WILD_ASPECTS[:count],
+def place(count: int, sheet: str = "frame", salt: str = ""):
+    w, h, band = SHEETS[sheet]
+    files = [f"bird{salt}{i:02d}.jpg" for i in range(count)]  # newest first
+    return compute_frame_layout(
+        files,
+        w,
+        h,
+        band,
+        aspects=ASPECTS[:count],
         caption_px=CAPTION_PX,
-        caption_widths=IN_THE_WILD_CAPTIONS[:count],
+        caption_widths=CAPTIONS[:count],
     )
 
 
-def rendered_footprint(p, index):
-    """The box the renderer really occupies: the caption's measured width is a
-    floor on it, so two small neighbours can't overlap each other's lettering."""
-    w = max(p.size_vmin * VMIN, IN_THE_WILD_CAPTIONS[index])
-    h = p.height_vmin * VMIN
-    left = (p.x + PANEL[0] / 2) - w / 2
-    top = (p.y + PANEL[1] / 2) - h / 2
-    return (left, top, left + w, top + h + CAPTION_PX)
+def footprint(p, index, sheet):
+    """The box the renderer occupies: the cell, at least the caption's width,
+    plus the caption hanging below."""
+    w, h, _ = SHEETS[sheet]
+    vmin = min(w, h) / 100
+    fw = max(p.size_vmin * vmin, CAPTIONS[index])
+    fh = p.height_vmin * vmin
+    left, top = p.x + w / 2 - fw / 2, p.y + h / 2 - fh / 2
+    return (left, top, left + fw, top + fh + CAPTION_PX)
 
 
-def footprint(p):
-    w = p.size_vmin * VMIN
-    h = p.height_vmin * VMIN
-    top = (p.y + PANEL[1] / 2) - h / 2
-    return (
-        (p.x + PANEL[0] / 2) - w / 2,
-        top,
-        (p.x + PANEL[0] / 2) + w / 2,
-        top + h * (1 + CAPTION_SPACE),
+def fill(placements, sheet):
+    w, h, band = SHEETS[sheet]
+    vmin = min(w, h) / 100
+    area = sum(
+        (p.size_vmin * vmin) * (p.height_vmin * vmin + CAPTION_PX) for p in placements
     )
+    return area / (w * (1 - 2 * SIDE_MARGIN) * (h * (1 - BOTTOM_MARGIN) - band))
 
 
-def test_newest_is_largest_then_recent_then_tapering_old():
-    sizes = [p.size_vmin for p in place(12)]
-    assert sizes[0] > sizes[1], "the newest bird dominates"
-    assert sizes == sorted(sizes, reverse=True), "size only ever falls with age"
-    recent = sizes[1 : RECENT_COUNT + 1]
-    assert recent[0] > recent[-1], "the ring itself tapers"
-    old = sizes[RECENT_COUNT + 1 :]
-    assert all(o < recent[-1] for o in old), "older birds are smaller still"
+@pytest.mark.parametrize("sheet", list(SHEETS))
+@pytest.mark.parametrize("count", [1, 2, 3, 6, 12])
+def test_the_newest_bird_sits_on_the_sheets_centre(sheet, count):
+    w, h, band = SHEETS[sheet]
+    newest = place(count, sheet)[0]
+    assert newest.x == pytest.approx(0, abs=0.5)
+    # Vertically: the usable sheet's centre, its own caption counted in.
+    usable_mid = band + (h * (1 - BOTTOM_MARGIN) - band) / 2 - CAPTION_PX / 2
+    assert newest.y + h / 2 == pytest.approx(usable_mid, abs=0.5)
+    assert newest.z == count  # on top
 
 
-def test_a_six_bird_wall_still_shows_its_recency():
-    """Six birds is the newest plus exactly RECENT_COUNT others, so the
-    old-bird taper never runs — and with a flat ring band nothing on the panel
-    got smaller with age at all (owner, 2026-08-20)."""
-    sizes = [p.size_vmin for p in place(6)]
-    assert sizes == sorted(sizes, reverse=True)
-    assert sizes[-1] < 0.85 * sizes[1], "the oldest is visibly below the newest"
-
-
-def test_the_anchor_sits_inside_the_central_box():
-    """A box holding ~30% of the area has sides sqrt(0.3) of the sheet's —
-    the newest bird's centre must land inside it, wherever the seed falls."""
-    half_w = PANEL[0] * math.sqrt(ANCHOR_BOX_AREA) / 2
-    half_h = PANEL[1] * math.sqrt(ANCHOR_BOX_AREA) / 2
-    for salt in ("", "a", "b", "c", "d"):
-        newest = place(9, salt)[0]
-        assert abs(newest.x) <= half_w + 1
-        assert abs(newest.y) <= half_h + BAND_TOP  # usable area sits low
-
-
-def test_the_recent_five_gather_around_the_newest():
-    placements = place(12)
-    newest = placements[0]
-
-    def distance(p):
-        return math.hypot(p.x - newest.x, p.y - newest.y)
-
-    ring = [distance(p) for p in placements[1 : RECENT_COUNT + 1]]
-    others = [distance(p) for p in placements[RECENT_COUNT + 1 :]]
-    # Not every old bird is far — they fill gaps — but the ring must be
-    # decisively nearer on average: that's what "surround it" means.
-    assert sum(ring) / len(ring) < 0.7 * (sum(others) / len(others))
-
-
-def test_nothing_overlaps():
-    for count in (2, 5, 8, 12):
-        rects = [footprint(p) for p in place(count)]
-        for i, a in enumerate(rects):
-            for b in rects[i + 1 :]:
-                assert (
-                    a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
-                ), f"{count} birds: {a} collides with {b}"
-
-
-def test_everything_stays_on_the_sheet():
-    for count in (1, 3, 7, 12, 16):
-        for p in place(count):
-            x0, y0, x1, y1 = footprint(p)
-            assert x0 >= PANEL[0] * SIDE_MARGIN - 1
-            assert x1 <= PANEL[0] * (1 - SIDE_MARGIN) + 1
-            assert y0 >= BAND_TOP - 1
-            assert y1 <= PANEL[1] * (1 - BOTTOM_MARGIN) + 1
-
-
-def test_the_whole_sheet_is_covered_when_there_are_many_birds():
-    """The owner's balance rule: an off-centre anchor pushes the rest to the
-    other side, so the composition stays roughly uniform. Centres must span
-    most of the sheet and their centroid must sit near the middle."""
-    placements = place(12)
-    xs = [p.x for p in placements]
-    ys = [p.y for p in placements]
-    assert max(xs) - min(xs) > 0.55 * PANEL[0], "spread across the width"
-    assert max(ys) - min(ys) > 0.45 * PANEL[1], "and down the height"
-    assert abs(sum(xs) / len(xs)) < 0.12 * PANEL[0], "centroid near centre"
-    left = sum(1 for x in xs if x < 0)
-    assert 3 <= left <= 9, "neither half of the sheet is abandoned"
-
-
-def test_layout_is_deterministic_per_live_set():
-    """The frame redraws only when the bytes change; a layout that wandered
-    per render would wear the panel for nothing."""
-    assert place(9) == place(9)
-    assert place(9) != place(9, salt="other")  # a new set reshuffles
-
-
-def test_a_lone_bird_is_big_but_not_a_poster():
-    lone = place(1)[0]
-    assert lone.size_vmin * VMIN > 0.30 * PANEL[0]
-    assert lone.size_vmin * VMIN <= 0.46 * PANEL[0] * (1 - 2 * SIDE_MARGIN) + 1
-    plate_h = lone.height_vmin * VMIN
-    assert abs(plate_h / (lone.size_vmin * VMIN) - PLATE_ASPECT) < 1e-6
-
-
-def test_an_empty_wall_places_nothing():
-    assert compute_frame_scatter([], *PANEL, BAND_TOP) == []
-    assert compute_frame_scatter(["a.jpg"], 0, 0, 0) == []
-
-
-def test_smaller_birds_sit_further_out_than_larger_ones():
-    """Owner: keep the smaller birds on the outskirts, the larger inside.
-
-    Measured from the NEWEST bird, which is where the composition's weight
-    sits — the anchor can be well off-centre, and against the sheet's middle
-    the smallest birds scored well by sitting between the anchor and the far
-    edge, which is inside the ring they belong outside of."""
-    for salt in ("", "a", "b"):
-        placements = place(12, salt)
-        newest = placements[0]
-
-        def from_focus(p, newest=newest):
-            return math.hypot(p.x - newest.x, p.y - newest.y)
-
-        ring = [from_focus(p) for p in placements[1 : RECENT_COUNT + 1]]
-        oldest = [from_focus(p) for p in placements[-3:]]  # the smallest three
-        assert sum(oldest) / len(oldest) > 1.15 * (sum(ring) / len(ring)), salt
-
-
-def test_no_old_bird_sits_inside_the_ring_on_a_real_wall():
-    """The averages above passed while the single oldest bird sat nearer the
-    anchor than every other bird on the panel (QA, 2026-08-20). A gap BETWEEN
-    two ring petals scores well on emptiness, so the outward pull — a score
-    term — was outvoted. No old bird may sit inside the body of the rosette,
-    and the check has to run on production-shaped input: with plain unit cells
-    the rosette is too tight to leave such a gap.
-
-    The bar is the ring's MEDIAN radius. A single petal can creep far out
-    hunting for space, and holding every later bird beyond that outlier is a
-    bar the sheet may simply not have room for."""
-    for count in (7, 9, 12, 16):
-        for salt in ("", "a", "b", "c"):
-            placements = place_as_rendered(count, salt)
-            anchor = placements[0]
-
-            def distance(p, anchor=anchor):
-                return math.hypot(p.x - anchor.x, p.y - anchor.y)
-
-            ring = sorted(distance(p) for p in placements[1 : RECENT_COUNT + 1])
-            old = [distance(p) for p in placements[RECENT_COUNT + 1 :]]
-            body = ring[len(ring) // 2]
-            # A hair of tolerance: on a full sheet the last bird can find no
-            # non-overlapping spot outside the rosette at all, and a placement
-            # just inside the bar beats no placement. The bug this guards
-            # against was not marginal — an old bird at 291 against a ring at
-            # 537 — so a 5% skirt still catches it with room to spare.
-            assert min(old) >= body * 0.95, (
-                f"{count} birds, salt {salt!r}: an old bird at {min(old):.0f} "
-                f"sits inside the rosette's body at {body:.0f}"
+@pytest.mark.parametrize("sheet", list(SHEETS))
+@pytest.mark.parametrize("count", [2, 3, 6, 9, 12])
+def test_nothing_overlaps_and_everything_stays_on_the_sheet(sheet, count):
+    w, h, band = SHEETS[sheet]
+    boxes = [footprint(p, i, sheet) for i, p in enumerate(place(count, sheet))]
+    assert len(boxes) == count
+    for i, a in enumerate(boxes):
+        assert a[0] >= w * SIDE_MARGIN - 0.5 and a[2] <= w * (1 - SIDE_MARGIN) + 0.5
+        assert a[1] >= band - 0.5 and a[3] <= h * (1 - BOTTOM_MARGIN) + 0.5
+        for b in boxes[i + 1 :]:
+            assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], (
+                i,
+                a,
+                b,
             )
 
 
-def test_a_real_wall_never_overlaps_or_runs_off_the_sheet():
-    """The same production shape, against the two invariants that matter most:
-    captions are fixed-size, so a small bird's lettering is wider than the bird
-    and is what actually collides."""
-    for count in (1, 2, 6, 9, 12, 16):
-        for salt in ("", "a", "b"):
-            rects = [
-                rendered_footprint(p, i)
-                for i, p in enumerate(place_as_rendered(count, salt))
-            ]
-            for a in rects:
-                assert a[0] >= PANEL[0] * SIDE_MARGIN - 1
-                assert a[2] <= PANEL[0] * (1 - SIDE_MARGIN) + 1
-                assert a[1] >= BAND_TOP - 1
-                assert a[3] <= PANEL[1] * (1 - BOTTOM_MARGIN) + 1
-            for i, a in enumerate(rects):
-                for b in rects[i + 1 :]:
-                    assert (
-                        a[2] <= b[0] or b[2] <= a[0]
-                        or a[3] <= b[1] or b[3] <= a[1]
-                    ), f"{count} birds, salt {salt!r}: {a} collides with {b}"
+@pytest.mark.parametrize("sheet", list(SHEETS))
+def test_the_sheet_is_filled(sheet):
+    """The owner's ask: "fills the screen as much as possible". The scatter
+    managed ~0.15 at six birds; the rosette holds nearly half the sheet
+    there (measured 0.44–0.50 on the three panels) and keeps filling as
+    the wall grows."""
+    assert fill(place(6, sheet), sheet) >= 0.42
+    assert fill(place(12, sheet), sheet) >= 0.55
+    assert fill(place(3, sheet), sheet) >= 0.34
 
 
-def test_a_crowded_sheet_still_places_every_bird_on_it():
-    """The forced pass — the one where overlap is permitted as a last resort —
-    had no test reaching it (QA, 2026-08-20), which is how a regression in the
-    candidate chooser could have gone unnoticed. Squeeze sixteen birds with
-    wide captions onto a small sheet: every bird must still be placed, and
-    still be on the sheet, however tight it gets."""
-    files = [f"crowd{i:02d}.jpg" for i in range(16)]
-    placements = compute_frame_scatter(
-        files, 500, 380, 20,
-        aspects=IN_THE_WILD_ASPECTS,
-        caption_px=18.0,
-        caption_widths=[90] * 16,
+@pytest.mark.parametrize("sheet", list(SHEETS))
+def test_the_birds_stay_one_cluster(sheet):
+    """No bird alone in a corner: every bird's footprint is within three
+    vmin of some other bird's (measured: under two on all three sheets) —
+    the sheet fills outward from the middle, so the cluster has no islands.
+    The scatter placed its old birds "wherever emptiest", tens of vmin from
+    anything."""
+    w, h, _ = SHEETS[sheet]
+    placements = place(6, sheet)
+    boxes = [footprint(p, i, sheet) for i, p in enumerate(placements)]
+    reach = 3 * min(w, h) / 100
+    for i, a in enumerate(boxes):
+        others = [b for j, b in enumerate(boxes) if j != i]
+        gap = min(
+            max(0, max(b[0] - a[2], a[0] - b[2]))
+            + max(0, max(b[1] - a[3], a[1] - b[3]))
+            for b in others
+        )
+        assert gap <= reach, (i, gap, reach)
+
+
+def test_growth_in_place_is_capped_by_a_birds_own_weight(monkeypatch):
+    """Four birds on the 7" with mid-height captions leave room around the
+    oldest: it grows in place, but never past INFLATE_MAX of its own
+    uninflated size. Measured three ways in one test — no growth, capped
+    growth, uncapped growth — so the cap is shown to bind, not assumed."""
+    from bird_painter import frame_layout as fl
+
+    def areas():
+        fl._layout.cache_clear()
+        placements = compute_frame_layout(
+            [f"b{i}.jpg" for i in range(4)],
+            1280,
+            720,
+            0,
+            aspects=ASPECTS[:4],
+            caption_px=49.5,
+            caption_widths=CAPTIONS[:4],
+        )
+        return [p.size_vmin * p.height_vmin for p in placements]
+
+    monkeypatch.setattr(fl, "INFLATE_PASSES", 0)
+    base = areas()
+    monkeypatch.setattr(fl, "INFLATE_PASSES", 2)
+    capped = areas()
+    monkeypatch.setattr(fl, "INFLATE_MAX", 1e6)
+    free = areas()
+    fl._layout.cache_clear()
+    assert capped[0] == base[0] == free[0]  # the newest never grows
+    for i in range(1, 4):
+        assert capped[i] <= base[i] * 1.12 * 1.001, i
+    assert capped[3] > base[3] * 1.05, "the oldest had room and grew"
+    assert capped[3] <= base[3] * 1.12 * 1.001, "…but not past the cap"
+    assert free[3] > base[3] * 1.12, "without the cap it would have"
+
+
+def test_sizes_follow_recency():
+    """Newest largest, the recent five a step below, older ones tapering —
+    the size story from the scatter, kept. Growth in place may lift a bird,
+    but never past the one a rank newer, nor past NEWEST_SHARE of the newest."""
+    placements = place(12)
+    areas = [p.size_vmin * p.height_vmin for p in placements]
+    assert areas[0] == max(areas)
+    assert max(areas[1:]) <= areas[0] * NEWEST_SHARE + 1e-6
+    assert min(areas[1 : 1 + RECENT_COUNT]) > max(areas[1 + RECENT_COUNT :])
+    assert min(areas) >= areas[0] * OLD_WEIGHT_MIN * 0.9
+
+
+@pytest.mark.parametrize("sheet", list(SHEETS))
+def test_a_six_bird_wall_still_shows_its_recency(sheet):
+    """Six birds is the newest plus exactly RECENT_COUNT others — the
+    ordinary wall — and the ring tapers within itself: the oldest of six is
+    visibly smaller than the newest (owner, 2026-08-20: a flat ring read as
+    "nothing gets smaller with age"). Growth in place is capped at 1.12×
+    a bird's own weight so this holds after inflation too."""
+    areas = [p.size_vmin * p.height_vmin for p in place(6, sheet)]
+    assert areas[-1] <= areas[0] * 0.72
+    assert areas[1] > areas[-1]
+
+
+def test_layout_is_deterministic_and_has_no_dice():
+    a = [(p.x, p.y, p.size_vmin) for p in place(7, salt="a")]
+    b = [(p.x, p.y, p.size_vmin) for p in place(7, salt="a")]
+    assert a == b
+    # A different set may land differently (its spiral starts elsewhere).
+    c = [(p.x, p.y, p.size_vmin) for p in place(7, salt="b")]
+    assert a != c
+
+
+@pytest.mark.parametrize("sheet", list(SHEETS))
+def test_a_lone_bird_is_big_but_not_a_poster(sheet):
+    """One bird takes the newest's cap on whichever side binds — width on a
+    landscape sheet, height on a portrait one — and no more."""
+    w, h, band = SHEETS[sheet]
+    (only,) = place(1, sheet)
+    vmin = min(w, h) / 100
+    usable_w, usable_h = w * (1 - 2 * SIDE_MARGIN), h * (1 - BOTTOM_MARGIN) - band
+    width_share = only.size_vmin * vmin / usable_w
+    height_share = (only.height_vmin * vmin + CAPTION_PX) / usable_h
+    assert width_share <= MAX_NEWEST_WIDTH + 0.005
+    assert width_share >= MAX_NEWEST_WIDTH - 0.005 or height_share >= 0.92 - 0.005
+
+
+def test_an_empty_or_impossible_sheet_places_nothing():
+    assert compute_frame_layout([], 1600, 1200, 54) == []
+    assert compute_frame_layout(["a.jpg"], 0, 0, 0) == []
+    # A sheet too small for one caption: nothing, not an exception.
+    assert (
+        compute_frame_layout(["a.jpg"], 60, 40, 0, caption_px=33, caption_widths=[150])
+        == []
     )
-    assert len(placements) == len(files)
+
+
+def test_when_nothing_packs_around_the_centre_the_sheet_gets_rows_not_nothing():
+    """The scatter's forced pass could not fail; the rosette's scan can (a
+    dozen birds with two-line captions on a small sheet). Then the birds go
+    in centred rows — the wall is never blank, because the browser freezes
+    on an empty plan and the e-paper spends a redraw on it."""
+    sheet = _Sheet(
+        left=36,
+        top=0,
+        uw=1128,
+        uh=1824,
+        gap=10,
+        caption_px=66,
+        caption_ws=(500.0,) * 12,
+        base_angle=0.3,
+        vmin=12,
+    )
+    cells = [(80.0, 100.0)] * 12
+    spots = _rows(cells, sheet)
+    assert spots is not None and len(spots) == 12
+    rects = [r for _, _, r in spots]
+    for i, a in enumerate(rects):
+        assert sheet.inside(a)
+        for b in rects[i + 1 :]:
+            assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
+    # Centred as a block: the rows' left and right margins match.
+    assert min(r[0] for r in rects) - sheet.left == pytest.approx(
+        sheet.left + sheet.uw - max(r[2] for r in rects), abs=1
+    )
+    # A single footprint wider than the sheet is the one honest failure.
+    assert _rows([(2000.0, 10.0)], sheet) is None
+    # …and the public function reaches the rows when the spiral can't pack:
+    # twelve wide-captioned birds on a 7" sheet packed around the centre
+    # would need a scale below the floor; they still all land.
+    placements = compute_frame_layout(
+        [f"b{i}.jpg" for i in range(12)],
+        1280,
+        720,
+        0,
+        aspects=[1.2] * 12,
+        caption_px=60,
+        caption_widths=[400.0] * 12,
+    )
+    assert len(placements) == 12
+    # …with the invariants intact, and at a size the rows had room for
+    # (their own scan, not the floor the spiral gave up at).
+    vmin = 7.2
+    boxes = []
     for p in placements:
-        w, h = p.size_vmin * 3.8, p.height_vmin * 3.8  # vmin of a 500x380 sheet
-        assert w > 0 and h > 0
-        assert -250 <= p.x <= 250 and -190 <= p.y <= 190
+        fw, fh = max(p.size_vmin * vmin, 400.0), p.height_vmin * vmin
+        left, top = p.x + 640 - fw / 2, p.y + 360 - fh / 2
+        boxes.append((left, top, left + fw, top + fh + 60))
+    for i, a in enumerate(boxes):
+        assert (
+            a[0] >= 1280 * SIDE_MARGIN - 0.5 and a[2] <= 1280 * (1 - SIDE_MARGIN) + 0.5
+        )
+        assert a[1] >= -0.5 and a[3] <= 720 * (1 - BOTTOM_MARGIN) + 0.5
+        for b in boxes[i + 1 :]:
+            assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
+    assert placements[0].size_vmin * vmin > 40  # rows: 50 px, not the spiral's 28
 
 
-def test_a_sheet_too_small_for_one_caption_renders_nothing():
-    """Rather than raising out of `zip(..., strict=True)` under a docstring
-    that promises the function cannot fail outright.
+def test_the_plan_is_memoised_on_its_inputs():
+    """Deterministic, so the wall's poll and the frame's two-layer render
+    ask for the same plan again and again: they must not pay for it twice."""
+    _layout.cache_clear()
+    a = place(6, "ten")
+    hits = _layout.cache_info().hits
+    b = place(6, "ten")
+    assert _layout.cache_info().hits == hits + 1
+    assert a == b and a is not b  # a fresh list each time, the same content
 
-    Shrinking always eventually fits the BIRDS — but a caption's width is
-    fixed pixels and doesn't shrink with them, so a caption wider than the
-    sheet can never be placed at any scale. That's the reachable failure."""
-    assert compute_frame_scatter(
-        ["a.jpg", "b.jpg"], 200, 150, 10,
-        caption_px=12.0,
-        caption_widths=[400.0, 400.0],  # each caption is twice the sheet's width
-    ) == []
+
+def test_a_crowded_sheet_still_places_every_bird():
+    placements = place(12, "seven")
+    assert len(placements) == 12
+    assert len({p.file for p in placements}) == 12
+    assert not any(math.isnan(p.x) or math.isnan(p.y) for p in placements)

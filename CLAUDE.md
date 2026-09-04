@@ -392,22 +392,30 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   - `fonts.py` — the house serif's candidate paths + `first_existing`. Its own
     module so `frame_client` (on the frame Pi, installed `--no-deps`, no scipy)
     can find a font without importing `render`.
-  - `frame_layout.py` — `compute_frame_scatter(...)`: the e-paper panel's own
-    placement (`style=panel`), a focal scatter rather than the wall's spiral —
-    newest bird largest on an anchor in a central box, the five before it
-    around it, older ones smaller and further out, deterministic per live set
-    so the panel doesn't redraw for a reshuffle.
+  - `frame_layout.py` — `compute_frame_layout(...)`: the panel's placement
+    (`style=panel`, shared by the e-paper frame and the table models), a
+    packed rosette (#161, replacing the focal scatter): the newest bird on
+    the sheet's centre, largest; every other bird, in recency order, on the
+    spot nearest the centre where it fits; the whole thing scaled up (a
+    downward scan, not a bisection — a greedy packer isn't monotonic) until
+    nothing more fits, no other bird past 0.9 of the newest's area, then
+    each bird grown in place into free room, never past the bird one rank
+    newer nor 1.12× its own weight. When no scale packs around the centre
+    (a dozen birds with two-line captions on a small sheet) it falls back
+    to centred rows rather than an empty sheet. Deterministic per live set
+    and memoised, so the panel doesn't redraw for a reshuffle.
   - `render.py` — `plan_wall(...)` decides WHERE everything goes for a wall
     of a given size (band, vmin, fixed caption sizes, placements, and each
     bird's ink box) — one function, so `/wall.png` and `/api/layout` cannot
     disagree. `render_wall_png(...)` draws that plan to a PNG server-side
     (Pillow) for the e-paper frame — cream paper + feather-masked
     multiply-blended birds + captions + header; full-colour (the panel dithers).
-    `style=panel` swaps in the panel's white ground, the focal scatter, and
+    `style=panel` swaps in the panel's white ground, the packed rosette, and
     birds cropped to their own ink; `layer=picture|text` splits the render so
     the frame can dither the picture and stamp unditherable lettering on top.
     Ink measurements are cached per (path, mtime): the browser asks for the
-    panel plan on every poll.
+    panel plan whenever its set or viewport changes (the plan itself is
+    memoised on its inputs).
   - `frame_client.py` — `python -m bird_painter.frame_client`: the thin e-paper
     frame client (runs on the frame Pi). At boot it looks for the recorder for
     `BP_FRAME_SEARCH_SECONDS` (60) and, only if it finds nothing, draws a
@@ -497,7 +505,7 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
 - `tests/` — pytest suite (store, gate, runner, brush, placeholder, web API,
   event hub + detection WebSocket, API docs (incl. docs-vs-routes drift
   guards), wall-layout port + JS-parity, /wall.png render incl. its
-  style/layer params, the panel's focal scatter (`test_frame_layout.py`), the
+  style/layer params, the panel's packed rosette (`test_frame_layout.py`), the
   frame client's fetch/dither/stamp cycle, painting trim, night mode's
   schedule/backlight/transitions (`test_night.py`), the unit's settings
   files and nmcli wrappers (`test_unit.py`); import-purity

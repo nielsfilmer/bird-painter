@@ -50,9 +50,10 @@ WALL_LAYERS = ("all", "picture", "text")
 WALL_STYLES = ("wall", "panel")
 # /api/layout sizes a plan for any viewport a caller names. The bound is a
 # sanity range, not a defence: the plan's cost is set by the live set
-# (wall_max_live plates, ink measured once and cached), not by the size —
-# review measured ~4 ms at both 64² and 8192². What the bound refuses is a
-# size no screen has, which would only produce a plan nobody can draw.
+# (wall_max_live plates; ink measured once and cached; the rosette packs
+# in ~0.25 s at twelve birds and is memoised on its inputs, so a poll that
+# changes nothing costs nothing), not by the size. What the bound refuses
+# is a size no screen has, which would only produce a plan nobody can draw.
 LAYOUT_MIN_SIDE = 64
 LAYOUT_MAX_SIDE = 8192
 # /api/layout?caption= scales the panel's fixed-size type through the plan.
@@ -503,7 +504,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
         `style=panel` renders it for the e-paper frame instead of the browser:
         the panel's own white as the ground (cream isn't one of its six
-        colours and dithers into a speckle everywhere), a focal scatter
+        colours and dithers into a speckle everywhere), a packed rosette
         instead of the spiral, birds fitted to their cells, and no title.
         `layer=picture|text` then splits that render in two, because dithering
         an 8px italic turns it into speckle — the frame dithers the picture and
@@ -546,7 +547,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         (#138). The frame's layout depends on things a browser cannot
         reproduce — each bird's ink measured with scipy, each caption with the
         house serif's own metrics — so instead of porting the layout, the
-        browser asks for it. `style=panel` is the frame's focal scatter;
+        browser asks for it. `style=panel` is the frame's packed rosette;
         `style=wall` the spiral, for completeness. Size defaults to the
         configured `/wall.png` size, so a bare call IS the frame's placement;
         the browser passes its own viewport. `caption` scales the panel's
