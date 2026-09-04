@@ -21,7 +21,7 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from . import fonts as fonts_module
-from .frame_layout import compute_frame_scatter
+from .frame_layout import compute_frame_layout
 from .wall_layout import PLATE_ASPECT, compute_collage
 
 logger = logging.getLogger(__name__)
@@ -564,14 +564,14 @@ def plan_wall(
     heard_font = fonts.get(heard_size, italic=True)
     tracking = species_size * 0.05 + 0.5
     # The panel is a fixed sheet seen from across a room, so it gets the focal
-    # scatter that fills it (see frame_layout) rather than the browser wall's
+    # rosette that fills it (see frame_layout) rather than the browser wall's
     # spiral, which is built to reflow in a window. `style="wall"` renders the
     # spiral — what the README's hero image and any browser expects.
     ink: dict[str, InkBox | None] = {}
     if panel:
         metrics = {f: _ink_for(image_dir / f) for f in files}
         ink = {f: metrics[f][1] for f in files}
-        placements = compute_frame_scatter(
+        placements = compute_frame_layout(
             files,
             width,
             layout_h,

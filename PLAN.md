@@ -629,6 +629,21 @@ whole magic; ship it first.
   multiply-blend onto paper where e-paper can't, so the two shapes share a
   placement and keep their own grounds. Not a follow-on; decided. For the table model this also retires the spiral's caption-metrics
   gap (#133/#136): the panel plan measures captions server-side.
+- **2026-09-04** — **The panel placement is a packed rosette: newest bird
+  centred, sheet filled, no dice** (owner, on the 10": "the frame is far
+  from filled … sometimes birds end up in the corners and not grouped
+  together … fills the screen as much as possible and always has the most
+  recent bird centered (drop the random placement)"). Supersedes the
+  2026-08-13 focal scatter (anchor box, jitter, emptiest-spot placing) for
+  BOTH shapes — the e-paper frame and the table models share the plan
+  (#139). The newest sits on the sheet's centre, largest; every other bird
+  in recency order takes the spot nearest the centre where it fits, so the
+  cluster fills outward and never leaves one bird alone in a corner; the
+  arrangement is scaled up until nothing more fits, then birds grow in
+  place into leftover room without passing the one a rank newer. The size
+  story (newest ≫ recent five > older, tapering) is kept. Deterministic per
+  live set. Measured fill at six birds: ~0.5 of the sheet on both panels,
+  against ~0.15 for the scatter.
 - **2026-09-04** — **The table model has a settings screen, and joins WiFi
   from it** (#123; owner: "a settings screen where you can adjust the
   settings", and "the table model that leaves the house also needs a

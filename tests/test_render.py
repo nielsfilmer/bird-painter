@@ -223,10 +223,14 @@ def test_plan_wall_caption_scale_grows_type_and_reserve_together(tmp_path):
         int(one.species_size * 1.5 + 0.5), int(one.heard_size * 1.5 + 0.5)
     ), "the general case; the literal below is what pins the rounding"
     assert big.caption_gap == one.caption_gap  # air above the name is not type
-    # Bigger type, same sheet: the birds must give up room for it.
-    assert max(p["size_vmin"] for p in big.placements) < max(
-        p["size_vmin"] for p in one.placements
-    )
+    # Bigger type, same sheet: the plan must react — the reserve under each
+    # bird is taller, so the arrangement moves. (With the rosette, #161,
+    # three birds sit well inside the sheet, so it is the spacing that
+    # gives; the packer's 3% scan step means sizes may drift either way by
+    # less than that, so they are not what to pin here.)
+    assert [(p["x"], p["y"]) for p in big.placements] != [
+        (p["x"], p["y"]) for p in one.placements
+    ]
     # The spiral's type is the browser's own; the scale must not touch it.
     wall_default = _caption_sizes(7.0, panel=False)
     assert _caption_sizes(7.0, panel=False, scale=1.5) == wall_default
