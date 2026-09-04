@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CORNER_PX, bars, esc, friendly, inCorner, isOffline, nextValue, noConnection } from "./unit-screen.js";
+import { CORNER_PX, bars, esc, friendly, inCorner, isOffline, nextChoice, nextValue, noConnection } from "./unit-screen.js";
 
 test("a stepper moves one server-given step and clamps to the server's bounds", () => {
   const caption = { min: 0.5, max: 2, step: 0.1 };
@@ -60,4 +60,14 @@ test("only NetworkManager's none opens the network list; the offline line ignore
   assert.equal(isOffline({ state: "limited" }), true);
   assert.equal(isOffline({ state: "full" }), false);
   assert.equal(isOffline({ state: "unknown" }), false, "a dev box without nmcli is not offline");
+});
+
+test("the style stepper walks the server's list and wraps", () => {
+  const keys = ["naturalist", "sumi", "cubist"];
+  assert.equal(nextChoice(keys, "naturalist", 1), "sumi");
+  assert.equal(nextChoice(keys, "cubist", 1), "naturalist");
+  assert.equal(nextChoice(keys, "naturalist", -1), "cubist");
+  assert.equal(nextChoice(keys, "unknown", 1), "naturalist", "an unknown current steps to the first");
+  assert.equal(nextChoice(keys, "unknown", -1), "naturalist");
+  assert.equal(nextChoice([], "x", 1), "x");
 });

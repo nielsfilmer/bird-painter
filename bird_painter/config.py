@@ -12,6 +12,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .styles import DEFAULT_STYLE, STYLES, is_style
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -82,9 +84,7 @@ def _env_bool(name: str, default: bool) -> bool:
     if value in _FALSE:
         return False
     # Don't silently disable the mic on a typo — say so.
-    raise ConfigError(
-        f"{name} must be one of {sorted(_TRUE | _FALSE)}, got: {raw!r}"
-    )
+    raise ConfigError(f"{name} must be one of {sorted(_TRUE | _FALSE)}, got: {raw!r}")
 
 
 def _confidence_floor() -> float:
@@ -179,9 +179,7 @@ class Config:
     max_paints_per_hour: int = field(
         default_factory=lambda: _env_int("BP_MAX_PAINTS_PER_HOUR", 20)
     )
-    wall_max_live: int = field(
-        default_factory=lambda: _env_int("BP_WALL_MAX_LIVE", 12)
-    )
+    wall_max_live: int = field(default_factory=lambda: _env_int("BP_WALL_MAX_LIVE", 12))
     # Server-rendered /wall.png size (the e-paper frame fetches this). Default
     # is the Waveshare 13.3" Spectra 6 panel's native 1600×1200 landscape;
     # override for a different panel. Optional serif font paths for the render
@@ -271,12 +269,22 @@ class Config:
     night_day_brightness: int | None = field(
         default_factory=lambda: _env_int_opt("BP_NIGHT_DAY_BRIGHTNESS")
     )
+    # The painting style (bird_painter/styles.py); a table model's settings
+    # screen overrides this per unit through unit.conf.
+    style: str = field(
+        default_factory=lambda: os.environ.get("BP_STYLE") or DEFAULT_STYLE
+    )
     # Which /sys/class/backlight/<name> to drive; unset = the first found.
     night_backlight: str | None = field(
         default_factory=lambda: os.environ.get("BP_NIGHT_BACKLIGHT") or None
     )
 
     def __post_init__(self) -> None:
+        if not is_style(self.style):
+            raise ConfigError(
+                f"BP_STYLE must be one of {', '.join(s.key for s in STYLES)}; got "
+                f"{self.style!r}"
+            )
         for env, value in (
             ("BP_NIGHT_FROM", self.night_from_hour),
             ("BP_NIGHT_TO", self.night_to_hour),

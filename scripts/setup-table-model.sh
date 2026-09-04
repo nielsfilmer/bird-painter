@@ -45,11 +45,12 @@ CAPTION="${BP_CAPTION:-${CAPTION:-1}}"
 UI="${BP_UI:-${UI:-1}}"
 MAX_LIVE="${BP_WALL_MAX_LIVE:-${MAX_LIVE:-12}}"
 ROTATE="${BP_ROTATE:-${ROTATE:-90}}"
+STYLE="${BP_STYLE:-${STYLE:-naturalist}}"
 OUTPUT="${BP_OUTPUT:-${OUTPUT:-DSI-2}}"
 mkdir -p "$(dirname "$UNIT_CONF")"
 # OUTPUT is quoted: the login shell sources this file for the rotation.
-printf 'CAPTION=%s\nUI=%s\nMAX_LIVE=%s\nROTATE=%s\nOUTPUT="%s"\n' \
-  "$CAPTION" "$UI" "$MAX_LIVE" "$ROTATE" "$OUTPUT" > "$UNIT_CONF"
+printf 'CAPTION=%s\nUI=%s\nMAX_LIVE=%s\nROTATE=%s\nSTYLE="%s"\nOUTPUT="%s"\n' \
+  "$CAPTION" "$UI" "$MAX_LIVE" "$ROTATE" "$STYLE" "$OUTPUT" > "$UNIT_CONF"
 WALL_URL="http://127.0.0.1:${PORT}/?style=panel&caption=${CAPTION}&ui=${UI}"
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -370,7 +371,7 @@ DESK
 fi
 
 log "done"
-echo "unit:    caption ${CAPTION}, ui ${UI}, birds ${MAX_LIVE}, rotate ${ROTATE} on ${OUTPUT} (remembered in ${UNIT_CONF})"
+echo "unit:    caption ${CAPTION}, ui ${UI}, birds ${MAX_LIVE}, rotate ${ROTATE}, style ${STYLE} on ${OUTPUT} (remembered in ${UNIT_CONF})"
 echo "service: $(systemctl is-active bird-painter) (restarted)"
 echo "kiosk:   the URL and flags take effect on the next login — reboot (a relaunched Chromium keeps the flags its loop started with)"
 echo "boot:    ${SPLASH_NOTE}"
