@@ -648,6 +648,21 @@ whole magic; ship it first.
   0.44–0.50 of the sheet on the three panels, against ~0.15 for the
   scatter; when nothing packs around the centre the sheet falls back to
   centred rows, never to empty.
+- **2026-09-04** — **Painting styles, chosen per unit** (#162; owner: "add
+  different painting styles you can select in the settings … Japanese
+  Watercolor … five or six … also a weird one, like abstract or
+  cubistic"). Seven, in `styles.py`: vintage naturalist (the default — the
+  look the wall has always had), Japanese watercolour (sumi-e), Dutch
+  Golden Age oil, Art Nouveau, field sketch, folk linocut, cubist. A style
+  is two phrases spliced into the brush's prompt — the LOOK and the
+  PALETTE; the house rule (one bird, full side view, cleanly isolated on
+  flat white, no text, no paper) is the same for every style, because the
+  wall's multiply-blend and the plate check depend on it. The recorder
+  shape sets `BP_STYLE`; a table model picks its own on the settings
+  screen (a stepper through the list, `STYLE` in `unit.conf`), and the
+  choice applies to NEW paintings only — what is on the wall stays as it
+  was painted. Not recorded per painting in the archive (a follow-up if a
+  mixed wall wants to say which is which).
 - **2026-09-04** — **The table model has a settings screen, and joins WiFi
   from it** (#123; owner: "a settings screen where you can adjust the
   settings", and "the table model that leaves the house also needs a

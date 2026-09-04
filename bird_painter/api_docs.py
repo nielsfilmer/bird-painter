@@ -377,6 +377,8 @@ ENDPOINTS: list[dict] = [
         "description": (
             "The table model's settings, as the screen on the unit reads them "
             "(#123): the per-unit display knobs (CAPTION, UI, MAX_LIVE, ROTATE), "
+            "the painting STYLE (one of `styles`, which lists key and name in "
+            "the order the screen steps through; new paintings only), "
             "the night schedule, the bounds and step of every knob (what "
             "the steppers use, so page and server can't disagree), whether it "
             "is night now and whether a backlight is being driven, the network "
@@ -395,12 +397,14 @@ ENDPOINTS: list[dict] = [
                 "UI": 1.5,
                 "MAX_LIVE": 3,
                 "ROTATE": 90,
+                "STYLE": "naturalist",
                 "NIGHT_ENABLED": 1,
                 "NIGHT_FROM": 22,
                 "NIGHT_TO": 7,
                 "NIGHT_BRIGHTNESS": 20,
             },
             "bounds": {"CAPTION": {"min": 0.5, "max": 2.0, "step": 0.1}},
+            "styles": [{"key": "naturalist", "name": "vintage naturalist"}],
             "night": {"is_night": False, "backlight": True},
             "connectivity": {
                 "state": "full",
@@ -439,12 +443,13 @@ ENDPOINTS: list[dict] = [
             "200": "applied",
             "400": (
                 "not a JSON object, or nothing to change (no known key with a "
-                "numeric value)"
+                "value in range — a number within its bounds, or one of the "
+                "listed styles)"
             ),
             "404": "not the unit's own machine",
             "500": "a settings file could not be written; the detail names it",
         },
-        "example": {"CAPTION": 1.7, "NIGHT_FROM": 23},
+        "example": {"CAPTION": 1.7, "NIGHT_FROM": 23, "STYLE": "sumi"},
     },
     {
         "method": "GET",

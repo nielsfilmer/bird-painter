@@ -13,6 +13,7 @@ import logging
 import httpx
 
 from .plate_check import describe_problem
+from .styles import style_for
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +35,12 @@ UNKNOWN_SCIENTIFIC = "Species incognita"
 # clean cutout. schnell follows this loosely; flux/dev (BP_FAL_MODEL) obeys it
 # far better — recommended if text/paper still leak through.
 PROMPT_TEMPLATE = (
-    "A single {name} bird, hand-painted naturalist watercolor, the whole bird "
+    "A single {name} bird, {look}, the whole bird "
     # "perched in full side view" is a LOAD-BEARING ANCHOR: build_prompt splices
     # the occasion hat in right after it (a test pins this). If you reword it,
     # update build_prompt's replace + the test together.
-    "perched in full side view, soft muted natural colors, fine feather "
-    "detail, cleanly isolated and centred on a pure flat bright white "
+    "perched in full side view, {palette}, cleanly isolated and centred on a "
+    "pure flat bright white "
     "background, the bird is the only thing in the image. No text, no words, "
     "no letters, no caption, no label, no numbers, no signature, no watermark, "
     "no border, no frame, no paper texture, no vignette, no scenery, no "
@@ -52,6 +53,7 @@ PROMPT_TEMPLATE = (
     # paint nothing — caught in review before it ever ran unattended.
     "centred with clear white space all around it."
 )
+
 
 class Rejected:
     """Every attempt came back as something other than a bird on white.
@@ -75,12 +77,16 @@ MAX_ATTEMPTS = 2
 
 
 def build_prompt(
-    species_common: str, species_scientific: str, hat: str | None = None
+    species_common: str,
+    species_scientific: str,
+    hat: str | None = None,
+    style: str | None = None,
 ) -> str:
     name = species_common
     if species_scientific and species_scientific != UNKNOWN_SCIENTIFIC:
         name = f"{species_common} ({species_scientific})"
-    prompt = PROMPT_TEMPLATE.format(name=name)
+    chosen = style_for(style)
+    prompt = PROMPT_TEMPLATE.format(name=name, look=chosen.look, palette=chosen.palette)
     if hat:
         # Occasion easter egg (see occasions.py): woven in right after the
         # bird so the hat reads as part of the subject, before the no-text
@@ -99,6 +105,7 @@ def paint(
     fal_key: str,
     model: str = DEFAULT_MODEL,
     hat: str | None = None,
+    style: str | None = None,
     attempts: int = MAX_ATTEMPTS,
 ) -> tuple[bytes, str] | Rejected | None:
     """Paint one bird. Returns (image_bytes, extension) or None on failure.
@@ -114,7 +121,12 @@ def paint(
         return None
     for attempt in range(1, max(1, attempts) + 1):
         painted = _paint_once(
-            species_common, species_scientific, fal_key=fal_key, model=model, hat=hat
+            species_common,
+            species_scientific,
+            fal_key=fal_key,
+            model=model,
+            hat=hat,
+            style=style,
         )
         if painted is None:
             return None
@@ -143,10 +155,11 @@ def _paint_once(
     fal_key: str,
     model: str,
     hat: str | None,
+    style: str | None = None,
 ) -> tuple[bytes, str] | None:
     """One generation: prompt in, image bytes out. No judgement about what came
     back — that's the caller's, so a retry doesn't re-enter the whole policy."""
-    prompt = build_prompt(species_common, species_scientific, hat)
+    prompt = build_prompt(species_common, species_scientific, hat, style)
     try:
         response = httpx.post(
             f"{FAL_BASE}/{model}",
@@ -163,9 +176,7 @@ def _paint_once(
         if not images or not isinstance(images[0], dict) or not images[0].get("url"):
             logger.error("brush: fal returned no image for %s", species_common)
             return None
-        image_response = httpx.get(
-            images[0]["url"], timeout=REQUEST_TIMEOUT_SECONDS
-        )
+        image_response = httpx.get(images[0]["url"], timeout=REQUEST_TIMEOUT_SECONDS)
         image_response.raise_for_status()
         content_type = images[0].get("content_type") or image_response.headers.get(
             "content-type", ""

@@ -71,6 +71,7 @@ const CSS = `
 #unit .row { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 56px; }
 #unit .label { font-variant: small-caps; letter-spacing: 0.08em; font-size: calc(1.39vmin * var(--ui-scale, 1)); color: #8d8065; }
 #unit .value { font-size: calc(2.04vmin * var(--ui-scale, 1)); overflow-wrap: anywhere; }
+#unit .value.choice { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
 #unit .stepper { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 #unit .step { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px;
   border: 1px solid #8d8065; cursor: pointer; }
@@ -223,6 +224,18 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
     if (el) el.textContent = text || "";
   }
 
+  function styleName(key) {
+    const found = (state.unit?.styles || []).find((s) => s.key === key);
+    return found ? found.name : key;
+  }
+  // A choice among the server's list: the name as the value, "n/N" between
+  // the arrows (an unknown current shows as 0/N; either arrow then goes
+  // to the first).
+  function choiceRow(label, name, choices, current) {
+    const at = choices.findIndex((c) => c.key === current) + 1;
+    return `<div class="row"><div><div class="label">${label}</div><div class="value choice">${esc(name)}</div></div>
+      <div class="stepper"><div class="step" data-act="style" data-dir="-1">${ICON.minus}</div><div class="value">${at}/${choices.length}</div><div class="step" data-act="style" data-dir="1">${ICON.plus}</div></div></div>`;
+  }
   function stepper(key, value) {
     const b = bounds(key);
     const view = KNOB_VIEW[key];
@@ -251,6 +264,7 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
         ${knobRow("CAPTION", s.CAPTION)}
         ${knobRow("UI", s.UI)}
         ${knobRow("MAX_LIVE", s.MAX_LIVE)}
+        ${choiceRow("painting style", styleName(s.STYLE), u.styles || [], s.STYLE)}
         <div class="row"><div><div class="label">orientation</div><div class="value">${s.ROTATE % 180 === 0 ? "portrait" : "landscape"} · ${s.ROTATE}°</div></div><button class="btn" data-act="rotate">rotate</button></div>
       </div>
       <div class="group"><div class="group-title">night</div>
@@ -356,6 +370,14 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
       else { renderSettings(); show("settings"); }
     },
     step: (el) => step(el.parentElement.dataset.key, Number(el.dataset.dir)),
+    style: (el) => {
+      const keys = (state.unit?.styles || []).map((s) => s.key);
+      if (!keys.length) return;
+      const next = nextChoice(keys, state.unit.settings.STYLE, Number(el.dataset.dir));
+      state.unit.settings.STYLE = next;
+      renderSettings();
+      queuePut("STYLE", next);
+    },
     night: () => {
       const on = state.unit.settings.NIGHT_ENABLED ? 0 : 1;
       state.unit.settings.NIGHT_ENABLED = on;
@@ -547,6 +569,15 @@ export function noConnection(connectivity) {
 // which is no nmcli at all (a dev box), not an outage.
 export function isOffline(connectivity) {
   return !!connectivity && connectivity.state !== "full" && connectivity.state !== "unknown";
+}
+
+// The next of a list of choices, wrapping at both ends (the styles). An
+// unknown current (shown as 0/N) steps to the first either way.
+export function nextChoice(keys, current, dir) {
+  if (!keys.length) return current;
+  const i = keys.indexOf(current);
+  if (i < 0) return keys[0];
+  return keys[(i + dir + keys.length) % keys.length];
 }
 
 // A message the owner can act on: the server's detail is kept when it is
