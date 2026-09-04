@@ -421,6 +421,44 @@ def forget(ssid: str) -> tuple[bool, str]:
     return True, "forgotten"
 
 
+SPLASH_REFRESH = "/usr/local/sbin/bird-splash-refresh"
+
+
+def refresh_splash() -> tuple[bool, str]:
+    """Redraw the boot splash for the unit's current stand — after ROTATE
+    changed from the screen. The root helper the installer set up (with a
+    sudoers line for exactly this command, no arguments) reads unit.conf
+    itself and rebuilds the initramfs; a minute's work, so the caller runs
+    it off the request (the helper serialises itself, so a second rotation
+    queues and the last one wins). Fail-soft: without the helper (a dev
+    box) the splash simply stays as it was. The timeout is a floor on how
+    long this thread may sit, not a kill: sudo is setuid and its caller
+    can't signal it, so after the timeout the wait simply continues (the
+    helper's own flock gives up after 600 s)."""
+    try:
+        done = subprocess.run(  # noqa: S603 — fixed argv, no input
+            ["/usr/bin/sudo", "-n", SPLASH_REFRESH],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        reason = (exc.stderr or exc.stdout or "refused").strip().splitlines()[-1]
+        logger.warning("unit: splash not redrawn: %s", reason)
+        return False, reason
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.info("unit: splash not redrawn (%s)", exc.__class__.__name__)
+        return False, f"could not run the splash helper: {exc.__class__.__name__}"
+    line = (
+        done.stdout.strip().splitlines()[-1]
+        if done.stdout.strip()
+        else "splash redrawn"
+    )
+    logger.info("unit: %s", line)
+    return True, line
+
+
 def reboot() -> tuple[bool, str]:
     """Reboot the unit (rotation and the kiosk URL apply on the next login).
     Through logind's polkit action, which the install script grants the

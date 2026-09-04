@@ -30,20 +30,12 @@ REPO="https://github.com/nielsfilmer/bird-painter"
 # active BP_PORT= line would otherwise abort the whole script here, silently.
 PORT="${BP_PORT:-$( { grep -sE '^BP_PORT=' "$HOME/bird-painter/.env" || true; } | cut -d= -f2)}"
 PORT="${PORT:-8537}"
-# The Touch Display 2 is natively portrait (720x1280). The table model stands
-# in landscape (owner, 2026-09-03), so the output is rotated: 90 = rotate
-# right, 270 = rotate left — which one depends on which way the ribbon exits
-# the mount. The compositor rotates the touch input with the output. The
-# panel layout takes whatever viewport results.
-# The table model is read from across a room and places birds exactly as the
-# e-paper frame does (#139): the kiosk shows the panel layout. Per-unit
-# tuning rides the same URL: BP_CAPTION scales the panel's type through the
-# plan (the 7" runs 1.5 — owner, 2026-09-03), BP_UI scales the archive chrome
-# (button, overlay heading and close, card lettering — the 7" runs 1.5), and
-# BP_WALL_MAX_LIVE caps how many birds share the sheet (the 7" runs 3).
-# Remembered in a per-unit file, so a maintenance re-run without them
-# re-supplied keeps this unit's tuning instead of reverting the panel to
-# defaults (review of #145). Environment overrides win and are written back.
+# The Touch Display 2 is natively portrait (720x1280; 1200x1920 on the
+# 10.1"). A unit on a landscape stand rotates the output (90 = rotate right,
+# 270 = rotate left — which one depends on which way the ribbon exits); one
+# standing upright uses 0 (or 180, upside down). The value persists in
+# unit.conf and the settings screen changes it later; the boot splash
+# follows it (bird-splash-refresh).
 UNIT_CONF="$HOME/.config/bird-painter/unit.conf"
 if [ -f "$UNIT_CONF" ]; then
   # shellcheck disable=SC1090
@@ -304,18 +296,28 @@ sudo_append_line() {  # append_line, for a root-owned file
   echo "$2" | sudo tee -a "$1" >/dev/null
 }
 SPLASH_DIR=/usr/local/share/bird-painter   # root-owned, world-readable: the greeter runs as lightdm
-SPLASH_TMP="$(mktemp -d)"
-SPLASH_NOTE="splash, greeter wallpaper and desktop take effect on the next boot"
-if "$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/make_splash.py" "$SPLASH_TMP" \
-     "$APP_DIR/tests/fixtures/plates/good-hummingbird.jpg" "$ROTATE"; then
-  sudo mkdir -p "$SPLASH_DIR"
-  sudo cp "$SPLASH_TMP/splash-landscape.png" "$SPLASH_TMP/splash-native.png" "$SPLASH_DIR/"
+# Drawing the splash for the unit's stand, installing it for plymouth and
+# rebuilding the initramfs live in ONE root helper, so the settings
+# screen's "rotate" can redo them without this script (the owner turned
+# the 10" to portrait from the screen; its splash stayed landscape until
+# the next install). The sudoers line lets the unit's user run exactly that
+# command and no arguments (the "" at its end) — it reads unit.conf itself.
+sudo install -m 0755 "$APP_DIR/scripts/bird-splash-refresh.sh" /usr/local/sbin/bird-splash-refresh
+SUDOERS_TMP="$(mktemp)"
+# The trailing "" is sudoers for "with no arguments at all".
+echo "${USER} ALL=(root) NOPASSWD: /usr/local/sbin/bird-splash-refresh \"\"" > "$SUDOERS_TMP"
+if sudo visudo -cf "$SUDOERS_TMP" >/dev/null; then
+  sudo install -m 0440 -o root -g root "$SUDOERS_TMP" /etc/sudoers.d/bird-splash-refresh
 else
-  SPLASH_NOTE="the splash could NOT be generated; the boot chrome stays as it was"
+  echo "boot: the sudoers line did not validate; rotate from the screen will not redraw the splash"
+fi
+rm -f "$SUDOERS_TMP"
+SPLASH_NOTE="splash, greeter wallpaper and desktop take effect on the next boot"
+if ! sudo /usr/local/sbin/bird-splash-refresh; then
+  SPLASH_NOTE="the splash could NOT be drawn; the boot chrome stays as it was"
   echo "boot: $SPLASH_NOTE"
 fi
-rm -rf "$SPLASH_TMP"
-if [ -f "$SPLASH_DIR/splash-native.png" ]; then
+if [ -f "$SPLASH_DIR/splash-desktop.png" ]; then
   # 1. The rainbow square at power-on. Appended at the end of config.txt,
   #    which Pi OS ends with an [all] section; if a hand-added filter
   #    section comes last, the line lands under it — put it where you want.
@@ -327,28 +329,10 @@ if [ -f "$SPLASH_DIR/splash-native.png" ]; then
   else
     echo "boot: no /boot/firmware/config.txt — not a Pi OS boot partition; rainbow left alone"
   fi
-  # 2. plymouth: the same shape as the Pi's own "pix" theme (one image,
-  #    nothing else), with the wall's paper. The image is pre-rotated to the
-  #    panel's native orientation — plymouth paints before any compositor.
-  #    A changed image or script needs the initramfs rebuilt (-R) as much
-  #    as a changed theme does, so the check is on all three files, not on
-  #    the theme name alone.
-  THEME_DIR=/usr/share/plymouth/themes/birdpainter
-  if [ "$(sudo /usr/sbin/plymouth-set-default-theme)" != "birdpainter" ] \
-     || ! sudo cmp -s "$SPLASH_DIR/splash-native.png" "$THEME_DIR/splash.png" \
-     || ! sudo cmp -s "$APP_DIR/scripts/plymouth/birdpainter.script" "$THEME_DIR/birdpainter.script" \
-     || ! sudo cmp -s "$APP_DIR/scripts/plymouth/birdpainter.plymouth" "$THEME_DIR/birdpainter.plymouth"; then
-    sudo mkdir -p "$THEME_DIR"
-    sudo cp "$APP_DIR/scripts/plymouth/birdpainter.plymouth" \
-            "$APP_DIR/scripts/plymouth/birdpainter.script" "$THEME_DIR/"
-    sudo cp "$SPLASH_DIR/splash-native.png" "$THEME_DIR/splash.png"
-    sudo /usr/sbin/plymouth-set-default-theme -R birdpainter \
-      || echo "boot: plymouth theme not set (the boot is unaffected)"
-  fi
   # 3. The greeter's wallpaper, for the moment before autologin.
   if [ -f /etc/lightdm/pi-greeter.conf ]; then
     backup_once /etc/lightdm/pi-greeter.conf
-    for kv in "wallpaper=${SPLASH_DIR}/splash-landscape.png" "wallpaper_mode=fit"; do
+    for kv in "wallpaper=${SPLASH_DIR}/splash-desktop.png" "wallpaper_mode=fit"; do
       key="${kv%%=*}"
       if grep -qs "^${key}=" /etc/lightdm/pi-greeter.conf; then
         sudo sed -i "s#^${key}=.*#${kv}#" /etc/lightdm/pi-greeter.conf
@@ -357,14 +341,23 @@ if [ -f "$SPLASH_DIR/splash-native.png" ]; then
       fi
     done
   fi
-  # 4. The desktop behind Chromium: the same paper, no icons. This file is
-  #    the kiosk's, so it is written whole — a hand edit does not survive.
-  mkdir -p "$HOME/.config/pcmanfm/LXDE-pi"
-  cat > "$HOME/.config/pcmanfm/LXDE-pi/desktop-items-0.conf" <<DESK
+  # 4. The desktop behind Chromium: the same paper, no icons — for the
+  #    twelve seconds between the greeter and the wall while the ears load.
+  #    pcmanfm's profile is `LXDE-pi` on bookworm and `default` on trixie
+  #    (the owner saw Pi OS's own wallpaper on the first trixie unit); the
+  #    file is written for every profile directory the system ships plus
+  #    both names (the helper above told the running desktop). This file
+  #    is the kiosk's, written whole — a hand edit does not survive.
+  { printf 'LXDE-pi\ndefault\n'
+    [ -d /etc/xdg/pcmanfm ] && find /etc/xdg/pcmanfm -mindepth 1 -maxdepth 1 -type d -printf '%f\n' || true
+  } | sort -u | while IFS= read -r profile; do
+    [ -n "$profile" ] || continue
+    mkdir -p "$HOME/.config/pcmanfm/$profile"
+    cat > "$HOME/.config/pcmanfm/$profile/desktop-items-0.conf" <<DESK
 [*]
 wallpaper_mode=fit
 wallpaper_common=1
-wallpaper=${SPLASH_DIR}/splash-landscape.png
+wallpaper=${SPLASH_DIR}/splash-desktop.png
 desktop_bg=#ece1c6
 desktop_fg=#4a3f2e
 desktop_shadow=#ece1c6
@@ -373,6 +366,7 @@ show_documents=0
 show_trash=0
 show_mounts=0
 DESK
+  done
 fi
 
 log "done"
