@@ -429,8 +429,11 @@ def refresh_splash() -> tuple[bool, str]:
     changed from the screen. The root helper the installer set up (with a
     sudoers line for exactly this command, no arguments) reads unit.conf
     itself and rebuilds the initramfs; a minute's work, so the caller runs
-    it off the request. Fail-soft: without the helper (a dev box) the
-    splash simply stays as it was."""
+    it off the request (the helper serialises itself, so a second rotation
+    queues and the last one wins). Fail-soft: without the helper (a dev
+    box) the splash simply stays as it was. The timeout is nominal — sudo
+    is setuid and won't be killed by its caller; it bounds the wait, not
+    the helper."""
     try:
         done = subprocess.run(  # noqa: S603 — fixed argv, no input
             ["/usr/bin/sudo", "-n", SPLASH_REFRESH],

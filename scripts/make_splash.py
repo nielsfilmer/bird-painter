@@ -83,6 +83,10 @@ def compose(w: int, h: int, bird_path: Path | None) -> Image.Image:
     """The splash as the owner sees it, at any size: sizes in vmin so the
     7" and the 10" read the same, positions as fractions of the height so a
     portrait sheet keeps the bird near its centre."""
+    # Positions as fractions of the height: where the 1280x720 composition
+    # had them (176, 204, 262 px and 94 px up from the bottom) — the header
+    # in the upper quarter, the bird's cell starting just above the middle
+    # so its centre sits at ~0.6h, the hint near the foot.
     v = min(w, h) / 100
     img = paper(w, h)
     draw = ImageDraw.Draw(img)
@@ -161,9 +165,10 @@ if __name__ == "__main__":
         sys.exit("usage: make_splash.py OUT_DIR [BIRD_IMAGE] [ROTATE] [NATIVE_WxH]")
     out = Path(sys.argv[1])
     bird = Path(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else None
-    rotate = int(sys.argv[3]) if len(sys.argv) > 3 else 90
-    if rotate not in (0, 90, 180, 270):
+    rotate_arg = sys.argv[3] if len(sys.argv) > 3 else "90"
+    if rotate_arg not in ("0", "90", "180", "270"):
         sys.exit("ROTATE must be 0, 90, 180 or 270 (the unit's wlr-randr transform)")
+    rotate = int(rotate_arg)
     native = (NATIVE_W, NATIVE_H)
     if len(sys.argv) > 4 and sys.argv[4]:
         parts = sys.argv[4].lower().split("x")

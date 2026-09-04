@@ -766,12 +766,13 @@ def create_app(config: Config | None = None) -> FastAPI:
         updates = unit.clean_updates(await _json_object(request))
         if not updates:
             raise HTTPException(status_code=400, detail="nothing to change")
+        turned = "ROTATE" in updates and int(updates["ROTATE"]) != live_settings.rotate
         try:
             unit.apply(updates, live_settings)
         except unit.SettingsWriteError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         night.reschedule(live_settings.night)
-        if "ROTATE" in updates:
+        if turned:
             # The next boot's splash must be upright: redraw it off the
             # request (initramfs rebuild, ~a minute); the PUT answers now.
             asyncio.get_running_loop().run_in_executor(None, unit.refresh_splash)

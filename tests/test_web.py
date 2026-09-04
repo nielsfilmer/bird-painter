@@ -79,6 +79,9 @@ def test_unit_screen_api_is_loopback_only_and_writes_its_files(
             unit, "refresh_splash", lambda: redraws.append(1) or (True, "ok")
         )
         assert local.put("/unit", json={"ROTATE": 180}).status_code == 200
+        assert (
+            local.put("/unit", json={"ROTATE": 180}).status_code == 200
+        )  # same: no redraw
         assert local.put("/unit", json={"UI": 1.1}).status_code == 200
         for _ in range(50):
             if redraws:

@@ -536,7 +536,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   runs the generator.
 - `scripts/bird-splash-refresh.sh` — the root helper the install script
   puts at `/usr/local/sbin/bird-splash-refresh` with a sudoers line for the
-  unit's user (that exact command, no arguments): reads `unit.conf`
+  unit's user (that exact command with no arguments — the `""` in the
+  line): runs one at a time under `flock`, rebuilds under a shutdown
+  inhibitor so a restart can't land mid-rebuild, reads `unit.conf`
   (ROTATE, OUTPUT) and the panel's mode, draws the splash as the user with
   the venv, installs it for plymouth, rebuilds the initramfs only when
   something it carries changed, and tells the running desktop. The

@@ -11,8 +11,25 @@
 # draws with the repo's venv AS THAT USER. Only the copies into the system
 # directories and the initramfs rebuild happen as root.
 #
-# Prints what it did; exits non-zero only when nothing usable was drawn.
+# Trust: root copies files out of the user's checkout (the plymouth
+# script among them, which runs at boot) and rebuilds the initramfs. That
+# is the trust the installer already extends to this user — passwordless
+# sudo, the service running as them — only now without an operator
+# present. Nothing from unit.conf reaches a shell string: ROTATE is
+# whitelisted, OUTPUT only names a file called `modes`.
+#
+# Prints one summary line; exits non-zero only when nothing usable was drawn.
 set -euo pipefail
+
+# One at a time: two quick rotations from the screen would otherwise run
+# two rebuilds over each other, and the LAST rotation must win — a queued
+# run re-reads unit.conf once it gets the lock. And no reboot lands inside
+# an initramfs rebuild: the rebuild runs under a shutdown inhibitor
+# (unit.reboot() does not override inhibitors, so its refusal is the
+# message the screen shows).
+if [ "${BIRD_SPLASH_LOCKED:-}" != "1" ]; then
+  exec env BIRD_SPLASH_LOCKED=1 flock -w 600 /run/lock/bird-splash-refresh "$0" "$@"
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "bird-splash-refresh: run as root (the installer's sudoers line covers it)" >&2
@@ -42,8 +59,11 @@ case "$ROTATE" in 0|90|180|270) ;; *) ROTATE=90 ;; esac
 # The panel's own mode (720x1280 on the 7", 1200x1920 on the 10.1"). The
 # glob may not match (panel asleep, connector renamed): the `|| true`
 # keeps errexit out of it and the 7" size is the fallback.
-native="$( { cat /sys/class/drm/card*-"${OUTPUT}"/modes 2>/dev/null || true; } | head -1)"
-native="${native:-720x1280}"
+native="$( { cat /sys/class/drm/card*-"${OUTPUT}"/modes 2>/dev/null || true; } | head -1 | grep -oE '^[0-9]+x[0-9]+' || true)"
+if [ -z "$native" ]; then
+  echo "bird-splash-refresh: no mode read from ${OUTPUT} (panel asleep? connector renamed?); drawing at the 7\" size" >&2
+  native=720x1280
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -72,10 +92,11 @@ if ! cmp -s "$splash_dir/splash-native.png" "$theme_dir/splash.png"; then
   install -m 0644 "$splash_dir/splash-native.png" "$theme_dir/splash.png"; changed=1
 fi
 if [ "$(/usr/sbin/plymouth-set-default-theme)" != "birdpainter" ] || [ "$changed" -eq 1 ]; then
-  if /usr/sbin/plymouth-set-default-theme -R birdpainter >/dev/null 2>&1; then
+  if systemd-inhibit --what=shutdown --mode=block --who=bird-painter --why="rebuilding the boot splash" \
+       /usr/sbin/plymouth-set-default-theme -R birdpainter >/dev/null 2>&1; then
     echo "bird-splash-refresh: rotate $ROTATE, $native — splash drawn, initramfs rebuilt"
   else
-    echo "bird-splash-refresh: rotate $ROTATE, $native — splash drawn; plymouth theme NOT set (boot unaffected)" >&2
+    echo "bird-splash-refresh: rotate $ROTATE, $native — splash drawn; plymouth theme NOT set (boot unaffected)"
   fi
 else
   echo "bird-splash-refresh: rotate $ROTATE, $native — splash unchanged"

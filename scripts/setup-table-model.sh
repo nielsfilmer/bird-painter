@@ -30,20 +30,12 @@ REPO="https://github.com/nielsfilmer/bird-painter"
 # active BP_PORT= line would otherwise abort the whole script here, silently.
 PORT="${BP_PORT:-$( { grep -sE '^BP_PORT=' "$HOME/bird-painter/.env" || true; } | cut -d= -f2)}"
 PORT="${PORT:-8537}"
-# The Touch Display 2 is natively portrait (720x1280). The table model stands
-# in landscape (owner, 2026-09-03), so the output is rotated: 90 = rotate
-# right, 270 = rotate left — which one depends on which way the ribbon exits
-# the mount. The compositor rotates the touch input with the output. The
-# panel layout takes whatever viewport results.
-# The table model is read from across a room and places birds exactly as the
-# e-paper frame does (#139): the kiosk shows the panel layout. Per-unit
-# tuning rides the same URL: BP_CAPTION scales the panel's type through the
-# plan (the 7" runs 1.5 — owner, 2026-09-03), BP_UI scales the archive chrome
-# (button, overlay heading and close, card lettering — the 7" runs 1.5), and
-# BP_WALL_MAX_LIVE caps how many birds share the sheet (the 7" runs 3).
-# Remembered in a per-unit file, so a maintenance re-run without them
-# re-supplied keeps this unit's tuning instead of reverting the panel to
-# defaults (review of #145). Environment overrides win and are written back.
+# The Touch Display 2 is natively portrait (720x1280; 1200x1920 on the
+# 10.1"). A unit on a landscape stand rotates the output (90 = rotate right,
+# 270 = rotate left — which one depends on which way the ribbon exits); one
+# standing upright uses 0 (or 180, upside down). The value persists in
+# unit.conf and the settings screen changes it later; the boot splash
+# follows it (bird-splash-refresh).
 UNIT_CONF="$HOME/.config/bird-painter/unit.conf"
 if [ -f "$UNIT_CONF" ]; then
   # shellcheck disable=SC1090
@@ -309,10 +301,11 @@ SPLASH_DIR=/usr/local/share/bird-painter   # root-owned, world-readable: the gre
 # screen's "rotate" can redo them without this script (the owner turned
 # the 10" to portrait from the screen; its splash stayed landscape until
 # the next install). The sudoers line lets the unit's user run exactly that
-# command, with no arguments — it reads unit.conf itself.
+# command and no arguments (the "" at its end) — it reads unit.conf itself.
 sudo install -m 0755 "$APP_DIR/scripts/bird-splash-refresh.sh" /usr/local/sbin/bird-splash-refresh
 SUDOERS_TMP="$(mktemp)"
-echo "${USER} ALL=(root) NOPASSWD: /usr/local/sbin/bird-splash-refresh" > "$SUDOERS_TMP"
+# The trailing "" is sudoers for "with no arguments at all".
+echo "${USER} ALL=(root) NOPASSWD: /usr/local/sbin/bird-splash-refresh \"\"" > "$SUDOERS_TMP"
 if sudo visudo -cf "$SUDOERS_TMP" >/dev/null; then
   sudo install -m 0440 -o root -g root "$SUDOERS_TMP" /etc/sudoers.d/bird-splash-refresh
 else
@@ -355,11 +348,10 @@ if [ -f "$SPLASH_DIR/splash-desktop.png" ]; then
   #    file is written for every profile directory the system ships plus
   #    both names (the helper above told the running desktop). This file
   #    is the kiosk's, written whole — a hand edit does not survive.
-  profiles="LXDE-pi default"
-  if [ -d /etc/xdg/pcmanfm ]; then
-    profiles="$profiles $(find /etc/xdg/pcmanfm -mindepth 1 -maxdepth 1 -type d -printf '%f ')"
-  fi
-  for profile in $(printf '%s\n' $profiles | sort -u); do
+  { printf 'LXDE-pi\ndefault\n'
+    [ -d /etc/xdg/pcmanfm ] && find /etc/xdg/pcmanfm -mindepth 1 -maxdepth 1 -type d -printf '%f\n' || true
+  } | sort -u | while IFS= read -r profile; do
+    [ -n "$profile" ] || continue
     mkdir -p "$HOME/.config/pcmanfm/$profile"
     cat > "$HOME/.config/pcmanfm/$profile/desktop-items-0.conf" <<DESK
 [*]

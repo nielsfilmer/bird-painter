@@ -30,8 +30,11 @@ def test_writes_both_images_turned_by_the_units_rotate(tmp_path: Path):
     # (the one direction no test can see is whether the panel agrees).
     assert native.tobytes() == landscape.rotate(90, expand=True).tobytes()
     assert other.tobytes() == landscape.rotate(-90, expand=True).tobytes()
-    # The bird is on the paper: the middle is not bare cream.
-    assert landscape.getpixel((640, 420)) != landscape.getpixel((40, 40))
+    # The bird is on the paper: the middle differs from a bird-less render.
+    assert run(str(tmp_path / "bare"), "", "90").returncode == 0
+    bare = Image.open(tmp_path / "bare" / "splash-desktop.png")
+    assert landscape.getpixel((640, 420)) != bare.getpixel((640, 420))
+    assert landscape.getpixel((40, 40)) == bare.getpixel((40, 40))
 
 
 def test_a_portrait_stand_and_the_ten_inch_get_their_own_picture(tmp_path: Path):
@@ -60,5 +63,6 @@ def test_a_portrait_stand_and_the_ten_inch_get_their_own_picture(tmp_path: Path)
 def test_refuses_a_missing_out_dir_and_an_odd_rotate(tmp_path: Path):
     bare = run()
     assert bare.returncode != 0 and "usage" in bare.stderr
-    bad = run(str(tmp_path), str(BIRD), "45")
-    assert bad.returncode != 0 and "0, 90, 180 or 270" in bad.stderr
+    for odd in ("45", "ninety"):
+        bad = run(str(tmp_path), str(BIRD), odd)
+        assert bad.returncode != 0 and "0, 90, 180 or 270" in bad.stderr, odd
