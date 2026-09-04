@@ -69,12 +69,21 @@ STYLES: tuple[Style, ...] = (
         "two or three flat inks — black, rust red and olive — with the white "
         "showing through",
     ),
+    # Watch item: the canonical cubist corpus is papier collé — pasted
+    # lettering, painted borders, a faceted ground — the very things the
+    # prompt's tail suppresses. Two verification plates came back clean on
+    # white; if a cubist plate ever carries text or a full-bleed ground, the
+    # plate check discards it and the retry pays a fraction of a cent.
+    # ("the whole bird" is repeated by the template right after the look —
+    # left as is: rewording would invalidate the two paid verifications.)
     Style(
         "cubist",
         "cubist",
-        "an early-twentieth-century cubist painting, the bird broken into "
-        "overlapping geometric facets and planes seen from several angles at once",
-        "muted ochre, slate grey and dusty blue facets, angular, in textured oil paint",
+        "a cubist painting in the manner of Picasso and Braque, the whole bird "
+        "fractured into overlapping angular geometric planes and facets seen from "
+        "several viewpoints at once, nothing realistic",
+        "flat angular planes of muted ochre, slate grey and dusty blue with hard "
+        "edges, in textured oil paint, cubism throughout",
     ),
 )
 
