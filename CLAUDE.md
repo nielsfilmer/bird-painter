@@ -524,11 +524,13 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   2026-09-03.
 - `scripts/make_splash.py` — the table model's boot splash + wallpaper:
   the wall's paper, its serif, one bird (a fixture plate), "waking up…" —
-  `splash-landscape.png` (1280×720, the desktop/greeter wallpaper) and
-  `splash-native.png` (720×1280: the same turned to the panel's native
-  portrait the way the unit's `ROTATE` turns the desktop, because plymouth
-  paints before any compositor rotates). The install script runs it on the
-  unit with the repo's venv and keeps the PNGs under
+  `splash-desktop.png` (the picture as the owner sees it, at the panel's
+  own size: landscape for a 90/270 stand, portrait for 0/180 — the
+  desktop/greeter wallpaper) and `splash-native.png` (the same turned to
+  the panel's native buffer the way the unit's `ROTATE` turns the desktop,
+  because plymouth paints before any compositor rotates). Sizes in vmin,
+  so the 7" and the 10" read alike. The install script runs it on the
+  unit with the repo's venv (passing the DSI mode) and keeps the PNGs under
   `/usr/local/share/bird-painter` (world-readable: the greeter runs as
   `lightdm`). `make lint` covers `scripts/`; `tests/test_make_splash.py`
   runs the generator.
@@ -536,7 +538,9 @@ component choices, v0 config knobs, scope, risks — in `PLAN.md`. Repo:
   `.script`): the same shape as Pi OS's own `pix` theme — one full-screen
   image, no messages — installed by the install script, which also turns
   the rainbow square off (`disable_splash=1`), points the greeter and the
-  desktop at the wallpaper, and kills the taskbar (and its `lwrespawn`) at
+  desktop at the wallpaper (every pcmanfm profile the system ships —
+  `LXDE-pi` on bookworm, `default` on trixie — and the running desktop
+  directly), and kills the taskbar (and its `lwrespawn`) at
   login, so nothing but the wall's paper shows from power-on to the wall.
 - `scripts/memcheck.py` — peak-RSS measurement of the Python side on a
   unit (#121's number). On the first unit with LiteRT: 261 MB with the

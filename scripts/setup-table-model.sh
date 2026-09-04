@@ -306,10 +306,13 @@ sudo_append_line() {  # append_line, for a root-owned file
 SPLASH_DIR=/usr/local/share/bird-painter   # root-owned, world-readable: the greeter runs as lightdm
 SPLASH_TMP="$(mktemp -d)"
 SPLASH_NOTE="splash, greeter wallpaper and desktop take effect on the next boot"
+# The panel's own mode, so the 10" gets its pixels (falls back to the 7"'s).
+NATIVE="$(cat /sys/class/drm/card*-"${OUTPUT}"/modes 2>/dev/null | head -1)"
 if "$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/make_splash.py" "$SPLASH_TMP" \
-     "$APP_DIR/tests/fixtures/plates/good-hummingbird.jpg" "$ROTATE"; then
+     "$APP_DIR/tests/fixtures/plates/good-hummingbird.jpg" "$ROTATE" "${NATIVE:-720x1280}"; then
   sudo mkdir -p "$SPLASH_DIR"
-  sudo cp "$SPLASH_TMP/splash-landscape.png" "$SPLASH_TMP/splash-native.png" "$SPLASH_DIR/"
+  sudo rm -f "$SPLASH_DIR/splash-landscape.png"  # the old name (#154)
+  sudo cp "$SPLASH_TMP/splash-desktop.png" "$SPLASH_TMP/splash-native.png" "$SPLASH_DIR/"
 else
   SPLASH_NOTE="the splash could NOT be generated; the boot chrome stays as it was"
   echo "boot: $SPLASH_NOTE"
@@ -348,7 +351,7 @@ if [ -f "$SPLASH_DIR/splash-native.png" ]; then
   # 3. The greeter's wallpaper, for the moment before autologin.
   if [ -f /etc/lightdm/pi-greeter.conf ]; then
     backup_once /etc/lightdm/pi-greeter.conf
-    for kv in "wallpaper=${SPLASH_DIR}/splash-landscape.png" "wallpaper_mode=fit"; do
+    for kv in "wallpaper=${SPLASH_DIR}/splash-desktop.png" "wallpaper_mode=fit"; do
       key="${kv%%=*}"
       if grep -qs "^${key}=" /etc/lightdm/pi-greeter.conf; then
         sudo sed -i "s#^${key}=.*#${kv}#" /etc/lightdm/pi-greeter.conf
@@ -357,14 +360,20 @@ if [ -f "$SPLASH_DIR/splash-native.png" ]; then
       fi
     done
   fi
-  # 4. The desktop behind Chromium: the same paper, no icons. This file is
-  #    the kiosk's, so it is written whole — a hand edit does not survive.
-  mkdir -p "$HOME/.config/pcmanfm/LXDE-pi"
-  cat > "$HOME/.config/pcmanfm/LXDE-pi/desktop-items-0.conf" <<DESK
+  # 4. The desktop behind Chromium: the same paper, no icons — for the
+  #    twelve seconds between the greeter and the wall while the ears load.
+  #    pcmanfm's profile is `LXDE-pi` on bookworm and `default` on trixie
+  #    (the owner saw Pi OS's own wallpaper on the first trixie unit); the
+  #    file is written for every profile the system ships, and the running
+  #    desktop is told directly. This file is the kiosk's, written whole —
+  #    a hand edit does not survive.
+  for profile in $(ls /etc/xdg/pcmanfm/ 2>/dev/null) LXDE-pi default; do
+    mkdir -p "$HOME/.config/pcmanfm/$profile"
+    cat > "$HOME/.config/pcmanfm/$profile/desktop-items-0.conf" <<DESK
 [*]
 wallpaper_mode=fit
 wallpaper_common=1
-wallpaper=${SPLASH_DIR}/splash-landscape.png
+wallpaper=${SPLASH_DIR}/splash-desktop.png
 desktop_bg=#ece1c6
 desktop_fg=#4a3f2e
 desktop_shadow=#ece1c6
@@ -373,6 +382,11 @@ show_documents=0
 show_trash=0
 show_mounts=0
 DESK
+  done
+  if [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wayland-0" ]; then
+    WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+      pcmanfm --set-wallpaper="${SPLASH_DIR}/splash-desktop.png" --wallpaper-mode=fit 2>/dev/null || true
+  fi
 fi
 
 log "done"
