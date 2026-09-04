@@ -124,24 +124,39 @@ def test_the_birds_stay_one_cluster(sheet):
         assert gap <= reach, (i, gap, reach)
 
 
-def test_growth_in_place_is_capped_by_a_birds_own_weight():
-    """Three birds on the 7" with tall captions leave room: without the
-    INFLATE_MAX cap the oldest grew to 0.94 of the newest and the size story
-    was gone (the six-bird guard doesn't see this — at six nothing has room
-    to grow)."""
-    files = [f"b{i}.jpg" for i in range(3)]
-    placements = compute_frame_layout(
-        files,
-        1280,
-        720,
-        0,
-        aspects=ASPECTS[:3],
-        caption_px=66,
-        caption_widths=CAPTIONS[:3],
-    )
-    areas = [p.size_vmin * p.height_vmin for p in placements]
-    assert areas[2] <= areas[0] * 0.62 * 1.12 + 1e-6
-    assert areas[1] <= areas[0] * NEWEST_SHARE + 1e-6
+def test_growth_in_place_is_capped_by_a_birds_own_weight(monkeypatch):
+    """Four birds on the 7" with mid-height captions leave room around the
+    oldest: it grows in place, but never past INFLATE_MAX of its own
+    uninflated size. Measured three ways in one test — no growth, capped
+    growth, uncapped growth — so the cap is shown to bind, not assumed."""
+    from bird_painter import frame_layout as fl
+
+    def areas():
+        fl._layout.cache_clear()
+        placements = compute_frame_layout(
+            [f"b{i}.jpg" for i in range(4)],
+            1280,
+            720,
+            0,
+            aspects=ASPECTS[:4],
+            caption_px=49.5,
+            caption_widths=CAPTIONS[:4],
+        )
+        return [p.size_vmin * p.height_vmin for p in placements]
+
+    monkeypatch.setattr(fl, "INFLATE_PASSES", 0)
+    base = areas()
+    monkeypatch.setattr(fl, "INFLATE_PASSES", 2)
+    capped = areas()
+    monkeypatch.setattr(fl, "INFLATE_MAX", 1e6)
+    free = areas()
+    fl._layout.cache_clear()
+    assert capped[0] == base[0] == free[0]  # the newest never grows
+    for i in range(1, 4):
+        assert capped[i] <= base[i] * 1.12 * 1.001, i
+    assert capped[3] > base[3] * 1.05, "the oldest had room and grew"
+    assert capped[3] <= base[3] * 1.12 * 1.001, "…but not past the cap"
+    assert free[3] > base[3] * 1.12, "without the cap it would have"
 
 
 def test_sizes_follow_recency():
