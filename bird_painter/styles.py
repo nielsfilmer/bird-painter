@@ -74,8 +74,7 @@ STYLES: tuple[Style, ...] = (
         "cubist",
         "an early-twentieth-century cubist painting, the bird broken into "
         "overlapping geometric facets and planes seen from several angles at once",
-        "muted ochre, slate grey, dusty blue and pale cream facets, angular, in "
-        "textured oil paint",
+        "muted ochre, slate grey and dusty blue facets, angular, in textured oil paint",
     ),
 )
 

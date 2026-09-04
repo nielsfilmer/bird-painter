@@ -228,7 +228,8 @@ export function mountUnitScreen({ initial = null, onSettings, onConnectivity } =
     return found ? found.name : key;
   }
   // A choice among the server's list: the name as the value, "n/N" between
-  // the arrows (an unknown current shows as 0/N and steps to the first).
+  // the arrows (an unknown current shows as 0/N; either arrow then goes
+  // to the first).
   function choiceRow(label, name, choices, current) {
     const at = choices.findIndex((c) => c.key === current) + 1;
     return `<div class="row"><div><div class="label">${label}</div><div class="value">${esc(name)}</div></div>
@@ -569,10 +570,12 @@ export function isOffline(connectivity) {
   return !!connectivity && connectivity.state !== "full" && connectivity.state !== "unknown";
 }
 
-// The next of a list of choices, wrapping at both ends (the styles).
+// The next of a list of choices, wrapping at both ends (the styles). An
+// unknown current (shown as 0/N) steps to the first either way.
 export function nextChoice(keys, current, dir) {
   if (!keys.length) return current;
-  const i = Math.max(0, keys.indexOf(current));
+  const i = keys.indexOf(current);
+  if (i < 0) return keys[0];
   return keys[(i + dir + keys.length) % keys.length];
 }
 

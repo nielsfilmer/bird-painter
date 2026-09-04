@@ -67,6 +67,7 @@ test("the style stepper walks the server's list and wraps", () => {
   assert.equal(nextChoice(keys, "naturalist", 1), "sumi");
   assert.equal(nextChoice(keys, "cubist", 1), "naturalist");
   assert.equal(nextChoice(keys, "naturalist", -1), "cubist");
-  assert.equal(nextChoice(keys, "unknown", 1), "sumi", "an unknown current counts as the first");
+  assert.equal(nextChoice(keys, "unknown", 1), "naturalist", "an unknown current steps to the first");
+  assert.equal(nextChoice(keys, "unknown", -1), "naturalist");
   assert.equal(nextChoice([], "x", 1), "x");
 });

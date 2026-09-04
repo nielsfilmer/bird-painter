@@ -49,7 +49,7 @@ STYLE="${BP_STYLE:-${STYLE:-naturalist}}"
 OUTPUT="${BP_OUTPUT:-${OUTPUT:-DSI-2}}"
 mkdir -p "$(dirname "$UNIT_CONF")"
 # OUTPUT is quoted: the login shell sources this file for the rotation.
-printf 'CAPTION=%s\nUI=%s\nMAX_LIVE=%s\nROTATE=%s\nSTYLE=%s\nOUTPUT="%s"\n' \
+printf 'CAPTION=%s\nUI=%s\nMAX_LIVE=%s\nROTATE=%s\nSTYLE="%s"\nOUTPUT="%s"\n' \
   "$CAPTION" "$UI" "$MAX_LIVE" "$ROTATE" "$STYLE" "$OUTPUT" > "$UNIT_CONF"
 WALL_URL="http://127.0.0.1:${PORT}/?style=panel&caption=${CAPTION}&ui=${UI}"
 

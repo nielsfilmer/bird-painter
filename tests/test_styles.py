@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from bird_painter import brush, unit
 from bird_painter.config import Config, ConfigError, load_config
+from bird_painter.ears import Detection
 from bird_painter.styles import (
     DEFAULT_STYLE,
     STYLES,
@@ -90,7 +91,15 @@ def test_no_style_names_the_artefacts_the_prompt_bans():
     lists a baked-in caption and a photographed print among its misses."""
     for s in STYLES:
         text = f"{s.look} {s.palette}".lower()
-        for word in ("poster", "print", "notebook", "paper", "engraving", "off-white"):
+        for word in (
+            "poster",
+            "print",
+            "notebook",
+            "paper",
+            "engraving",
+            "field-guide",
+            "off-white",
+        ):
             assert word not in text, (s.key, word)
 
 
@@ -169,8 +178,6 @@ def test_a_style_set_on_the_screen_reaches_the_next_painting(
         )
         local.post("/dev/paint/Wren")
         # The runner (the mic's path) asks the live settings at paint time.
-        from bird_painter.ears import Detection
-
         app.state.live_settings.style = "cubist"
         app.state.runner.on_detections(
             [Detection("Dunnock", "Prunella modularis", 0.91, 0.0, 3.0)]
