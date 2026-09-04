@@ -24,5 +24,9 @@ polkit.addRule(function (action, subject) {
       action.id === "org.freedesktop.login1.reboot-multiple-sessions") {
     return polkit.Result.YES; // the settings screen's restart button
   }
+  // Deliberately NOT granted: reboot-ignore-inhibit. bird-splash-refresh
+  // holds a shutdown inhibitor while it rebuilds the initramfs, and this
+  // is what makes a restart tapped in that minute wait rather than boot
+  // into a half-written image.
   return polkit.Result.NOT_HANDLED;
 });

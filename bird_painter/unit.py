@@ -431,9 +431,10 @@ def refresh_splash() -> tuple[bool, str]:
     itself and rebuilds the initramfs; a minute's work, so the caller runs
     it off the request (the helper serialises itself, so a second rotation
     queues and the last one wins). Fail-soft: without the helper (a dev
-    box) the splash simply stays as it was. The timeout is nominal — sudo
-    is setuid and won't be killed by its caller; it bounds the wait, not
-    the helper."""
+    box) the splash simply stays as it was. The timeout is a floor on how
+    long this thread may sit, not a kill: sudo is setuid and its caller
+    can't signal it, so after the timeout the wait simply continues (the
+    helper's own flock gives up after 600 s)."""
     try:
         done = subprocess.run(  # noqa: S603 — fixed argv, no input
             ["/usr/bin/sudo", "-n", SPLASH_REFRESH],

@@ -41,6 +41,7 @@ test("errors the owner can act on keep NetworkManager's words and lose the trace
   assert.equal(friendly("Error: Secrets were required, but not provided."), "Error: Secrets were required, but not provided.");
   assert.equal(friendly("could not run systemctl: FileNotFoundError"), "this unit can't do that from here");
   assert.equal(friendly("unit 500"), "the wall didn't answer");
+  assert.equal(friendly("Interactive authentication required."), "the boot picture is still being redrawn — try again in a minute");
 });
 
 test("the long-press corner is the bottom-left, and only there", () => {

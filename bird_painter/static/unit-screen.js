@@ -554,6 +554,9 @@ export function isOffline(connectivity) {
 export function friendly(message) {
   const m = String(message || "");
   if (/FileNotFoundError|could not run|NotFound/i.test(m)) return "this unit can't do that from here";
+  // logind refuses a reboot while the boot picture is being redrawn (the
+  // helper holds a shutdown inhibitor); the raw answer is a polkit sentence.
+  if (/inhibit|interactive authentication|not authorized/i.test(m)) return "the boot picture is still being redrawn — try again in a minute";
   if (/^unit \d{3}$/.test(m)) return "the wall didn't answer";
   return m;
 }
