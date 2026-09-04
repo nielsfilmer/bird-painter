@@ -9,9 +9,14 @@ import pytest
 
 from bird_painter.frame_layout import (
     BOTTOM_MARGIN,
+    MAX_NEWEST_WIDTH,
+    NEWEST_SHARE,
     OLD_WEIGHT_MIN,
     RECENT_COUNT,
     SIDE_MARGIN,
+    _layout,
+    _rows,
+    _Sheet,
     compute_frame_layout,
 )
 
@@ -100,13 +105,15 @@ def test_the_sheet_is_filled(sheet):
 
 @pytest.mark.parametrize("sheet", list(SHEETS))
 def test_the_birds_stay_one_cluster(sheet):
-    """No bird alone in a corner: every bird's footprint is within one
-    newest-bird-width of some other bird's — the sheet fills outward from
-    the middle, so the cluster has no islands."""
+    """No bird alone in a corner: every bird's footprint is within three
+    vmin of some other bird's (measured: under two on all three sheets) —
+    the sheet fills outward from the middle, so the cluster has no islands.
+    The scatter placed its old birds "wherever emptiest", tens of vmin from
+    anything."""
     w, h, _ = SHEETS[sheet]
     placements = place(6, sheet)
     boxes = [footprint(p, i, sheet) for i, p in enumerate(placements)]
-    reach = placements[0].size_vmin * min(w, h) / 100
+    reach = 3 * min(w, h) / 100
     for i, a in enumerate(boxes):
         others = [b for j, b in enumerate(boxes) if j != i]
         gap = min(
@@ -120,12 +127,25 @@ def test_the_birds_stay_one_cluster(sheet):
 def test_sizes_follow_recency():
     """Newest largest, the recent five a step below, older ones tapering —
     the size story from the scatter, kept. Growth in place may lift a bird,
-    but never past the one a rank newer."""
+    but never past the one a rank newer, nor past NEWEST_SHARE of the newest."""
     placements = place(12)
     areas = [p.size_vmin * p.height_vmin for p in placements]
     assert areas[0] == max(areas)
+    assert max(areas[1:]) <= areas[0] * NEWEST_SHARE + 1e-6
     assert min(areas[1 : 1 + RECENT_COUNT]) > max(areas[1 + RECENT_COUNT :])
     assert min(areas) >= areas[0] * OLD_WEIGHT_MIN * 0.9
+
+
+@pytest.mark.parametrize("sheet", list(SHEETS))
+def test_a_six_bird_wall_still_shows_its_recency(sheet):
+    """Six birds is the newest plus exactly RECENT_COUNT others — the
+    ordinary wall — and the ring tapers within itself: the oldest of six is
+    visibly smaller than the newest (owner, 2026-08-20: a flat ring read as
+    "nothing gets smaller with age"). Growth in place is capped at 1.12×
+    a bird's own weight so this holds after inflation too."""
+    areas = [p.size_vmin * p.height_vmin for p in place(6, sheet)]
+    assert areas[-1] <= areas[0] * 0.72
+    assert areas[1] > areas[-1]
 
 
 def test_layout_is_deterministic_and_has_no_dice():
@@ -137,11 +157,18 @@ def test_layout_is_deterministic_and_has_no_dice():
     assert a != c
 
 
-def test_a_lone_bird_is_big_but_not_a_poster():
-    w, h, band = SHEETS["frame"]
-    (only,) = place(1)
-    usable_w = w * (1 - 2 * SIDE_MARGIN)
-    assert 0.3 * usable_w <= only.size_vmin * min(w, h) / 100 <= 0.6 * usable_w + 0.5
+@pytest.mark.parametrize("sheet", list(SHEETS))
+def test_a_lone_bird_is_big_but_not_a_poster(sheet):
+    """One bird takes the newest's cap on whichever side binds — width on a
+    landscape sheet, height on a portrait one — and no more."""
+    w, h, band = SHEETS[sheet]
+    (only,) = place(1, sheet)
+    vmin = min(w, h) / 100
+    usable_w, usable_h = w * (1 - 2 * SIDE_MARGIN), h * (1 - BOTTOM_MARGIN) - band
+    width_share = only.size_vmin * vmin / usable_w
+    height_share = (only.height_vmin * vmin + CAPTION_PX) / usable_h
+    assert width_share <= MAX_NEWEST_WIDTH + 0.005
+    assert width_share >= MAX_NEWEST_WIDTH - 0.005 or height_share >= 0.92 - 0.005
 
 
 def test_an_empty_or_impossible_sheet_places_nothing():
@@ -152,6 +179,62 @@ def test_an_empty_or_impossible_sheet_places_nothing():
         compute_frame_layout(["a.jpg"], 60, 40, 0, caption_px=33, caption_widths=[150])
         == []
     )
+
+
+def test_when_nothing_packs_around_the_centre_the_sheet_gets_rows_not_nothing():
+    """The scatter's forced pass could not fail; the rosette's scan can (a
+    dozen birds with two-line captions on a small sheet). Then the birds go
+    in centred rows — the wall is never blank, because the browser freezes
+    on an empty plan and the e-paper spends a redraw on it."""
+    sheet = _Sheet(
+        left=36,
+        top=0,
+        uw=1128,
+        uh=1824,
+        gap=10,
+        caption_px=66,
+        caption_ws=(500.0,) * 12,
+        base_angle=0.3,
+        vmin=12,
+    )
+    cells = [(80.0, 100.0)] * 12
+    spots = _rows(cells, sheet)
+    assert spots is not None and len(spots) == 12
+    rects = [r for _, _, r in spots]
+    for i, a in enumerate(rects):
+        assert sheet.inside(a)
+        for b in rects[i + 1 :]:
+            assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1]
+    # Centred as a block: the rows' left and right margins match.
+    assert min(r[0] for r in rects) - sheet.left == pytest.approx(
+        sheet.left + sheet.uw - max(r[2] for r in rects), abs=1
+    )
+    # A single footprint wider than the sheet is the one honest failure.
+    assert _rows([(2000.0, 10.0)], sheet) is None
+    # …and the public function reaches the rows when the spiral can't pack:
+    # twelve wide-captioned birds on a 7" sheet packed around the centre
+    # would need a scale below the floor; they still all land.
+    placements = compute_frame_layout(
+        [f"b{i}.jpg" for i in range(12)],
+        1280,
+        720,
+        0,
+        aspects=[1.2] * 12,
+        caption_px=60,
+        caption_widths=[400.0] * 12,
+    )
+    assert len(placements) == 12
+
+
+def test_the_plan_is_memoised_on_its_inputs():
+    """Deterministic, so the wall's poll and the frame's two-layer render
+    ask for the same plan again and again: they must not pay for it twice."""
+    _layout.cache_clear()
+    a = place(6, "ten")
+    hits = _layout.cache_info().hits
+    b = place(6, "ten")
+    assert _layout.cache_info().hits == hits + 1
+    assert a == b and a is not b  # a fresh list each time, the same content
 
 
 def test_a_crowded_sheet_still_places_every_bird():

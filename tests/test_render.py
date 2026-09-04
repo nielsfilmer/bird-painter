@@ -5,6 +5,7 @@ configured size, populated + empty, and resilient to unreadable plate images
 import io
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from bird_painter.render import render_wall_png
@@ -187,8 +188,11 @@ def test_plan_wall_carries_what_the_browser_needs(tmp_path):
     for i in range(4):
         _make_image(tmp_path / f"bird{i}.png")
     paintings = [
-        {"file": f"bird{i}.png", "species_common": f"Test Bird {i}",
-         "born_at": 1784570000 + i}
+        {
+            "file": f"bird{i}.png",
+            "species_common": f"Test Bird {i}",
+            "born_at": 1784570000 + i,
+        }
         for i in range(4)
     ]
     panel = plan_wall(paintings, tmp_path, 720, 1280, style="panel")
@@ -213,14 +217,18 @@ def test_plan_wall_caption_scale_grows_type_and_reserve_together(tmp_path):
     for i in range(3):
         _make_image(tmp_path / f"bird{i}.png")
     paintings = [
-        {"file": f"bird{i}.png", "species_common": "Great Spotted Woodpecker",
-         "born_at": 1784570000 + i}
+        {
+            "file": f"bird{i}.png",
+            "species_common": "Great Spotted Woodpecker",
+            "born_at": 1784570000 + i,
+        }
         for i in range(3)
     ]
     one = plan_wall(paintings, tmp_path, 1280, 720, style="panel")
     big = plan_wall(paintings, tmp_path, 1280, 720, style="panel", caption_scale=1.5)
     assert (big.species_size, big.heard_size) == (
-        int(one.species_size * 1.5 + 0.5), int(one.heard_size * 1.5 + 0.5)
+        int(one.species_size * 1.5 + 0.5),
+        int(one.heard_size * 1.5 + 0.5),
     ), "the general case; the literal below is what pins the rounding"
     assert big.caption_gap == one.caption_gap  # air above the name is not type
     # Bigger type, same sheet: the plan must react — the reserve under each
@@ -231,6 +239,15 @@ def test_plan_wall_caption_scale_grows_type_and_reserve_together(tmp_path):
     assert [(p["x"], p["y"]) for p in big.placements] != [
         (p["x"], p["y"]) for p in one.placements
     ]
+    # Exactly: the newest sits half a caption above the usable centre so
+    # bird + lettering are centred as a whole, so its centre rises by half
+    # of what the caption grew (two fixed-size lines plus the air above).
+    grew = (big.species_size - one.species_size) * 1.3 + (
+        big.heard_size - one.heard_size
+    ) * 1.25
+    assert big.placements[0]["y"] - one.placements[0]["y"] == pytest.approx(
+        -grew / 2, abs=0.01
+    )
     # The spiral's type is the browser's own; the scale must not touch it.
     wall_default = _caption_sizes(7.0, panel=False)
     assert _caption_sizes(7.0, panel=False, scale=1.5) == wall_default

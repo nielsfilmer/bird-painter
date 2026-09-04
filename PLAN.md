@@ -641,9 +641,13 @@ whole magic; ship it first.
   cluster fills outward and never leaves one bird alone in a corner; the
   arrangement is scaled up until nothing more fits, then birds grow in
   place into leftover room without passing the one a rank newer. The size
-  story (newest ≫ recent five > older, tapering) is kept. Deterministic per
-  live set. Measured fill at six birds: ~0.5 of the sheet on both panels,
-  against ~0.15 for the scatter.
+  story (newest ≫ recent five > older, tapering) is kept, with the weight
+  now a true area — the scatter's cells were weight², old birds a quarter
+  of the newest; this is a deliberate change of look, not a bug fix.
+  Deterministic per live set and memoised. Measured fill at six birds:
+  0.44–0.50 of the sheet on the three panels, against ~0.15 for the
+  scatter; when nothing packs around the centre the sheet falls back to
+  centred rows, never to empty.
 - **2026-09-04** — **The table model has a settings screen, and joins WiFi
   from it** (#123; owner: "a settings screen where you can adjust the
   settings", and "the table model that leaves the house also needs a
