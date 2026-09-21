@@ -241,8 +241,9 @@ pinned, update **both** this file and the corresponding spot in
     (`Bash(sudo:*)`, `Bash(gh api:*)`, `Bash(gh auth:*)`, `Bash(gh secret:*)`),
     destructive-by-design (`Bash(rm:*)`, `Bash(dd:*)`, `Bash(shred:*)`).
   - **Workflow gates persist regardless of allowlist** — `gh pr:*` technically
-    includes `gh pr merge`/`close`, but "user is the merge gate" still applies.
-    The behavioural rules here are the safety net for permissions broader than
+    includes `gh pr merge`/`close`; merging a clean PR is intended here (step 5:
+    the user removed themselves as merge gate), but never merge a PR with open
+    review findings, and spending and going live stay the user's. The behavioural rules here are the safety net for permissions broader than
     the behaviour we actually want.
 - **The reviewer runs deterministic tooling, not just its judgment.** LLM review
   is unreliable at exactly what linters/type-checkers/SAST are reliable at; the
